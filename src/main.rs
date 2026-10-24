@@ -62,6 +62,7 @@ mod gfx;
 mod icon;
 mod icons;
 mod input;
+mod keys;
 mod lyricview;
 mod lyrics;
 mod music;
@@ -99,7 +100,7 @@ use note::{NOTE_H, NOTE_Y, NoteView, load_note, save_note};
 use render::present;
 use shelf::{SH_GAP, SH_H, SH_W, SH_Y, ShelfItem, load_shelf, open_path, save_shelf};
 use todo::{ROW_H, ROW_P, load_todos, rows_geom, save_todos};
-use toast::{Toast, ToastKind};
+use toast::{HudKind, Toast, ToastKind};
 use settings::Settings;
 use slides::SlideId;
 use water::{Water, WaterUi, check_reminder};
@@ -254,6 +255,9 @@ fn demo_toast() -> Option<ToastKind> {
         "low" => ToastKind::LowBattery { pct: 20 },
         "bt" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: Some(70), connected: true },
         "notif" => ToastKind::Notification { id: DEMO_NOTIF_ID },
+        "caps" => ToastKind::Hud { kind: HudKind::Caps, on: true },
+        "caps-off" => ToastKind::Hud { kind: HudKind::Caps, on: false },
+        "num" => ToastKind::Hud { kind: HudKind::Num, on: true },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
         _ => ToastKind::Bluetooth { name: "soundcore R50i".into(), pct: None, connected: true },
     })
@@ -363,6 +367,7 @@ fn main() -> Result<()> {
         let cfg = Settings::load();
         let notif_on = cfg.notifications;
         notif::set_avatar(cfg.notif_avatar);
+        keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
         if notif_on {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }

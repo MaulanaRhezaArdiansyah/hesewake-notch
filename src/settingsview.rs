@@ -79,6 +79,7 @@ impl App {
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
+                Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
             ],
             _ => Vec::new(),
         }
@@ -250,6 +251,10 @@ impl App {
                 (2, 1) => {
                     sys::set_autostart(!self.sui.autostart);
                     self.sui.autostart = sys::autostart_enabled();
+                }
+                (2, 2) => {
+                    self.cfg.lock_toast = !self.cfg.lock_toast;
+                    keys::set_enabled(self.hwnd, self.cfg.lock_toast);
                 }
                 _ => {}
             }

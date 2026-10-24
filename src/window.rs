@@ -314,6 +314,20 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             run_command(hwnd, cmd);
             LRESULT(0)
         }
+        keys::WM_LOCKKEY => {
+            let vk = wp.0 as u32;
+            if let Some(kind) = keys::kind_of(vk) {
+                // bit toggle (bit 0) = keadaan tombol kunci saat ini
+                let on = (GetKeyState(vk as i32) & 1) != 0;
+                with_app(|a| {
+                    a.push_toast(ToastKind::Hud { kind, on });
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(0)
+        }
         notif::WM_NOTIF => {
             with_app(|a| {
                 let evs: Vec<_> = a.notif_slot.lock().unwrap_or_else(|p| p.into_inner()).drain(..).collect();

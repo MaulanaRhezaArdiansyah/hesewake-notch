@@ -5,6 +5,33 @@ use super::*;
 
 pub(crate) const TOAST_CHARGE: (f32, f32) = (336.0, 70.0);
 pub(crate) const TOAST_BT: (f32, f32) = (372.0, 70.0);
+/// HUD kecil (tombol kunci, volume, kecerahan): lebih pendek dari toast biasa.
+pub(crate) const TOAST_HUD: (f32, f32) = (244.0, 46.0);
+
+/// Jenis HUD kecil.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum HudKind {
+    Caps,
+    Num,
+    Scroll,
+}
+
+impl HudKind {
+    fn label(self) -> &'static str {
+        match self {
+            HudKind::Caps => "Caps Lock",
+            HudKind::Num => "Num Lock",
+            HudKind::Scroll => "Scroll Lock",
+        }
+    }
+    fn glyph(self) -> &'static str {
+        match self {
+            HudKind::Caps => "A",
+            HudKind::Num => "1",
+            HudKind::Scroll => "S",
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ToastKind {
@@ -14,6 +41,8 @@ pub(crate) enum ToastKind {
     Bluetooth { name: String, pct: Option<u8>, connected: bool },
     /// Notifikasi Windows; isinya dicari di `App.notifs` berdasarkan id.
     Notification { id: u32 },
+    /// HUD kecil: tombol kunci (On/Off).
+    Hud { kind: HudKind, on: bool },
 }
 
 pub(crate) struct Toast {
@@ -41,6 +70,17 @@ impl App {
         if self.display_off {
             return;
         }
+        // HUD beruntun (mis. Caps Lock ditekan dua kali) menggantikan HUD yang sedang tampil, tanpa antre.
+        if let (Some(cur), ToastKind::Hud { .. }) = (self.toast.as_mut(), &kind) {
+            if matches!(cur.kind, ToastKind::Hud { .. }) {
+                let same = cur.kind == kind || matches!((&cur.kind, &kind), (ToastKind::Hud { kind: a, .. }, ToastKind::Hud { kind: b, .. }) if a == b);
+                cur.kind = kind;
+                // jenis sama: lewati animasi masuk (isi sudah tampil), hanya perpanjang waktu
+                cur.t0 = if same { Instant::now() - Duration::from_millis(450) } else { Instant::now() };
+                cur.dur = 1.9;
+                return;
+            }
+        }
         if self.toast.is_none() && !self.expanded() {
             self.start_toast(kind);
         } else if self.toast_q.len() < 3 {
@@ -53,6 +93,7 @@ impl App {
             ToastKind::LowBattery { .. } => 4.0,
             ToastKind::Bluetooth { .. } => 3.8,
             ToastKind::Notification { .. } => 4.5,
+            ToastKind::Hud { .. } => 1.9,
             _ => 3.4,
         };
         perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
@@ -91,6 +132,7 @@ impl App {
     pub(crate) fn toast_size(&self) -> (f32, f32) {
         match self.toast.as_ref().map(|t| &t.kind) {
             Some(ToastKind::Bluetooth { .. }) | Some(ToastKind::Notification { .. }) => TOAST_BT,
+            Some(ToastKind::Hud { .. }) => TOAST_HUD,
             _ => TOAST_CHARGE,
         }
     }
@@ -124,6 +166,10 @@ impl App {
             self.draw_notif_toast(g, w, h, al, t, *id);
             return;
         }
+        if let ToastKind::Hud { kind, on } = &ts.kind {
+            Self::draw_hud_toast(g, w, h, al, t, *kind, *on);
+            return;
+        }
 
         // (warna aksen, judul, subjudul, fraksi ring, teks kanan)
         let (rgb, title, sub, frac, right) = match &ts.kind {
@@ -138,7 +184,7 @@ impl App {
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
-            ToastKind::Notification { .. } => unreachable!(),
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } => unreachable!(),
         };
 
         // Ring + ikon: membesar dengan pegas, ring menyapu dari 0.
@@ -161,7 +207,7 @@ impl App {
             ToastKind::Unplugged { pct } => g.icon_battery(rcx, cy, 16.0 * sc, *pct as f32 / 100.0, &ic),
             ToastKind::LowBattery { .. } => g.icon_battery(rcx, cy, 16.0 * sc, 0.12, &ic),
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
-            ToastKind::Notification { .. } => {}
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } => {}
         }
 
         // Teks: geser 6 px + fade dengan jeda singkat.
@@ -216,5 +262,25 @@ impl App {
 
         let swing = (t * 22.0).sin() * (1.0 - t / 0.9).max(0.0);
         g.icon_bell(x0 + w - 30.0, cy, 16.0 * sc, swing, &paint(255, 255, 255, al * k * 0.9));
+    }
+}
+
+impl App {
+    /// HUD kecil untuk tombol kunci: ikon huruf dalam ring, nama tombol, dan status On/Off berwarna.
+    fn draw_hud_toast(g: &mut Gfx, w: f32, h: f32, al: f32, t: f32, kind: HudKind, on: bool) {
+        let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        let col = if on { SLIDE_ACCENT } else { GREY };
+        let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
+        let (rcx, r) = (x0 + 28.0, 14.0 * sc);
+        // ring terisi penuh saat On, redup saat Off (sapuan singkat saat muncul)
+        let sweep = 1.0 - (1.0 - ((t - 0.05) / 0.35).clamp(0.0, 1.0)).powi(3);
+        let frac = if on { sweep } else { 0.0 };
+        g.ring(rcx, cy, r, frac, 3.0, &paint(col[0], col[1], col[2], 0.28 * al), &paint(col[0], col[1], col[2], al));
+        g.txt_c(kind.glyph(), rcx, cy - 7.0 * sc, 13.0 * sc, [255, 255, 255], al * if on { 1.0 } else { 0.55 }, 20.0, true);
+        let k = ss(0.08, 0.32, t);
+        g.txtb(kind.label(), x0 + 54.0 + (1.0 - k) * 6.0, cy - 9.0, 14.0, [255, 255, 255], al * k, 120.0);
+        let state = if on { "On" } else { "Off" };
+        let sw = g.width_ex(state, 14.0, true);
+        g.txtb(state, x0 + w - 20.0 - sw, cy - 9.0, 14.0, col, al * k, 50.0);
     }
 }
