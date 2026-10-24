@@ -3,7 +3,9 @@
 
 #define AppName "Hesewake Notch"
 #define AppExe "hesewake-notch.exe"
-#define AppVersion GetVersionNumbersString("target\release\hesewake-notch.exe")
+#define VerFull GetVersionNumbersString("target\release\hesewake-notch.exe")
+; "0.2.0.0" -> "0.2.0"
+#define AppVersion Copy(VerFull, 1, Len(VerFull) - 2)
 
 [Setup]
 ; GUID tetap agar upgrade menimpa instalasi lama.
