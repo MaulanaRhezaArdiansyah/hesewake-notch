@@ -25,7 +25,7 @@ pub(crate) enum Access {
 }
 
 pub(crate) enum NotifEvent {
-    Added { id: u32, app: String, title: String, body: String, at_unix: u64, icon: Option<Vec<u8>>, initial: bool },
+    Added { id: u32, app: String, title: String, body: String, at_unix: u64, icon: Option<Vec<u8>>, avatar: Option<Vec<u8>>, initial: bool },
     Removed(u32),
     Status(Access),
 }
@@ -40,6 +40,8 @@ pub(crate) struct NotifItem {
     pub(crate) at_unix: u64,
     pub(crate) unread: bool,
     pub(crate) icon: Option<Pixmap>,
+    /// Foto profil kontak (dari payload toast) bila ada; digambar bulat dengan logo aplikasi sebagai lencana.
+    pub(crate) avatar: Option<Pixmap>,
     /// Mulai animasi hapus (None = tampil normal); item dibuang setelah animasi selesai.
     pub(crate) dismiss: Option<Instant>,
 }
@@ -92,10 +94,20 @@ pub(crate) fn start(hwnd: isize, slot: NotifSlot) {
 
 /// Poll berjalan hanya bila fitur aktif dan layar menyala.
 static ENABLED: AtomicBool = AtomicBool::new(true);
+static AVATAR: AtomicBool = AtomicBool::new(true);
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
+}
+
+/// Ambil foto profil dari payload toast (Settings > Display > Contact photos).
+pub(crate) fn set_avatar(on: bool) {
+    AVATAR.store(on, Ordering::Relaxed);
+}
+
+pub(crate) fn avatar_enabled() -> bool {
+    AVATAR.load(Ordering::Relaxed)
 }
 
 pub(crate) fn set_paused(paused: bool) {
@@ -109,6 +121,7 @@ const POLL_MS: u64 = 1500;
 /// sebelumnya (id baru = Added, id hilang = Removed). Panggilannya murah; berhenti saat layar mati / fitur dimatikan.
 fn begin(hwnd: isize, slot: NotifSlot) {
     push(&slot, hwnd, NotifEvent::Status(Access::Allowed));
+    notif_img::start_watchers();
     std::thread::spawn(move || {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -206,7 +219,8 @@ fn convert(n: &UserNotification, initial: bool) -> Option<NotifEvent> {
     let t0 = Instant::now();
     let icon = display.as_ref().and_then(|d| logo_with_timeout(d.clone()));
     perf::note(&format!("notif: convert id={id} app='{app}' icon={} ({} ms) mem={:.1}MB", icon.is_some(), t0.elapsed().as_millis(), perf::mem_mb()));
-    Some(NotifEvent::Added { id, app, title, body, at_unix, icon, initial })
+    let avatar = if AVATAR.load(Ordering::Relaxed) { notif_img::avatar_rgba(id) } else { None };
+    Some(NotifEvent::Added { id, app, title, body, at_unix, icon, avatar, initial })
 }
 
 /// Baca logo di thread sendiri dengan batas waktu: beberapa logo aplikasi tidak pernah selesai dimuat dan tidak
@@ -268,6 +282,25 @@ pub(crate) fn draw_app_icon(g: &mut Gfx, item: &NotifItem, x: f32, y: f32, size:
     }
 }
 
+/// Avatar bulat (foto kontak) + logo aplikasi kecil sebagai lencana; tanpa avatar jatuh ke ikon aplikasi biasa.
+pub(crate) fn draw_avatar(g: &mut Gfx, item: &NotifItem, x: f32, y: f32, size: f32, al: f32) {
+    let Some(pm) = &item.avatar else {
+        draw_app_icon(g, item, x, y, size, al);
+        return;
+    };
+    let s = size / pm.width() as f32;
+    let mut p = Paint::default();
+    p.shader = Pattern::new(pm.as_ref(), SpreadMode::Pad, FilterQuality::Bilinear, al, Transform::from_row(s, 0.0, 0.0, s, x, y));
+    p.anti_alias = true;
+    g.fill(&rrect(x, y, size, size, size / 2.0), &p);
+    if item.icon.is_some() {
+        let b = size * 0.46;
+        let (bx, by) = (x + size - b + size * 0.07, y + size - b + size * 0.07);
+        g.circle(bx + b / 2.0, by + b / 2.0, b / 2.0 + 1.6, &paint(6, 8, 14, al));
+        draw_app_icon(g, item, bx, by, b, al);
+    }
+}
+
 impl App {
     pub(crate) fn unread_count(&self) -> usize {
         self.notifs.iter().filter(|n| n.unread && n.dismiss.is_none()).count()
@@ -279,12 +312,13 @@ impl App {
             match ev {
                 NotifEvent::Status(a) => self.notif_access = a,
                 NotifEvent::Removed(id) => self.notifs.retain(|n| n.id != id),
-                NotifEvent::Added { id, app, title, body, at_unix, icon, initial } => {
+                NotifEvent::Added { id, app, title, body, at_unix, icon, avatar, initial } => {
                     if !self.notif_on || self.notifs.iter().any(|n| n.id == id) || notif_muted(&app) {
                         continue;
                     }
                     let icon = icon.and_then(|rgba| pixmap_from_rgba(&rgba, ICON_PX));
-                    self.notifs.push(NotifItem { id, app, title, body, at_unix, unread: !initial, icon, dismiss: None });
+                    let avatar = avatar.and_then(|rgba| pixmap_from_rgba(&rgba, notif_img::AVATAR_PX));
+                    self.notifs.push(NotifItem { id, app, title, body, at_unix, unread: !initial, icon, avatar, dismiss: None });
                     self.notifs.sort_by(|a, b| b.at_unix.cmp(&a.at_unix));
                     self.notifs.truncate(MAX_ITEMS);
                     if !initial {

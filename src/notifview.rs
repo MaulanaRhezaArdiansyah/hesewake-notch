@@ -198,7 +198,7 @@ impl App {
             }
             let x = LX + ox + r.dx;
             g.fill(&rrect(x, r.y, CW, ROW_H, 12.0), &paint(255, 255, 255, if n.unread { 0.13 } else { 0.07 } * a));
-            notif::draw_app_icon(g, n, x + 8.0, r.y + 5.0, 24.0, a);
+            notif::draw_avatar(g, n, x + 8.0, r.y + 5.0, 24.0, a);
             let tx = x + 40.0;
             let max_w = CW - 40.0 - 52.0;
             let title = if n.title.is_empty() { n.app.as_str() } else { n.title.as_str() };

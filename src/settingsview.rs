@@ -231,7 +231,10 @@ impl App {
                         self.cfg.lyric_lead_ms = (self.cfg.lyric_lead_ms + d).clamp(LEAD_MIN, LEAD_MAX);
                     }
                 }
-                (1, 3) => self.cfg.notif_avatar = !self.cfg.notif_avatar,
+                (1, 3) => {
+                    self.cfg.notif_avatar = !self.cfg.notif_avatar;
+                    notif::set_avatar(self.cfg.notif_avatar);
+                }
                 (2, 0) => {
                     self.notif_on = !self.notif_on;
                     notif::set_enabled(self.notif_on);

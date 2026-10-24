@@ -106,6 +106,7 @@ unsafe fn poll(a: &mut App) {
                     at_unix: notif::now_unix(),
                     unread: true,
                     icon: None,
+                    avatar: None,
                     dismiss: None,
                 });
                 a.notif_access = notif::Access::Allowed;

@@ -68,6 +68,7 @@ mod music;
 mod nav;
 mod net;
 mod notif;
+mod notif_img;
 mod notifview;
 mod note;
 mod pace;
@@ -361,6 +362,7 @@ fn main() -> Result<()> {
         let notif_slot: notif::NotifSlot = Arc::new(Mutex::new(Vec::new()));
         let cfg = Settings::load();
         let notif_on = cfg.notifications;
+        notif::set_avatar(cfg.notif_avatar);
         if notif_on {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }

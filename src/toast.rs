@@ -202,7 +202,7 @@ impl App {
         let (x0, cy) = (CX - w / 2.0, h / 2.0);
         let sc = 0.55 + 0.45 * pop(t).clamp(0.0, 1.2);
         let isz = 34.0 * sc;
-        notif::draw_app_icon(g, item, x0 + 20.0 + (34.0 - isz) / 2.0, cy - isz / 2.0, isz, al);
+        notif::draw_avatar(g, item, x0 + 20.0 + (34.0 - isz) / 2.0, cy - isz / 2.0, isz, al);
 
         let k = ss(0.12, 0.4, t);
         let tx = x0 + 66.0 + (1.0 - k) * 6.0;

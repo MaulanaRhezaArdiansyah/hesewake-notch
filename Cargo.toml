@@ -16,6 +16,8 @@ serde_json = "1"
 version = "0.58"
 features = [
   "Foundation",
+  "Win32_System_IO",
+  "Win32_Storage_FileSystem",
   "Win32_System_ProcessStatus",
   "ApplicationModel",
   "UI_Notifications_Management",
