@@ -7,7 +7,7 @@
 //! - Media: Windows GSMTC (Spotify, browsers, ...). Artwork from GSMTC, fallback to iTunes Search API
 //! - Hotkey Ctrl+Alt+H (or "h" when focused): toggle clock <-> eye
 //! - Idle: 10 min clock (time), then 15 min "blinking eye" (shapes baked from eye.svg) with a running
-//!   red-shades glow that fades to transparent upwards, then loop (only counts while idle)
+//!   blue-shades glow that fades to transparent upwards, then loop (only counts while idle)
 //! - Startup: the eye + glow show for 1 s right after launch, then cross-fade into the clock
 //! - Data: %APPDATA%\hesewake-notch\todo.txt, water.txt, shelf.txt and notepad.txt (todo/water migrated automatically from the old %APPDATA%\notch folder)
 //! - Font: Instrument Sans (embedded in the exe, see assets/)

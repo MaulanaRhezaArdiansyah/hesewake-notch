@@ -14,6 +14,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 - Registri slide (`SlideId`) dan model pengaturan (`settings.txt`: `slides=`, `lyric_lead_ms=`, `busy_on_maximized=`, ...) yang kompatibel dengan berkas lama.
 
 ### Changed
+- Glow mata saat idle memakai palet **biru** (sebelumnya merah), serasi dengan tema.
 - Jendela **maximized biasa tidak lagi** membuat notch menyusut jadi garis tipis; hanya layar penuh sungguhan dan aplikasi Adobe. Bisa dikembalikan lewat Settings > Display > "Thin on maximize".
 - Pindah slide, titik slide, dan hover lonceng memakai identitas slide (bukan nomor tetap), jadi tetap benar saat slide disembunyikan atau diurutkan ulang.
 

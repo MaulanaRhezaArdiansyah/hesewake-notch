@@ -39,16 +39,16 @@ const EYE_LOOK_MAX: f32 = 2.2; // glance range in px
 const EYE_LOOK_K: f32 = 140.0;
 const EYE_LOOK_C: f32 = 24.0;
 
-// Glow: running palette of red shades along X, fading to transparent upwards.
+// Glow: running palette of blue shades along X, fading to transparent upwards.
 const GLOW_ALPHA: f32 = 0.85;
 const GLOW_REACH: f32 = 0.95; // fraction of the notch height the glow climbs
 const GLOW_FLOW: f32 = 0.10; // palette cycles per second
 const EYE_PAL: [[f32; 3]; 5] = [
-    [255.0, 50.0, 60.0],  // bright red
-    [190.0, 14.0, 36.0],  // crimson
-    [255.0, 92.0, 86.0],  // light coral red
-    [140.0, 8.0, 26.0],   // dark red
-    [235.0, 34.0, 50.0],  // red
+    [90.0, 150.0, 255.0],  // bright blue
+    [40.0, 110.0, 235.0],  // royal blue
+    [130.0, 190.0, 255.0], // light sky blue
+    [20.0, 70.0, 190.0],   // deep blue
+    [70.0, 140.0, 255.0],  // blue
 ];
 
 // ---------------------------------------------------------------- idle animation
@@ -245,7 +245,7 @@ pub(crate) fn build_eye_paths() -> Vec<Path> {
     vec![eye_path(EYE_L_START, &EYE_L), eye_path(EYE_R_START, &EYE_R)]
 }
 
-/// Running gradient behind the eye: a palette (shades of red) flows along X while the
+/// Running gradient behind the eye: a palette (shades of blue) flows along X while the
 /// alpha fades to transparent towards the top. Written straight into the pixmap, limited to the notch
 /// rectangle (about 150x32 px), no allocations, no shaders -> negligible CPU.
 fn eye_glow(g: &mut Gfx, w: f32, h: f32, t: f32, strength: f32) {
