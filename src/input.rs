@@ -141,6 +141,7 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 }
                 present(a);
             }
+            SlideId::System => {}
             SlideId::Settings => {
                 a.settings_click(x, y);
                 present(a);

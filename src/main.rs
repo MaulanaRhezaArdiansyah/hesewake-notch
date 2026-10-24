@@ -82,6 +82,7 @@ mod settingsview;
 mod shelf;
 mod slides;
 mod sys;
+mod sysview;
 mod todo;
 mod toast;
 mod water;
@@ -219,6 +220,7 @@ struct App {
     settings_open: bool,
     settings_prev: Option<SlideId>,
     sui: settingsview::SettingsUi,
+    sys_ui: sysview::SysUi,
 }
 
 static APP: Mutex<Option<App>> = Mutex::new(None);
@@ -509,6 +511,7 @@ fn main() -> Result<()> {
             settings_open: false,
             settings_prev: None,
             sui: settingsview::SettingsUi::new(),
+            sys_ui: sysview::SysUi::new(),
             cfg,
         };
         let (tw, th) = target(&app);

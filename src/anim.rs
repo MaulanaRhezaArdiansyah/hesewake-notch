@@ -38,7 +38,7 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() {
         16
     } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide
@@ -98,6 +98,9 @@ unsafe fn poll(a: &mut App) {
         redraw = true;
     }
     a.notif_ui_step();
+    if a.sys_sample() {
+        redraw = true;
+    }
     if a.splash.is_none() {
         if let Some(k) = a.demo_toast.take() {
             if let toast::ToastKind::Privacy { cam, app } = &k {
@@ -293,6 +296,7 @@ pub(crate) unsafe fn tick(id: usize) {
         a.water_ui_step(dt);
         a.lyric_scroll_step(dt);
         a.settings_ui_step(dt);
+        a.sys_step(dt);
         a.notif_ui_step();
 
         // Only advance the eye once the notch is back to its small size, so the pop-open is actually seen.

@@ -119,7 +119,7 @@ mod tests {
         assert!(!s.notifications);
         assert!(!s.busy_on_maximized);
         assert_eq!(s.lyric_lead_ms, 150);
-        assert_eq!(s.slides.len(), 6);
+        assert_eq!(s.slides.len(), SlideId::USER.len());
     }
 
     #[test]

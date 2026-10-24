@@ -168,6 +168,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Ledge => a.slide_shelf(&mut g, ox, al),
                 SlideId::Notifications => a.slide_notifs(&mut g, ox, al),
                 SlideId::Settings => a.slide_settings(&mut g, ox, al),
+                SlideId::System => a.slide_system(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
             }
         }

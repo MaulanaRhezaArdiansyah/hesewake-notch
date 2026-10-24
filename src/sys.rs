@@ -216,6 +216,30 @@ pub(crate) unsafe fn about(hwnd: HWND) {
     let _ = MessageBoxW(hwnd, &HSTRING::from(text), w!("About Hesewake Notch"), MB_OK | MB_ICONINFORMATION);
 }
 
+/// Keadaan baterai terperinci (slide System).
+#[derive(Clone, Copy)]
+pub(crate) struct Battery {
+    pub(crate) ac: bool,
+    pub(crate) pct: u8,
+    pub(crate) charging: bool,
+    /// Sisa waktu (detik) saat memakai baterai, bila Windows tahu.
+    pub(crate) secs: Option<u32>,
+}
+
+pub(crate) fn battery() -> Option<Battery> {
+    let mut st = SYSTEM_POWER_STATUS::default();
+    unsafe { GetSystemPowerStatus(&mut st).ok()? };
+    if st.BatteryFlag & 128 != 0 || st.BatteryLifePercent > 100 {
+        return None;
+    }
+    Some(Battery {
+        ac: st.ACLineStatus == 1,
+        pct: st.BatteryLifePercent,
+        charging: st.BatteryFlag & 8 != 0,
+        secs: (st.BatteryLifeTime != u32::MAX).then_some(st.BatteryLifeTime),
+    })
+}
+
 /// (charger tersambung, persen baterai). None bila tidak ada baterai atau status tidak diketahui.
 pub(crate) fn power_status() -> Option<(bool, u8)> {
     let mut st = SYSTEM_POWER_STATUS::default();

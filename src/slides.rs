@@ -9,14 +9,21 @@ pub(crate) enum SlideId {
     Ledge,
     Scrap,
     Notifications,
+    /// CPU, memori, jaringan, baterai. Default tersembunyi.
+    System,
     /// Hanya muncul (di akhir) selama dibuka lewat item menu "Settings"; tidak ada di carousel saat tertutup.
     Settings,
 }
 
 impl SlideId {
     /// Slide yang bisa diatur pengguna (urutan bawaan).
-    pub(crate) const USER: [SlideId; 6] =
-        [SlideId::Music, SlideId::Water, SlideId::Todo, SlideId::Ledge, SlideId::Scrap, SlideId::Notifications];
+    pub(crate) const USER: [SlideId; 7] =
+        [SlideId::Music, SlideId::Water, SlideId::Todo, SlideId::Ledge, SlideId::Scrap, SlideId::Notifications, SlideId::System];
+
+    /// Aktif secara bawaan? (slide opsional dimulai tersembunyi)
+    pub(crate) fn default_on(self) -> bool {
+        !matches!(self, SlideId::System)
+    }
 
     pub(crate) fn key(self) -> &'static str {
         match self {
@@ -26,6 +33,7 @@ impl SlideId {
             SlideId::Ledge => "ledge",
             SlideId::Scrap => "scrap",
             SlideId::Notifications => "notifs",
+            SlideId::System => "system",
             SlideId::Settings => "settings",
         }
     }
@@ -38,6 +46,7 @@ impl SlideId {
             SlideId::Ledge => "Ledge",
             SlideId::Scrap => "Scrap",
             SlideId::Notifications => "Notifications",
+            SlideId::System => "System",
             SlideId::Settings => "Settings",
         }
     }
@@ -59,7 +68,7 @@ impl SlideId {
 pub(crate) type SlideCfg = Vec<(SlideId, bool)>;
 
 pub(crate) fn default_cfg() -> SlideCfg {
-    SlideId::USER.iter().map(|&s| (s, true)).collect()
+    SlideId::USER.iter().map(|&s| (s, s.default_on())).collect()
 }
 
 /// `music,water,!todo,...` -> konfigurasi. Awalan `!` = tersembunyi. Id tak dikenal dan duplikat diabaikan; slide yang
@@ -80,7 +89,7 @@ pub(crate) fn parse_slides(s: &str) -> SlideCfg {
     }
     for id in SlideId::USER {
         if !out.iter().any(|(s, _)| *s == id) {
-            out.push((id, true));
+            out.push((id, id.default_on()));
         }
     }
     out
@@ -112,8 +121,10 @@ mod tests {
         let c = parse_slides("water,!music,todo");
         assert_eq!(&c[..3], &[(SlideId::Water, true), (SlideId::Music, false), (SlideId::Todo, true)]);
         // slide yang tidak disebut ditambahkan di akhir
-        assert_eq!(c.len(), 6);
+        assert_eq!(c.len(), SlideId::USER.len());
         assert_eq!(c[3], (SlideId::Ledge, true));
+        // slide opsional yang baru muncul di versi baru tetap tersembunyi
+        assert_eq!(c.last(), Some(&(SlideId::System, false)));
     }
 
     #[test]
@@ -121,14 +132,14 @@ mod tests {
         let c = parse_slides("music,bogus,music,!music,settings");
         assert_eq!(c.iter().filter(|(s, _)| *s == SlideId::Music).count(), 1);
         assert!(c.iter().all(|(s, _)| *s != SlideId::Settings));
-        assert_eq!(c.len(), 6);
+        assert_eq!(c.len(), SlideId::USER.len());
     }
 
     #[test]
     fn roundtrips() {
         let c = parse_slides("scrap,!ledge,music,water,todo,notifs");
         assert_eq!(parse_slides(&format_slides(&c)), c);
-        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs");
+        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system");
     }
 
     #[test]

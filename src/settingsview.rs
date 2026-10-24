@@ -44,6 +44,15 @@ fn ss(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Tab Slides: 3 kolom x 3 baris (sel sempit agar 7+ slide muat).
+const SC_W: f32 = 117.0;
+const SC_GAP: f32 = 6.5;
+
+fn slide_cell_pos(i: usize) -> (f32, f32) {
+    let (col, row) = (i / 3, i % 3);
+    (LX + col as f32 * (SC_W + SC_GAP), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
+}
+
 fn cell_pos(i: usize) -> (f32, f32) {
     let (col, row) = (i / 3, i % 3);
     (LX + col as f32 * (CELL_W + GRID_GAP_X), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
@@ -222,26 +231,26 @@ impl App {
 
     fn settings_click_slides(&mut self, x: f32, y: f32) {
         for i in 0..self.cfg.slides.len() {
-            let (cx, cy) = cell_pos(i);
-            if !in_rect(x, y, cx, cy, CELL_W, CELL_H) {
+            let (cx, cy) = slide_cell_pos(i);
+            if !in_rect(x, y, cx, cy, SC_W, CELL_H) {
                 continue;
             }
-            // tombol naik / turun / toggle (kanan ke kiri di dalam sel)
-            let (tgx, upx, dnx) = (cx + CELL_W - 46.0, cx + CELL_W - 92.0, cx + CELL_W - 68.0);
-            if in_rect(x, y, tgx, cy, 44.0, CELL_H) {
+            // dari kanan ke kiri di dalam sel: toggle, turun, naik
+            let (tgx, dnx, upx) = (cx + SC_W - 34.0, cx + SC_W - 50.0, cx + SC_W - 66.0);
+            if x >= tgx {
                 let enabled = self.cfg.slides.iter().filter(|(_, on)| *on).count();
                 // minimal satu slide harus tetap aktif
                 if !(self.cfg.slides[i].1 && enabled <= 1) {
                     self.cfg.slides[i].1 = !self.cfg.slides[i].1;
                     self.slides_changed();
                 }
-            } else if in_rect(x, y, upx, cy, 22.0, CELL_H) && i > 0 {
-                self.cfg.slides.swap(i, i - 1);
-                self.sui.swap = Some((i - 1, i, Instant::now()));
-                self.slides_changed();
-            } else if in_rect(x, y, dnx, cy, 22.0, CELL_H) && i + 1 < self.cfg.slides.len() {
+            } else if x >= dnx && i + 1 < self.cfg.slides.len() {
                 self.cfg.slides.swap(i, i + 1);
                 self.sui.swap = Some((i, i + 1, Instant::now()));
+                self.slides_changed();
+            } else if x >= upx && i > 0 {
+                self.cfg.slides.swap(i, i - 1);
+                self.sui.swap = Some((i - 1, i, Instant::now()));
                 self.slides_changed();
             }
             return;
@@ -337,11 +346,11 @@ impl App {
         let n = self.cfg.slides.len();
         for i in 0..n {
             let (id, on) = self.cfg.slides[i];
-            let (mut x, mut y) = cell_pos(i);
+            let (mut x, mut y) = slide_cell_pos(i);
             // animasi tukar tempat: sel yang baru pindah meluncur dari posisi lamanya
             if let Some((a, b, t)) = self.sui.swap {
                 let e = ss(0.0, 0.26, t.elapsed().as_secs_f32());
-                let from = if i == a { Some(cell_pos(b)) } else if i == b { Some(cell_pos(a)) } else { None };
+                let from = if i == a { Some(slide_cell_pos(b)) } else if i == b { Some(slide_cell_pos(a)) } else { None };
                 if let Some((fx, fy)) = from {
                     x = fx + (x - fx) * e;
                     y = fy + (y - fy) * e;
@@ -350,18 +359,18 @@ impl App {
             let enter = ss(0.0, 0.3, el - i as f32 * 0.04);
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
-            Self::draw_cell_bg(g, x, y, a);
+            g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
             let lab = if on { [255, 255, 255] } else { [120, 120, 128] };
-            g.txtb(id.short_label(), x + 12.0, y + ty(CELL_H, 12.0), 12.0, lab, a, CELL_W - 108.0);
+            g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0);
             let dim = |ok: bool| paint(220, 220, 228, if ok { 0.9 } else { 0.25 } * a);
             // chevron naik / turun
-            let (ux, dx, cy) = (x + CELL_W - 81.0, x + CELL_W - 57.0, y + CELL_H / 2.0);
+            let (ux, dx, cy) = (x + SC_W - 58.0, x + SC_W - 42.0, y + CELL_H / 2.0);
             let (up, dn) = (dim(i > 0), dim(i + 1 < n));
-            g.line(ux - 4.0, cy + 2.0, ux, cy - 2.0, 1.6, &up);
-            g.line(ux, cy - 2.0, ux + 4.0, cy + 2.0, 1.6, &up);
-            g.line(dx - 4.0, cy - 2.0, dx, cy + 2.0, 1.6, &dn);
-            g.line(dx, cy + 2.0, dx + 4.0, cy - 2.0, 1.6, &dn);
-            g.toggle(x + CELL_W - 44.0, y + (CELL_H - 20.0) / 2.0, 34.0, 20.0, self.sui.knob[i], 0.0, a);
+            g.line(ux - 3.5, cy + 1.8, ux, cy - 1.8, 1.5, &up);
+            g.line(ux, cy - 1.8, ux + 3.5, cy + 1.8, 1.5, &up);
+            g.line(dx - 3.5, cy - 1.8, dx, cy + 1.8, 1.5, &dn);
+            g.line(dx, cy + 1.8, dx + 3.5, cy - 1.8, 1.5, &dn);
+            g.toggle(x + SC_W - 33.0, y + (CELL_H - 18.0) / 2.0, 28.0, 18.0, self.sui.knob[i], 0.0, a);
         }
     }
 

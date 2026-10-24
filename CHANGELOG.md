@@ -7,6 +7,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 ### Added
 - **HUD volume dan kecerahan** di notch kecil: bar dengan ikon speaker/matahari dan persen, muncul saat volume berubah dari luar (tombol media, mixer Windows) atau kecerahan layar berubah (tombol Fn, slider Windows). Volume dipantau lewat callback `IAudioEndpointVolume` (otomatis pindah saat perangkat audio default berganti), kecerahan lewat notifikasi daya `GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS` (terbukti di laptop ini). Perubahan beruntun memperbarui bar di tempat. Toggle di Settings > Features. HUD bawaan Windows tetap muncul (tidak bisa dimatikan secara resmi).
 
+- **Slide System** (default **tersembunyi**; nyalakan di Settings > Slides): CPU dengan sparkline, memori (GB + ring), jaringan (unduh/unggah + sparkline, hanya adapter fisik yang aktif), dan baterai (persen, status, sisa waktu). Pengukuran hanya berjalan selama slide terlihat.
+- Tab Slides di Settings kini 3 kolom agar muat lebih banyak slide; slide opsional baru dari versi mendatang otomatis tersembunyi.
+
 ### Fixed
 - Pesan daya Windows (kecerahan, charger, layar mati/hidup) kini diteruskan lewat pesan yang di-post. Sebelumnya bisa terlewat bila tiba saat state aplikasi sedang dipegang, sehingga toast charger atau pemulihan timer setelah layar hidup berisiko hilang.
 - HUD (tombol kunci, volume, kecerahan) tidak lagi diantre saat notch sedang terbuka atau toast lain tampil, sehingga tidak muncul terlambat.
