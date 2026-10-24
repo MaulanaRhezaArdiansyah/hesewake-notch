@@ -86,3 +86,14 @@ pub(crate) fn note(msg: &str) {
         let _ = writeln!(f, "{}", msg);
     }
 }
+
+/// Memori committed proses (MB), untuk diagnosa lonjakan memori.
+pub(crate) fn mem_mb() -> f32 {
+    use windows::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    let mut c = PROCESS_MEMORY_COUNTERS::default();
+    c.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    unsafe {
+        let _ = K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb);
+    }
+    c.PagefileUsage as f32 / (1024.0 * 1024.0)
+}

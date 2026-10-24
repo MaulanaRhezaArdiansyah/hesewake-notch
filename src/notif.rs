@@ -126,7 +126,7 @@ fn begin(hwnd: isize, slot: NotifSlot) {
             if ENABLED.load(Ordering::Relaxed) && !PAUSED.load(Ordering::Relaxed) {
                 perf::note("notif: poll -> GetNotificationsAsync");
                 let res = l.GetNotificationsAsync(NotificationKinds::Toast).and_then(|a| a.get());
-                perf::note(&format!("notif: poll selesai ok={}", res.is_ok()));
+                perf::note(&format!("notif: poll selesai ok={} mem={:.1}MB", res.is_ok(), perf::mem_mb()));
                 if let Err(e) = &res {
                     perf::note(&format!("notif: poll gagal: {e}"));
                 }
@@ -205,7 +205,7 @@ fn convert(n: &UserNotification, initial: bool) -> Option<NotifEvent> {
     let at_unix = n.CreationTime().ok().map(|t| (t.UniversalTime / 10_000_000 - 11_644_473_600).max(0) as u64).unwrap_or(0);
     let t0 = Instant::now();
     let icon = display.as_ref().and_then(|d| logo_with_timeout(d.clone()));
-    perf::note(&format!("notif: convert id={id} app='{app}' icon={} ({} ms)", icon.is_some(), t0.elapsed().as_millis()));
+    perf::note(&format!("notif: convert id={id} app='{app}' icon={} ({} ms) mem={:.1}MB", icon.is_some(), t0.elapsed().as_millis(), perf::mem_mb()));
     Some(NotifEvent::Added { id, app, title, body, at_unix, icon, initial })
 }
 
@@ -234,7 +234,7 @@ fn logo_rgba(d: &windows::ApplicationModel::AppDisplayInfo) -> Option<Vec<u8>> {
     reader.LoadAsync(size).ok()?.get().ok()?;
     let mut buf = vec![0u8; size as usize];
     reader.ReadBytes(&mut buf).ok()?;
-    let img = image::load_from_memory(&buf).ok()?;
+    let img = decode_limited(&buf)?;
     Some(img.resize_to_fill(ICON_PX, ICON_PX, image::imageops::FilterType::Triangle).to_rgba8().into_raw())
 }
 

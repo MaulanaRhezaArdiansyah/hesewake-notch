@@ -55,7 +55,7 @@ impl App {
             ToastKind::Notification { .. } => 4.5,
             _ => 3.4,
         };
-        perf::note(&format!("toast start {:?}", kind));
+        perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
         self.toast = Some(Toast { kind, t0: Instant::now(), dur });
         self.drop_pulse = Some(Instant::now()); // riak tepi bawah, sama dengan saat drop file di Ledge
         self.last = Instant::now();

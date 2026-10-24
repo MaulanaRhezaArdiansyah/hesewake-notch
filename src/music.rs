@@ -122,7 +122,7 @@ fn fetch_online(title: &str, artist: &str) -> Option<Vec<u8>> {
 }
 
 fn decode_art(bytes: &[u8]) -> Option<Vec<u8>> {
-    let img = image::load_from_memory(bytes).ok()?;
+    let img = decode_limited(bytes)?;
     let img = img.resize_to_fill(ART, ART, image::imageops::FilterType::Triangle);
     Some(img.to_rgba8().into_raw())
 }

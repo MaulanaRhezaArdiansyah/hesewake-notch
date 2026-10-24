@@ -2,6 +2,16 @@
 
 use super::*;
 
+/// Decode gambar dengan batas alokasi (32 MB): cover/ikon berukuran piksel sangat besar ditolak, bukan dibongkar
+/// ke RGBA penuh yang bisa memakan puluhan MB.
+pub(crate) fn decode_limited(bytes: &[u8]) -> Option<image::DynamicImage> {
+    let mut r = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+    let mut lim = image::Limits::default();
+    lim.max_alloc = Some(32 * 1024 * 1024);
+    r.limits(lim);
+    r.decode().ok()
+}
+
 pub(crate) fn pixmap_from_rgba(rgba: &[u8], size: u32) -> Option<Pixmap> {
     let mut pm = Pixmap::new(size, size)?;
     for (d, s) in pm.data_mut().chunks_exact_mut(4).zip(rgba.chunks_exact(4)) {

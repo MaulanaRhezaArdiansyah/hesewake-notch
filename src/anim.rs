@@ -209,8 +209,9 @@ unsafe fn poll(a: &mut App) {
     if a.tick_n % 50 == 0 && a.water.roll() {
         redraw = true;
     }
-    // Trim hanya saat benar-benar diam (timer animasi mati), sekitar tiap 60 detik.
-    if a.tick_n % 600 == 0 && a.interval == 0 {
+    // Trim working set ±tiap 60 detik. Tidak lagi menunggu timer animasi mati: saat musik main timer tidak pernah
+    // mati, sehingga memori sisa decode (cover, ikon) tidak pernah dikembalikan.
+    if a.tick_n % 600 == 0 {
         trim_memory();
     }
     if let Some(t) = a.peek_until {
