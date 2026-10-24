@@ -317,18 +317,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_RBUTTONUP => {
-            let mut goal = 2000;
-            let mut remind = 60;
             let mut minimal = false;
             let mut notif_on = true;
             with_app(|a| {
                 a.menu_open = true;
-                goal = a.water.goal;
-                remind = a.water.remind_min;
                 minimal = a.minimal;
                 notif_on = a.notif_on;
             });
-            let cmd = context_menu(hwnd, goal, remind, sys::autostart_enabled(), minimal, notif_on);
+            let cmd = context_menu(hwnd, sys::autostart_enabled(), minimal, notif_on);
             run_command(hwnd, cmd);
             LRESULT(0)
         }
@@ -477,37 +473,19 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
     }
 }
 
-/// Jalankan perintah dari context menu notch atau tray (id menu di `sys::CMD_*` dan menu Water).
+/// Jalankan perintah dari context menu notch atau tray (id menu di `sys::CMD_*`).
 unsafe fn run_command(hwnd: HWND, cmd: i32) {
     let mut show_about = false;
     with_app(|a| {
         a.menu_open = false;
         match cmd {
-            10 => {
-                a.water.ml = 0;
-                a.water.save();
-            }
-            11 => a.water_add(-250),
-            sys::CMD_SNOOZE => a.water_snooze(),
-            20..=23 => {
-                a.water.goal = [1500, 2000, 2500, 3000][(cmd - 20) as usize];
-                a.water.save();
-            }
-            30..=33 => {
-                a.water.remind_min = [30, 60, 90, 0][(cmd - 30) as usize];
-                a.water.reset_timer();
-                a.water.save();
-            }
             sys::CMD_AUTOSTART => sys::set_autostart(!sys::autostart_enabled()),
             sys::CMD_MINIMAL => {
                 a.minimal = !a.minimal;
                 a.save_settings();
             }
             sys::CMD_ABOUT => show_about = true,
-            sys::CMD_SETTINGS => {
-                a.show_id(SlideId::Settings);
-                a.peek_until = Some(Instant::now() + Duration::from_secs(8));
-            }
+            sys::CMD_SETTINGS => a.open_settings(),
             sys::CMD_NOTIF => {
                 a.notif_on = !a.notif_on;
                 notif::set_enabled(a.notif_on);

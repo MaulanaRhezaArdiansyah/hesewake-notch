@@ -5,7 +5,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 ## [0.2.0] - 2026-10-24
 
 ### Added
-- **Slide Settings** (slide terakhir, selalu ada) dengan tiga tab:
+- **Slide Settings** dengan tiga tab. Slide ini **hanya muncul di carousel saat dibuka** lewat klik kanan/tray > "Settings", lalu hilang lagi setelah kamu pindah slide atau notch menutup (tidak memakan tempat di titik slide):
   - **Slides**: tampilkan/sembunyikan tiap slide dan ubah urutannya dengan tombol naik/turun (sel bertukar tempat dengan animasi).
   - **Display**: Minimal notch, "Thin on maximize", penyesuaian waktu lirik (-500 sampai +1000 ms), foto kontak pada notifikasi.
   - **Features**: notifikasi Windows dan autostart.
@@ -18,6 +18,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 - Registri slide (`SlideId`) dan model pengaturan (`settings.txt`: `slides=`, `lyric_lead_ms=`, `busy_on_maximized=`, ...) yang kompatibel dengan berkas lama.
 
 ### Changed
+- Menu klik kanan disederhanakan: item air (Remove 250 ml, Snooze, Reset, goal harian, interval pengingat) dihapus; semuanya ada di slide Water (tombol Settings dan Snooze).
 - **Runtime C/C++ ditanam ke exe** (static CRT): tidak lagi butuh Microsoft Visual C++ Redistributable di PC lain (exe ±1,9 MB).
 - Glow mata saat idle memakai palet **biru** (sebelumnya merah), serasi dengan tema.
 - Jendela **maximized biasa tidak lagi** membuat notch menyusut jadi garis tipis; hanya layar penuh sungguhan dan aplikasi Adobe. Bisa dikembalikan lewat Settings > Display > "Thin on maximize".

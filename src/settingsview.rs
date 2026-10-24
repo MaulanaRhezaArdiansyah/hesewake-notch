@@ -63,6 +63,39 @@ pub(crate) struct Row {
 }
 
 impl App {
+    /// Buka slide Settings (dari item menu): ditambahkan ke carousel lalu langsung ditampilkan.
+    pub(crate) fn open_settings(&mut self) {
+        if !self.settings_open {
+            self.settings_prev = Some(self.cur_id());
+            self.settings_open = true;
+            self.order = slides::visible_order(&self.cfg.slides, true);
+        }
+        self.show_id(SlideId::Settings);
+        self.peek_until = Some(Instant::now() + Duration::from_secs(8));
+    }
+
+    /// Keluarkan Settings dari carousel bila pengguna sudah pindah ke slide lain atau notch menutup. Dipanggil saat
+    /// carousel diam. True bila ada perubahan.
+    pub(crate) fn settings_autoclose(&mut self) -> bool {
+        if !self.settings_open {
+            return false;
+        }
+        let on_settings = self.is_slide(SlideId::Settings);
+        let collapsed = !self.expanded() && self.h < 90.0;
+        if on_settings && !collapsed {
+            return false;
+        }
+        // tetap di slide yang sedang dilihat; bila notch menutup di Settings, kembali ke slide asal
+        let keep = if on_settings { self.settings_prev } else { Some(self.cur_id()) };
+        self.settings_open = false;
+        self.order = slides::visible_order(&self.cfg.slides, false);
+        let idx = keep.and_then(|id| self.order.iter().position(|&s| s == id)).unwrap_or(0);
+        self.slide = idx as i32;
+        self.sp = idx as f32;
+        self.sv = 0.0;
+        true
+    }
+
     fn settings_visible(&self) -> bool {
         self.expanded() && self.is_slide(SlideId::Settings) && self.h > 100.0
     }
@@ -107,7 +140,7 @@ impl App {
     /// Terapkan perubahan konfigurasi slide: bangun ulang urutan dan tetap berada di slide Settings.
     pub(crate) fn apply_slide_cfg(&mut self) {
         let cur = self.cur_id();
-        self.order = slides::visible_order(&self.cfg.slides);
+        self.order = slides::visible_order(&self.cfg.slides, self.settings_open);
         let idx = self.order.iter().position(|&s| s == cur).unwrap_or(self.order.len() - 1);
         self.slide = idx as i32;
         self.sp = idx as f32;
@@ -194,8 +227,12 @@ impl App {
             // tombol naik / turun / toggle (kanan ke kiri di dalam sel)
             let (tgx, upx, dnx) = (cx + CELL_W - 46.0, cx + CELL_W - 92.0, cx + CELL_W - 68.0);
             if in_rect(x, y, tgx, cy, 44.0, CELL_H) {
-                self.cfg.slides[i].1 = !self.cfg.slides[i].1;
-                self.slides_changed();
+                let enabled = self.cfg.slides.iter().filter(|(_, on)| *on).count();
+                // minimal satu slide harus tetap aktif
+                if !(self.cfg.slides[i].1 && enabled <= 1) {
+                    self.cfg.slides[i].1 = !self.cfg.slides[i].1;
+                    self.slides_changed();
+                }
             } else if in_rect(x, y, upx, cy, 22.0, CELL_H) && i > 0 {
                 self.cfg.slides.swap(i, i - 1);
                 self.sui.swap = Some((i - 1, i, Instant::now()));

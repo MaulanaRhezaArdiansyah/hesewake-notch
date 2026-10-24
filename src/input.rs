@@ -150,36 +150,12 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
     });
 }
 
-pub(crate) unsafe fn context_menu(hwnd: HWND, goal: u32, remind: u32, autostart: bool, minimal: bool, notif_on: bool) -> i32 {
+pub(crate) unsafe fn context_menu(hwnd: HWND, autostart: bool, minimal: bool, notif_on: bool) -> i32 {
     let menu = match CreatePopupMenu() {
         Ok(m) => m,
         Err(_) => return 0,
     };
     let chk = |on: bool| if on { MF_STRING | MF_CHECKED } else { MF_STRING };
-    let _ = AppendMenuW(menu, MF_STRING, 11, w!("Remove 250 ml"));
-    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_SNOOZE as usize, w!("Snooze reminder 10 min"));
-    let _ = AppendMenuW(menu, MF_STRING, 10, w!("Reset today's water"));
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let goals = [
-        (20usize, w!("Daily goal 1.5 L"), 1500u32),
-        (21, w!("Daily goal 2.0 L"), 2000),
-        (22, w!("Daily goal 2.5 L"), 2500),
-        (23, w!("Daily goal 3.0 L"), 3000),
-    ];
-    for (id, label, v) in goals {
-        let _ = AppendMenuW(menu, chk(goal == v), id, label);
-    }
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let rem = [
-        (30usize, w!("Remind every 30 min"), 30u32),
-        (31, w!("Remind every 60 min"), 60),
-        (32, w!("Remind every 90 min"), 90),
-        (33, w!("Reminders off"), 0),
-    ];
-    for (id, label, v) in rem {
-        let _ = AppendMenuW(menu, chk(remind == v), id, label);
-    }
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, chk(autostart), sys::CMD_AUTOSTART as usize, w!("Start with Windows"));
     let _ = AppendMenuW(menu, chk(minimal), sys::CMD_MINIMAL as usize, w!("Minimal notch"));
     let _ = AppendMenuW(menu, chk(notif_on), sys::CMD_NOTIF as usize, w!("Windows notifications"));

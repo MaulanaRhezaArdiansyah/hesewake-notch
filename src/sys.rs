@@ -15,7 +15,6 @@ pub(crate) const WM_TRAY: u32 = WM_APP + 1;
 
 // ---- id menu bersama (context menu notch + tray)
 pub(crate) const CMD_EXIT: i32 = 1;
-pub(crate) const CMD_SNOOZE: i32 = 12;
 pub(crate) const CMD_AUTOSTART: i32 = 40;
 pub(crate) const CMD_MINIMAL: i32 = 41;
 pub(crate) const CMD_ABOUT: i32 = 42;

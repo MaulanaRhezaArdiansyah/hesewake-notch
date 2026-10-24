@@ -9,7 +9,7 @@ pub(crate) enum SlideId {
     Ledge,
     Scrap,
     Notifications,
-    /// Selalu ada dan selalu terakhir (tidak bisa disembunyikan) supaya pengguna tidak terkunci.
+    /// Hanya muncul (di akhir) selama dibuka lewat item menu "Settings"; tidak ada di carousel saat tertutup.
     Settings,
 }
 
@@ -90,10 +90,16 @@ pub(crate) fn format_slides(cfg: &[(SlideId, bool)]) -> String {
     cfg.iter().map(|(s, on)| if *on { s.key().to_string() } else { format!("!{}", s.key()) }).collect::<Vec<_>>().join(",")
 }
 
-/// Urutan slide yang benar-benar tampil: yang aktif, lalu `Settings` di akhir.
-pub(crate) fn visible_order(cfg: &[(SlideId, bool)]) -> Vec<SlideId> {
+/// Urutan slide yang benar-benar tampil: yang aktif; `Settings` hanya ada (di akhir) selama dibuka lewat menu.
+/// Tanpa slide aktif dan Settings tertutup, slide pertama tetap ditampilkan agar carousel tidak kosong.
+pub(crate) fn visible_order(cfg: &[(SlideId, bool)], settings_open: bool) -> Vec<SlideId> {
     let mut v: Vec<SlideId> = cfg.iter().filter(|(_, on)| *on).map(|(s, _)| *s).collect();
-    v.push(SlideId::Settings);
+    if v.is_empty() && !settings_open {
+        v.push(cfg.first().map_or(SlideId::Music, |(s, _)| *s));
+    }
+    if settings_open {
+        v.push(SlideId::Settings);
+    }
     v
 }
 
@@ -126,14 +132,18 @@ mod tests {
     }
 
     #[test]
-    fn visible_order_ends_with_settings() {
+    fn settings_only_when_open() {
         let c = parse_slides("!music,water");
-        let v = visible_order(&c);
-        assert_eq!(v.last(), Some(&SlideId::Settings));
-        assert!(!v.contains(&SlideId::Music));
-        assert_eq!(v[0], SlideId::Water);
-        // semua disembunyikan -> hanya Settings
+        let closed = visible_order(&c, false);
+        assert!(!closed.contains(&SlideId::Settings));
+        assert!(!closed.contains(&SlideId::Music));
+        assert_eq!(closed[0], SlideId::Water);
+        let open = visible_order(&c, true);
+        assert_eq!(open.last(), Some(&SlideId::Settings));
+        assert_eq!(&open[..open.len() - 1], &closed[..]);
+        // semua disembunyikan: tertutup -> satu slide cadangan; terbuka -> hanya Settings
         let all_off: SlideCfg = SlideId::USER.iter().map(|&s| (s, false)).collect();
-        assert_eq!(visible_order(&all_off), vec![SlideId::Settings]);
+        assert_eq!(visible_order(&all_off, false), vec![SlideId::Music]);
+        assert_eq!(visible_order(&all_off, true), vec![SlideId::Settings]);
     }
 }

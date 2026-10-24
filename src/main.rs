@@ -213,6 +213,9 @@ struct App {
     vol_t: Instant,
     vol_state: (u8, bool),
     order: Vec<SlideId>,
+    /// Slide Settings sedang dibuka (ada di carousel) dan slide asal sebelum dibuka.
+    settings_open: bool,
+    settings_prev: Option<SlideId>,
     sui: settingsview::SettingsUi,
 }
 
@@ -438,7 +441,7 @@ fn main() -> Result<()> {
             ac_prev: sys::power_status().map(|p| p.0),
             low_armed: true,
             demo_toast: demo_toast(),
-            demo_slide: std::env::args().find_map(|a| a.strip_prefix("--demo-slide=").and_then(|n| n.parse().ok())),
+            demo_slide: std::env::args().find_map(|a| a.strip_prefix("--demo-slide=").and_then(|n| if n == "settings" { Some(usize::MAX) } else { n.parse().ok() })),
             display_off: false,
             menu_open: false,
             peek_until: None,
@@ -497,7 +500,9 @@ fn main() -> Result<()> {
             priv_t: Instant::now() - Duration::from_secs(10),
             vol_t: Instant::now() - Duration::from_secs(10),
             vol_state: (0, false),
-            order: slides::visible_order(&cfg.slides),
+            order: slides::visible_order(&cfg.slides, false),
+            settings_open: false,
+            settings_prev: None,
             sui: settingsview::SettingsUi::new(),
             cfg,
         };

@@ -94,6 +94,9 @@ unsafe fn poll(a: &mut App) {
     if a.toast_update() {
         redraw = true;
     }
+    if a.settings_open && settled(a) && a.settings_autoclose() {
+        redraw = true;
+    }
     a.notif_ui_step();
     if a.splash.is_none() {
         if let Some(k) = a.demo_toast.take() {
@@ -126,7 +129,11 @@ unsafe fn poll(a: &mut App) {
     }
     if a.splash.is_none() {
         if let Some(n) = a.demo_slide.take() {
-            a.show(n);
+            if n == usize::MAX {
+                a.open_settings();
+            } else {
+                a.show(n);
+            }
             a.peek_until = Some(Instant::now() + Duration::from_secs(25));
             redraw = true;
         }
@@ -322,6 +329,7 @@ pub(crate) unsafe fn tick(id: usize) {
             let k = a.slide.div_euclid(n) * n;
             a.slide -= k;
             a.sp -= k as f32;
+            a.settings_autoclose();
         }
         present(a);
         schedule(a);
