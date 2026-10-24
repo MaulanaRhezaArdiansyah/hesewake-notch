@@ -25,6 +25,8 @@ pub(crate) struct Settings {
     pub(crate) hud_brightness: bool,
     /// Cuaca di kiri jam (suhu dan ikon kondisi bergantian).
     pub(crate) weather_on: bool,
+    /// Monitor tempat notch tampil: 0 = utama, 1 = ikuti kursor, n >= 2 = monitor ke-(n-1).
+    pub(crate) monitor: usize,
     /// Indeks di `weather::CITIES`.
     pub(crate) weather_city: usize,
     pub(crate) slides: SlideCfg,
@@ -47,6 +49,7 @@ impl Default for Settings {
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
+            monitor: 0,
             weather_city: 0,
             slides: slides::default_cfg(),
         }
@@ -71,6 +74,11 @@ impl Settings {
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
+                "monitor" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.monitor = n.min(32);
+                    }
+                }
                 "weather_city" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.weather_city = n.min(weather::CITIES.len() - 1);
@@ -93,7 +101,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nmonitor={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -105,6 +113,7 @@ impl Settings {
             self.hud_brightness as u8,
             self.weather_on as u8,
             self.weather_city,
+            self.monitor,
             slides::format_slides(&self.slides),
         )
     }

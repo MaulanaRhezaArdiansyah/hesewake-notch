@@ -98,6 +98,9 @@ unsafe fn poll(a: &mut App) {
         redraw = true;
     }
     a.notif_ui_step();
+    if a.tick_n % 5 == 0 && a.monitor_follow() {
+        redraw = true;
+    }
     if a.sys_sample() {
         redraw = true;
     }
@@ -202,7 +205,7 @@ unsafe fn poll(a: &mut App) {
                 (a.w.max(IDLE.0) + 12.0, a.h.max(IDLE.1) + 6.0)
             };
             let x = (p.x - a.wx) as f32;
-            let y = p.y as f32;
+            let y = (p.y - a.wy) as f32;
             let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh;
             if inside != a.hover {
                 // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.
@@ -218,7 +221,7 @@ unsafe fn poll(a: &mut App) {
         }
     }
     if a.tick_n % 5 == 0 {
-        let b = is_busy(HWND(a.hwnd as *mut c_void), a.cfg.busy_on_maximized);
+        let b = is_busy(HWND(a.hwnd as *mut c_void), a.cfg.busy_on_maximized, &a.mon);
         if b != a.busy {
             a.busy = b;
             changed = true;

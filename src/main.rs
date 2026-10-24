@@ -66,6 +66,7 @@ mod input;
 mod keys;
 mod lyricview;
 mod lyrics;
+mod monitors;
 mod music;
 mod nav;
 mod net;
@@ -114,6 +115,10 @@ use window::{wndproc};
 struct App {
     hwnd: isize,
     wx: i32,
+    /// Tepi atas window (koordinat layar): bukan 0 bila notch di monitor lain.
+    wy: i32,
+    /// Monitor yang sedang dipakai notch (koordinat layar).
+    mon: RECT,
     mem_dc: isize,
     bits: usize,
     gfx: Option<Gfx>,
@@ -321,15 +326,16 @@ fn main() -> Result<()> {
         };
         RegisterClassW(&wc);
 
-        let sw = GetSystemMetrics(SM_CXSCREEN);
-        let wx = (sw - W) / 2;
+        let cfg0 = Settings::load();
+        let mon = monitors::resolve(cfg0.monitor);
+        let (wx, wy) = monitors::origin(&mon);
         let hwnd = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_ACCEPTFILES,
             class,
             w!("Hesewake Notch"),
             WS_POPUP,
             wx,
-            0,
+            wy,
             W,
             H,
             None,
@@ -388,7 +394,7 @@ fn main() -> Result<()> {
         }
 
         let notif_slot: notif::NotifSlot = Arc::new(Mutex::new(Vec::new()));
-        let cfg = Settings::load();
+        let cfg = cfg0;
         let notif_on = cfg.notifications;
         notif::set_avatar(cfg.notif_avatar);
         keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
@@ -407,6 +413,8 @@ fn main() -> Result<()> {
         let mut app = App {
             hwnd: hwnd.0 as isize,
             wx,
+            wy,
+            mon,
             mem_dc: mem.0 as isize,
             bits: bits as usize,
             gfx: Some(Gfx {
@@ -437,7 +445,7 @@ fn main() -> Result<()> {
             last_sec: st.wSecond,
             last_min: st.wMinute,
             hover: false,
-            busy: is_busy(hwnd, cfg.busy_on_maximized),
+            busy: is_busy(hwnd, cfg.busy_on_maximized, &mon),
             minimal: cfg.minimal,
             toast: None,
             bt_shared: bt_shared.clone(),

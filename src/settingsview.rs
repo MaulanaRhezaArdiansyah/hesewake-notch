@@ -7,7 +7,7 @@ use crate::slides::SlideId;
 
 const TAB_Y: f32 = 8.0;
 const TAB_H: f32 = 24.0;
-const TABS: [(&str, f32); 3] = [("Slides", 62.0), ("Display", 66.0), ("Features", 70.0)];
+const TABS: [(&str, f32); 4] = [("Slides", 58.0), ("Display", 62.0), ("Features", 66.0), ("Extras", 58.0)];
 const TAB_X0: f32 = LX + 112.0;
 const GRID_Y0: f32 = 42.0;
 const CELL_W: f32 = 178.0;
@@ -121,18 +121,21 @@ impl App {
             1 => vec![
                 Row { label: "Minimal notch", sub: "Thin line while idle", kind: RowKind::Toggle(self.minimal) },
                 Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
+                Row { label: "Monitor", sub: "Follow = under cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
-                Row { label: "Contact photos", sub: "In notifications", kind: RowKind::Toggle(self.cfg.notif_avatar) },
-                Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
-                Row { label: "City", sub: "For the weather", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
+                Row { label: "Contact photos", sub: "In notifications", kind: RowKind::Toggle(self.cfg.notif_avatar) },
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
                 Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
                 Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
+            ],
+            3 => vec![
                 Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
                 Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
+                Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
+                Row { label: "City", sub: "For the weather", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
             ],
             _ => Vec::new(),
         }
@@ -285,23 +288,14 @@ impl App {
                 (1, 1) => self.cfg.busy_on_maximized = !self.cfg.busy_on_maximized,
                 (1, 2) => {
                     if right {
-                        let d = if plus { LEAD_STEP } else { -LEAD_STEP };
-                        self.cfg.lyric_lead_ms = (self.cfg.lyric_lead_ms + d).clamp(LEAD_MIN, LEAD_MAX);
+                        self.cfg.monitor = monitors::step_mode(self.cfg.monitor, plus);
+                        self.place(true);
                     }
                 }
                 (1, 3) => {
-                    self.cfg.notif_avatar = !self.cfg.notif_avatar;
-                    notif::set_avatar(self.cfg.notif_avatar);
-                }
-                (1, 4) => {
-                    self.cfg.weather_on = !self.cfg.weather_on;
-                    self.weather_apply();
-                }
-                (1, 5) => {
                     if right {
-                        let n = weather::CITIES.len();
-                        self.cfg.weather_city = if plus { (self.cfg.weather_city + 1) % n } else { (self.cfg.weather_city + n - 1) % n };
-                        self.weather_apply();
+                        let d = if plus { LEAD_STEP } else { -LEAD_STEP };
+                        self.cfg.lyric_lead_ms = (self.cfg.lyric_lead_ms + d).clamp(LEAD_MIN, LEAD_MAX);
                     }
                 }
                 (2, 0) => {
@@ -317,20 +311,35 @@ impl App {
                     }
                 }
                 (2, 1) => {
+                    self.cfg.notif_avatar = !self.cfg.notif_avatar;
+                    notif::set_avatar(self.cfg.notif_avatar);
+                }
+                (2, 2) => {
                     sys::set_autostart(!self.sui.autostart);
                     self.sui.autostart = sys::autostart_enabled();
                 }
-                (2, 2) => {
+                (2, 3) => {
                     self.cfg.lock_toast = !self.cfg.lock_toast;
                     keys::set_enabled(self.hwnd, self.cfg.lock_toast);
                 }
-                (2, 3) => {
+                (2, 4) => {
                     self.cfg.privacy_dot = !self.cfg.privacy_dot;
                     privacy::set_enabled(self.cfg.privacy_dot);
                     self.priv_t = Instant::now();
                 }
-                (2, 4) => self.cfg.hud_volume = !self.cfg.hud_volume,
-                (2, 5) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
+                (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
+                (3, 1) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
+                (3, 2) => {
+                    self.cfg.weather_on = !self.cfg.weather_on;
+                    self.weather_apply();
+                }
+                (3, 3) => {
+                    if right {
+                        let n = weather::CITIES.len();
+                        self.cfg.weather_city = if plus { (self.cfg.weather_city + 1) % n } else { (self.cfg.weather_city + n - 1) % n };
+                        self.weather_apply();
+                    }
+                }
                 _ => {}
             }
             self.save_settings();

@@ -197,7 +197,7 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 if vertical && a.is_slide(SlideId::Music) && !a.lyric_mode {
                     let mut p = POINT::default();
                     if GetCursorPos(&mut p).is_ok() {
-                        let (x, y) = ((p.x - a.wx) as f32, p.y as f32);
+                        let (x, y) = ((p.x - a.wx) as f32, (p.y - a.wy) as f32);
                         if in_rect(x, y, MX - 10.0, 100.0, MW + 20.0, 56.0) {
                             if let Some((vol, muted)) = audio::adjust(audio::wheel_step(d)) {
                                 // Notch sedang terbuka: indikator di dalam slide (toast dibatalkan saat hover).
@@ -474,6 +474,16 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     present(a);
                     schedule(a);
                 }
+            });
+            LRESULT(0)
+        }
+        WM_DISPLAYCHANGE => {
+            // monitor dicolok/dicabut atau resolusi berubah: hitung ulang tempat notch
+            with_app(|a| {
+                a.place(true);
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
             });
             LRESULT(0)
         }

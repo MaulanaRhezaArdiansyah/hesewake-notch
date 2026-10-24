@@ -30,7 +30,7 @@ unsafe fn exe_name(hwnd: HWND) -> String {
 }
 
 /// `maximized_is_busy`: jendela maximized biasa juga dianggap sibuk (bukan hanya layar penuh / app Adobe).
-pub(crate) unsafe fn is_busy(own: HWND, maximized_is_busy: bool) -> bool {
+pub(crate) unsafe fn is_busy(own: HWND, maximized_is_busy: bool, mon: &RECT) -> bool {
     let fg = GetForegroundWindow();
     if fg.0.is_null() || fg == own {
         return false;
@@ -52,8 +52,8 @@ pub(crate) unsafe fn is_busy(own: HWND, maximized_is_busy: bool) -> bool {
         // Layar penuh sungguhan (F11, video): jendela menutupi seluruh layar.
         let mut r = RECT::default();
         if GetWindowRect(fg, &mut r).is_ok() {
-            let (sw, sh) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-            if r.left <= 0 && r.top <= 0 && r.right >= sw && r.bottom >= sh {
+            // hanya layar penuh di monitor tempat notch berada yang menyusutkannya
+            if r.left <= mon.left && r.top <= mon.top && r.right >= mon.right && r.bottom >= mon.bottom {
                 return true;
             }
         }
