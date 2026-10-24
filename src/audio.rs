@@ -1,7 +1,6 @@
 //! Volume master perangkat audio default (IAudioEndpointVolume). Dipakai untuk kontrol volume lewat scroll di slide Music
 //! dan (nanti) HUD volume. Dipanggil di UI thread; objek dibuat per panggilan (murah, dan mengikuti perangkat default).
 
-use super::*;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
@@ -14,7 +13,8 @@ fn endpoint() -> Option<IAudioEndpointVolume> {
     }
 }
 
-/// (volume 0..1, bisu).
+/// (volume 0..1, bisu). Dipakai HUD volume (0.3.0).
+#[allow(dead_code)]
 pub(crate) fn get() -> Option<(f32, bool)> {
     let ep = endpoint()?;
     unsafe { Some((ep.GetMasterVolumeLevelScalar().ok()?, ep.GetMute().ok()?.as_bool())) }

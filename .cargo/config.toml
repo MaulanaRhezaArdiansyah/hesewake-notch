@@ -1,0 +1,3 @@
+[target.x86_64-pc-windows-msvc]
+# Tanam runtime C/C++ ke dalam exe supaya tidak butuh Microsoft Visual C++ Redistributable di PC lain.
+rustflags = ["-C", "target-feature=+crt-static"]
