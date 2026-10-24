@@ -17,6 +17,8 @@ pub(crate) enum HudKind {
     Scroll,
     /// Volume master (persen, bisu).
     Volume(u8, bool),
+    /// Kecerahan layar (persen).
+    Brightness(u8),
 }
 
 impl HudKind {
@@ -28,6 +30,7 @@ impl HudKind {
     fn label(self) -> &'static str {
         match self {
             HudKind::Volume(..) => "Volume",
+            HudKind::Brightness(..) => "Brightness",
             HudKind::Caps => "Caps Lock",
             HudKind::Num => "Num Lock",
             HudKind::Scroll => "Scroll Lock",
@@ -39,6 +42,7 @@ impl HudKind {
             HudKind::Num => "1",
             HudKind::Scroll => "S",
             HudKind::Volume(..) => "V",
+            HudKind::Brightness(..) => "B",
         }
     }
 }
@@ -92,6 +96,13 @@ impl App {
                 cur.dur = 1.9;
                 return;
             }
+        }
+        // HUD cepat basi: tidak diantre. Jatuh bila ada toast lain atau notch sedang terbuka.
+        if matches!(kind, ToastKind::Hud { .. }) {
+            if self.toast.is_none() && !self.expanded() {
+                self.start_toast(kind);
+            }
+            return;
         }
         if self.toast.is_none() && !self.expanded() {
             self.start_toast(kind);
@@ -287,13 +298,22 @@ impl App {
     /// HUD kecil untuk tombol kunci: ikon huruf dalam ring, nama tombol, dan status On/Off berwarna.
     fn draw_hud_toast(g: &mut Gfx, w: f32, h: f32, al: f32, t: f32, kind: HudKind, on: bool) {
         let (x0, cy) = (CX - w / 2.0, h / 2.0);
-        if let HudKind::Volume(pct, muted) = kind {
+        let bar = match kind {
+            HudKind::Volume(p, m) => Some((p, m, false)),
+            HudKind::Brightness(p) => Some((p, false, true)),
+            _ => None,
+        };
+        if let Some((pct, muted, sun)) = bar {
             let col = if muted { GREY } else { SLIDE_ACCENT };
             let sc = 0.7 + 0.3 * pop(t).clamp(0.0, 1.2);
             let level = if muted || pct == 0 { 0 } else if pct < 34 { 1 } else if pct < 67 { 2 } else { 3 };
-            g.icon_speaker(x0 + 28.0, cy, 18.0 * sc, level, muted, &paint(255, 255, 255, al));
+            if sun {
+                g.icon_sun(x0 + 28.0, cy, 20.0 * sc, &paint(255, 255, 255, al));
+            } else {
+                g.icon_speaker(x0 + 28.0, cy, 18.0 * sc, level, muted, &paint(255, 255, 255, al));
+            }
             let k = ss(0.04, 0.26, t);
-            g.txtb("Volume", x0 + 54.0, cy - 17.0, 12.0, [200, 200, 208], al * k, 80.0);
+            g.txtb(kind.label(), x0 + 54.0, cy - 17.0, 12.0, [200, 200, 208], al * k, 90.0);
             let (bx, by, bw) = (x0 + 54.0, cy + 4.0, w - 54.0 - 62.0);
             g.fill(&rrect(bx, by, bw, 6.0, 3.0), &paint(255, 255, 255, 0.16 * al));
             let fw = (bw * pct as f32 / 100.0).max(if pct > 0 { 6.0 } else { 0.0 });

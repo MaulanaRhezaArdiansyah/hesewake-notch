@@ -20,6 +20,9 @@ pub(crate) struct Settings {
     pub(crate) lock_toast: bool,
     /// Titik + toast saat aplikasi memakai mikrofon/kamera.
     pub(crate) privacy_dot: bool,
+    /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
+    pub(crate) hud_volume: bool,
+    pub(crate) hud_brightness: bool,
     pub(crate) slides: SlideCfg,
 }
 
@@ -37,6 +40,8 @@ impl Default for Settings {
             notif_avatar: true,
             lock_toast: true,
             privacy_dot: true,
+            hud_volume: true,
+            hud_brightness: true,
             slides: slides::default_cfg(),
         }
     }
@@ -57,6 +62,8 @@ impl Settings {
                 "notif_avatar" => s.notif_avatar = flag,
                 "lock_toast" => s.lock_toast = flag,
                 "privacy_dot" => s.privacy_dot = flag,
+                "hud_volume" => s.hud_volume = flag,
+                "hud_brightness" => s.hud_brightness = flag,
                 "lyric_lead_ms" => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.lyric_lead_ms = n.clamp(LEAD_MIN, LEAD_MAX);
@@ -74,7 +81,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -82,6 +89,8 @@ impl Settings {
             self.notif_avatar as u8,
             self.lock_toast as u8,
             self.privacy_dot as u8,
+            self.hud_volume as u8,
+            self.hud_brightness as u8,
             slides::format_slides(&self.slides),
         )
     }

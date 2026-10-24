@@ -328,6 +328,36 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             run_command(hwnd, cmd);
             LRESULT(0)
         }
+        sys::WM_BRIGHTNESS => {
+            let pct = wp.0 as u8;
+            perf::note(&format!("brightness event {pct}%"));
+            with_app(|a| {
+                // peristiwa pertama datang saat pendaftaran: hanya dicatat
+                if a.bright_seen && a.cfg.hud_brightness {
+                    a.push_toast(ToastKind::Hud { kind: HudKind::Brightness(pct), on: true });
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                }
+                a.bright_seen = true;
+            });
+            LRESULT(0)
+        }
+        audio::WM_VOLUME => {
+            let (pct, muted) = audio::unpack(wp.0);
+            with_app(|a| {
+                // indikator di slide Music (bila terbuka) + HUD di notch kecil
+                a.vol_state = (pct, muted);
+                a.vol_t = Instant::now();
+                if a.cfg.hud_volume {
+                    a.push_toast(ToastKind::Hud { kind: HudKind::Volume(pct, muted), on: true });
+                }
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         privacy::WM_PRIVACY => {
             with_app(|a| {
                 a.privacy_apply();
@@ -399,31 +429,45 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_POWERBROADCAST => {
+            // Pesan daya dikirim sinkron dan bisa tiba saat state aplikasi sedang dipegang (with_app lalu diam-diam
+            // dilewati). Karena itu hanya dicatat di sini dan diteruskan lewat pesan yang di-post.
+            if let Some(pct) = sys::brightness_from(wp, lp) {
+                let _ = PostMessageW(hwnd, sys::WM_BRIGHTNESS, WPARAM(pct as usize), LPARAM(0));
+            }
             // PBT_APMPOWERSTATUSCHANGE: charger dicolok/dicabut atau baterai berubah.
             if wp.0 == 0xA {
-                with_app(|a| {
-                    a.power_check();
-                    a.last = Instant::now();
-                    present(a);
-                    schedule(a);
-                });
+                let _ = PostMessageW(hwnd, sys::WM_POWERCHECK, WPARAM(0), LPARAM(0));
             }
             if let Some(off) = sys::display_off_from(wp, lp) {
                 notif::set_paused(off);
-                with_app(|a| {
-                    a.display_off = off;
-                    if off {
-                        let _ = KillTimer(hwnd, 2);
-                        schedule(a); // want = 0 -> timer animasi mati
-                    } else {
-                        SetTimer(hwnd, 2, 100, None);
-                        a.last = Instant::now();
-                        present(a);
-                        schedule(a);
-                    }
-                });
+                let _ = PostMessageW(hwnd, sys::WM_DISPLAY, WPARAM(off as usize), LPARAM(0));
             }
             LRESULT(1)
+        }
+        sys::WM_POWERCHECK => {
+            with_app(|a| {
+                a.power_check();
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
+        sys::WM_DISPLAY => {
+            let off = wp.0 != 0;
+            with_app(|a| {
+                a.display_off = off;
+                if off {
+                    let _ = KillTimer(hwnd, 2);
+                    schedule(a); // want = 0 -> timer animasi mati
+                } else {
+                    SetTimer(hwnd, 2, 100, None);
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                }
+            });
+            LRESULT(0)
         }
         WM_HOTKEY => {
             if wp.0 as i32 == HOTKEY_ID {

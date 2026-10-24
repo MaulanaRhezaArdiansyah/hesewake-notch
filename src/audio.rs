@@ -1,9 +1,113 @@
 //! Volume master perangkat audio default (IAudioEndpointVolume). Dipakai untuk kontrol volume lewat scroll di slide Music
 //! dan (nanti) HUD volume. Dipanggil di UI thread; objek dibuat per panggilan (murah, dan mengikuti perangkat default).
 
-use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
-use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+use super::*;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::mpsc::{channel, Sender};
+use windows::core::{implement, PCWSTR as WPCWSTR};
+use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl};
+use windows::Win32::Media::Audio::{
+    eConsole, eRender, EDataFlow, ERole, IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
+    AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
+};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
+
+/// Pesan ke window: volume master berubah (`wParam` = persen | bisu << 8).
+pub(crate) const WM_VOLUME: u32 = WM_APP + 6;
+
+static TARGET: AtomicIsize = AtomicIsize::new(0);
+/// Nilai terakhir (persen | bisu << 8): menghindari event ganda dan event dari perubahan kita sendiri.
+static LAST: AtomicU32 = AtomicU32::new(u32::MAX);
+static STARTED: AtomicBool = AtomicBool::new(false);
+
+fn pack(pct: u8, muted: bool) -> u32 {
+    pct as u32 | ((muted as u32) << 8)
+}
+
+pub(crate) fn unpack(v: usize) -> (u8, bool) {
+    ((v & 0xff) as u8, (v >> 8) & 1 == 1)
+}
+
+#[implement(IAudioEndpointVolumeCallback)]
+struct VolCb;
+
+impl IAudioEndpointVolumeCallback_Impl for VolCb_Impl {
+    fn OnNotify(&self, pnotify: *mut AUDIO_VOLUME_NOTIFICATION_DATA) -> windows::core::Result<()> {
+        if pnotify.is_null() {
+            return Ok(());
+        }
+        let d = unsafe { &*pnotify };
+        let v = pack((d.fMasterVolume * 100.0).round().clamp(0.0, 100.0) as u8, d.bMuted.as_bool());
+        if LAST.swap(v, Ordering::Relaxed) != v {
+            unsafe {
+                let _ = PostMessageW(HWND(TARGET.load(Ordering::Relaxed) as *mut c_void), WM_VOLUME, WPARAM(v as usize), LPARAM(0));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Memberi tahu thread pemantau bahwa perangkat audio default berganti (pasang ulang callback).
+#[implement(IMMNotificationClient)]
+struct DevCb {
+    tx: Sender<()>,
+}
+
+impl IMMNotificationClient_Impl for DevCb_Impl {
+    fn OnDeviceStateChanged(&self, _id: &WPCWSTR, _state: DEVICE_STATE) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnDeviceAdded(&self, _id: &WPCWSTR) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnDeviceRemoved(&self, _id: &WPCWSTR) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _id: &WPCWSTR) -> windows::core::Result<()> {
+        if flow == eRender && role == eConsole {
+            let _ = self.tx.send(());
+        }
+        Ok(())
+    }
+    fn OnPropertyValueChanged(&self, _id: &WPCWSTR, _key: &PROPERTYKEY) -> windows::core::Result<()> {
+        Ok(())
+    }
+}
+
+/// Mulai memantau perubahan volume master (termasuk dari tombol keyboard / mixer). Thread latar belakang, tanpa polling.
+pub(crate) fn start_watch(hwnd: isize) {
+    if STARTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    TARGET.store(hwnd, Ordering::Relaxed);
+    std::thread::spawn(|| unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return };
+        let (tx, rx) = channel();
+        let client: IMMNotificationClient = DevCb { tx }.into();
+        let _ = en.RegisterEndpointNotificationCallback(&client);
+        let cb: IAudioEndpointVolumeCallback = VolCb.into();
+        let mut cur: Option<IAudioEndpointVolume> = None;
+        loop {
+            if let Some(old) = cur.take() {
+                let _ = old.UnregisterControlChangeNotify(&cb);
+            }
+            if let Ok(dev) = en.GetDefaultAudioEndpoint(eRender, eConsole) {
+                if let Ok(ep) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
+                    if let (Ok(v), Ok(m)) = (ep.GetMasterVolumeLevelScalar(), ep.GetMute()) {
+                        LAST.store(pack((v * 100.0).round() as u8, m.as_bool()), Ordering::Relaxed);
+                    }
+                    let _ = ep.RegisterControlChangeNotify(&cb);
+                    cur = Some(ep);
+                }
+            }
+            if rx.recv().is_err() {
+                break; // tidak mungkin terjadi selama `client` hidup
+            }
+        }
+    });
+}
 
 fn endpoint() -> Option<IAudioEndpointVolume> {
     unsafe {
@@ -13,7 +117,7 @@ fn endpoint() -> Option<IAudioEndpointVolume> {
     }
 }
 
-/// (volume 0..1, bisu). Dipakai HUD volume (0.3.0).
+/// (volume 0..1, bisu).
 #[allow(dead_code)]
 pub(crate) fn get() -> Option<(f32, bool)> {
     let ep = endpoint()?;
@@ -31,7 +135,10 @@ pub(crate) fn adjust(delta: f32) -> Option<(f32, bool)> {
         if delta > 0.0 && ep.GetMute().ok()?.as_bool() {
             ep.SetMute(false, std::ptr::null()).ok()?;
         }
-        Some((new, ep.GetMute().ok()?.as_bool()))
+        let muted = ep.GetMute().ok()?.as_bool();
+        // perubahan dari kita sendiri tidak perlu dilaporkan ulang oleh callback
+        LAST.store(pack((new * 100.0).round() as u8, muted), Ordering::Relaxed);
+        Some((new, muted))
     }
 }
 

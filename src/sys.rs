@@ -6,7 +6,7 @@ use windows::Win32::System::Registry::{
     RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
     KEY_SET_VALUE, REG_SZ,
 };
-use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+use windows::Win32::System::SystemServices::{GUID_CONSOLE_DISPLAY_STATE, GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::{Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW};
 
@@ -14,6 +14,12 @@ use windows::Win32::UI::Shell::{Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TI
 pub(crate) const WM_TRAY: u32 = WM_APP + 1;
 
 // ---- id menu bersama (context menu notch + tray)
+/// Pesan ke window: kecerahan berubah (`wParam` = persen).
+pub(crate) const WM_BRIGHTNESS: u32 = WM_APP + 7;
+/// Pesan ke window: status daya berubah (charger/baterai) dan layar menyala/mati (`wParam` != 0 = mati).
+pub(crate) const WM_POWERCHECK: u32 = WM_APP + 8;
+pub(crate) const WM_DISPLAY: u32 = WM_APP + 9;
+
 pub(crate) const CMD_EXIT: i32 = 1;
 pub(crate) const CMD_AUTOSTART: i32 = 40;
 pub(crate) const CMD_MINIMAL: i32 = 41;
@@ -107,6 +113,21 @@ pub(crate) unsafe fn open_notification_settings() {
 // ---------------------------------------------------------------- power (layar nyala/mati)
 pub(crate) unsafe fn register_display_notifications(hwnd: HWND) {
     let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
+    // Perubahan kecerahan layar (tombol Fn / slider Windows) untuk HUD kecerahan.
+    let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS, DEVICE_NOTIFY_WINDOW_HANDLE);
+}
+
+/// Kecerahan (0..100) dari WM_POWERBROADCAST bila pesan itu perubahan kecerahan.
+pub(crate) unsafe fn brightness_from(wp: WPARAM, lp: LPARAM) -> Option<u8> {
+    const PBT_POWERSETTINGCHANGE: usize = 0x8013;
+    if wp.0 != PBT_POWERSETTINGCHANGE || lp.0 == 0 {
+        return None;
+    }
+    let s = &*(lp.0 as *const windows::Win32::System::Power::POWERBROADCAST_SETTING);
+    if s.PowerSetting != GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS || s.DataLength < 4 {
+        return None;
+    }
+    Some(std::ptr::read_unaligned(s.Data.as_ptr() as *const u32).min(100) as u8)
 }
 
 /// Baca WM_POWERBROADCAST: Some(true) = layar mati, Some(false) = layar menyala/redup.

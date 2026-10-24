@@ -114,6 +114,16 @@ impl Gfx {
         self.circle(cx + s * 0.17, cy - s * 0.08, s * 0.075, dots);
     }
 
+    /// Matahari (ikon kecerahan): lingkaran + 8 sinar.
+    pub(crate) fn icon_sun(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
+        self.circle(cx, cy, s * 0.2, p);
+        for k in 0..8 {
+            let a = std::f32::consts::TAU * k as f32 / 8.0;
+            let (sn, cs) = a.sin_cos();
+            self.line(cx + cs * s * 0.34, cy + sn * s * 0.34, cx + cs * s * 0.5, cy + sn * s * 0.5, (s * 0.09).max(1.1), p);
+        }
+    }
+
     /// Speaker; `level` 0..=3 gelombang suara, `muted` menggambar tanda silang.
     pub(crate) fn icon_speaker(&mut self, cx: f32, cy: f32, s: f32, level: u8, muted: bool, p: &Paint) {
         let pts = [(-0.62, -0.22), (-0.3, -0.22), (0.06, -0.52), (0.06, 0.52), (-0.3, 0.22), (-0.62, 0.22)];

@@ -211,6 +211,8 @@ struct App {
     priv_t: Instant,
     /// Indikator volume di slide Music setelah scroll: waktu terakhir dan (persen, bisu).
     vol_t: Instant,
+    /// Peristiwa kecerahan pertama (saat pendaftaran) hanya dicatat, tidak ditampilkan.
+    bright_seen: bool,
     vol_state: (u8, bool),
     order: Vec<SlideId>,
     /// Slide Settings sedang dibuka (ada di carousel) dan slide asal sebelum dibuka.
@@ -271,6 +273,7 @@ fn demo_toast() -> Option<ToastKind> {
         "caps-off" => ToastKind::Hud { kind: HudKind::Caps, on: false },
         "num" => ToastKind::Hud { kind: HudKind::Num, on: true },
         "volume" => ToastKind::Hud { kind: HudKind::Volume(46, false), on: true },
+        "brightness" => ToastKind::Hud { kind: HudKind::Brightness(72), on: true },
         "mute" => ToastKind::Hud { kind: HudKind::Volume(0, true), on: true },
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
@@ -386,6 +389,7 @@ fn main() -> Result<()> {
         keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
+        audio::start_watch(hwnd.0 as isize);
         if notif_on {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }
@@ -499,6 +503,7 @@ fn main() -> Result<()> {
             priv_cam: Vec::new(),
             priv_t: Instant::now() - Duration::from_secs(10),
             vol_t: Instant::now() - Duration::from_secs(10),
+            bright_seen: false,
             vol_state: (0, false),
             order: slides::visible_order(&cfg.slides, false),
             settings_open: false,

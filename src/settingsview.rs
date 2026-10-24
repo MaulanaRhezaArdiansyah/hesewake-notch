@@ -114,6 +114,8 @@ impl App {
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
                 Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
                 Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
+                Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
             ],
             _ => Vec::new(),
         }
@@ -299,6 +301,8 @@ impl App {
                     privacy::set_enabled(self.cfg.privacy_dot);
                     self.priv_t = Instant::now();
                 }
+                (2, 4) => self.cfg.hud_volume = !self.cfg.hud_volume,
+                (2, 5) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
                 _ => {}
             }
             self.save_settings();
