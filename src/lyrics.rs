@@ -44,7 +44,7 @@ fn pct(s: &str) -> String {
     o
 }
 
-fn get_string(url: &str) -> Option<String> {
+pub(crate) fn get_string(url: &str) -> Option<String> {
     let client = HttpClient::new().ok()?;
     if let Ok(h) = client.DefaultRequestHeaders() {
         if let Ok(ua) = h.UserAgent() {
@@ -52,7 +52,13 @@ fn get_string(url: &str) -> Option<String> {
         }
     }
     let uri = Uri::CreateUri(&HSTRING::from(url)).ok()?;
-    let body = client.GetStringAsync(&uri).ok()?.get().ok()?;
+    let body = match client.GetStringAsync(&uri).and_then(|op| op.get()) {
+        Ok(b) => b,
+        Err(e) => {
+            perf::note(&format!("http gagal: {:?}", e));
+            return None;
+        }
+    };
     let s = body.to_string();
     // Batasi ukuran respons (lirik normal < 100 KB).
     if s.is_empty() || s.len() > 2_000_000 {

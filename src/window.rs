@@ -328,6 +328,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             run_command(hwnd, cmd);
             LRESULT(0)
         }
+        weather::WM_WEATHER => {
+            with_app(|a| {
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         sys::WM_BRIGHTNESS => {
             let pct = wp.0 as u8;
             perf::note(&format!("brightness event {pct}%"));

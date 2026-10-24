@@ -105,6 +105,12 @@ impl App {
         true
     }
 
+    /// Terapkan pengaturan cuaca (nyala/mati, kota) ke thread pengambil data.
+    fn weather_apply(&self) {
+        let (_, lat, lon) = weather::CITIES[self.cfg.weather_city];
+        weather::configure(self.cfg.weather_on, lat, lon);
+    }
+
     fn settings_visible(&self) -> bool {
         self.expanded() && self.is_slide(SlideId::Settings) && self.h > 100.0
     }
@@ -117,6 +123,8 @@ impl App {
                 Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
                 Row { label: "Contact photos", sub: "In notifications", kind: RowKind::Toggle(self.cfg.notif_avatar) },
+                Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
+                Row { label: "City", sub: "For the weather", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
@@ -284,6 +292,17 @@ impl App {
                 (1, 3) => {
                     self.cfg.notif_avatar = !self.cfg.notif_avatar;
                     notif::set_avatar(self.cfg.notif_avatar);
+                }
+                (1, 4) => {
+                    self.cfg.weather_on = !self.cfg.weather_on;
+                    self.weather_apply();
+                }
+                (1, 5) => {
+                    if right {
+                        let n = weather::CITIES.len();
+                        self.cfg.weather_city = if plus { (self.cfg.weather_city + 1) % n } else { (self.cfg.weather_city + n - 1) % n };
+                        self.weather_apply();
+                    }
                 }
                 (2, 0) => {
                     self.notif_on = !self.notif_on;

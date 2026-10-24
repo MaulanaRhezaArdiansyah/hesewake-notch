@@ -83,6 +83,7 @@ mod shelf;
 mod slides;
 mod sys;
 mod sysview;
+mod weather;
 mod todo;
 mod toast;
 mod water;
@@ -221,6 +222,8 @@ struct App {
     settings_prev: Option<SlideId>,
     sui: settingsview::SettingsUi,
     sys_ui: sysview::SysUi,
+    /// Indeks tahap cuaca terakhir yang digambar (memicu transisi suhu <-> ikon).
+    weather_idx: u64,
 }
 
 static APP: Mutex<Option<App>> = Mutex::new(None);
@@ -392,6 +395,10 @@ fn main() -> Result<()> {
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
         audio::start_watch(hwnd.0 as isize);
+        {
+            let (_, lat, lon) = weather::CITIES[cfg.weather_city];
+            weather::start(hwnd.0 as isize, cfg.weather_on, lat, lon);
+        }
         if notif_on {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }
@@ -512,6 +519,7 @@ fn main() -> Result<()> {
             settings_prev: None,
             sui: settingsview::SettingsUi::new(),
             sys_ui: sysview::SysUi::new(),
+            weather_idx: 0,
             cfg,
         };
         let (tw, th) = target(&app);

@@ -23,6 +23,10 @@ pub(crate) struct Settings {
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
+    /// Cuaca di kiri jam (suhu dan ikon kondisi bergantian).
+    pub(crate) weather_on: bool,
+    /// Indeks di `weather::CITIES`.
+    pub(crate) weather_city: usize,
     pub(crate) slides: SlideCfg,
 }
 
@@ -42,6 +46,8 @@ impl Default for Settings {
             privacy_dot: true,
             hud_volume: true,
             hud_brightness: true,
+            weather_on: true,
+            weather_city: 0,
             slides: slides::default_cfg(),
         }
     }
@@ -64,6 +70,12 @@ impl Settings {
                 "privacy_dot" => s.privacy_dot = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
+                "weather" => s.weather_on = flag,
+                "weather_city" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.weather_city = n.min(weather::CITIES.len() - 1);
+                    }
+                }
                 "lyric_lead_ms" => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.lyric_lead_ms = n.clamp(LEAD_MIN, LEAD_MAX);
@@ -81,7 +93,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -91,6 +103,8 @@ impl Settings {
             self.privacy_dot as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
+            self.weather_on as u8,
+            self.weather_city,
             slides::format_slides(&self.slides),
         )
     }

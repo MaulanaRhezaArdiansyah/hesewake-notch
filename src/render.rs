@@ -300,7 +300,10 @@ impl App {
             }
         } else {
             match self.idle_phase() {
-                IdlePhase::Clock => self.draw_clock_collapsed(g, w, h, ca),
+                IdlePhase::Clock => {
+                    self.draw_clock_collapsed(g, w, h, ca);
+                    self.draw_weather(g, w, h, ca);
+                }
                 IdlePhase::Eye => self.draw_eye(g, w, h, ca),
             }
             self.draw_bell(g, ca);

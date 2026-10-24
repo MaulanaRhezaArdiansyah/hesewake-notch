@@ -9,6 +9,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 
 - **Slide System** (default **tersembunyi**; nyalakan di Settings > Slides): CPU dengan sparkline, memori (GB + ring), jaringan (unduh/unggah + sparkline, hanya adapter fisik yang aktif), dan baterai (persen, status, sisa waktu). Pengukuran hanya berjalan selama slide terlihat.
 - Tab Slides di Settings kini 3 kolom agar muat lebih banyak slide; slide opsional baru dari versi mendatang otomatis tersembunyi.
+- **Cuaca di kiri jam** (notch idle, tanpa lagu): suhu ("27°") dan ikon kondisi bergantian tiap ±4 dtk dengan transisi geser + fade. Ikon vektor beranimasi dari kode cuaca WMO + siang/malam: matahari, bulan, berawan, hujan/gerimis (tetesan jatuh), salju, kabut, petir. Varian **panas**: cerah/berawan tipis siang hari dengan suhu >= 32 C memakai matahari oranye berdenyut. Data dari Open-Meteo (tanpa API key) tiap 30 menit di thread latar belakang, di-cache di `weather.txt`; jaringan hanya dipakai saat fitur aktif. Toggle dan pilihan kota (16 kota Indonesia) di Settings > Display.
+- Flag uji `--demo-weather=kode,suhu,siang`.
 
 ### Fixed
 - Pesan daya Windows (kecerahan, charger, layar mati/hidup) kini diteruskan lewat pesan yang di-post. Sebelumnya bisa terlewat bila tiba saat state aplikasi sedang dipegang, sehingga toast charger atau pemulihan timer setelah layar hidup berisiko hilang.

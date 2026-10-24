@@ -38,7 +38,7 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.weather_animating() {
         16
     } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide
@@ -100,6 +100,14 @@ unsafe fn poll(a: &mut App) {
     a.notif_ui_step();
     if a.sys_sample() {
         redraw = true;
+    }
+    // pergantian tahap suhu <-> ikon memicu transisi
+    if a.weather_shown() {
+        let idx = a.weather_stage_idx();
+        if idx != a.weather_idx {
+            a.weather_idx = idx;
+            redraw = true;
+        }
     }
     if a.splash.is_none() {
         if let Some(k) = a.demo_toast.take() {
