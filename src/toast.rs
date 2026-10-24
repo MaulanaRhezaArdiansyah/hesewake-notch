@@ -69,7 +69,7 @@ impl App {
                 let to_notif = self.expanded() && matches!(t.kind, ToastKind::Notification { .. });
                 self.toast = None;
                 if to_notif {
-                    self.show(5);
+                    self.show_id(SlideId::Notifications);
                 }
                 self.toast_end = Instant::now();
                 changed = true;

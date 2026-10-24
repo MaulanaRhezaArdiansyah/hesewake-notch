@@ -11,7 +11,6 @@ pub(crate) const LX: f32 = CL + 48.0;
 pub(crate) const RX: f32 = CL + EXP_W - 48.0;
 pub(crate) const CW: f32 = RX - LX;
 pub(crate) const NAVY: f32 = 92.0;
-pub(crate) const N_SLIDES: usize = 6; // 0 Music (+ jam), 1 Water, 2 To-do, 3 Ledge, 4 Scrap, 5 Notifications
 
 pub(crate) const THIN: (f32, f32) = (96.0, 4.0);
 pub(crate) const IDLE: (f32, f32) = (150.0, 32.0);

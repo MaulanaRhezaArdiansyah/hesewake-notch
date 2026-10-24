@@ -21,8 +21,8 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
             return;
         }
         if y >= EXP_H - 22.0 && !a.editing && !lm {
-            for i in 0..N_SLIDES {
-                if (x - dot_x(i)).abs() < 8.0 {
+            for i in 0..a.n_slides() {
+                if (x - dot_x(i, a.n_slides())).abs() < 8.0 {
                     a.show(i);
                     a.last = Instant::now();
                     schedule(a);
@@ -30,14 +30,14 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 }
             }
         }
-        match a.cur() {
-            0 if a.lyric_mode => {
+        match a.cur_id() {
+            SlideId::Music if a.lyric_mode => {
                 a.lyric_click(x, y);
                 a.last = Instant::now();
                 present(a);
                 schedule(a);
             }
-            0 => {
+            SlideId::Music => {
                 let d = |px: f32, py: f32| ((x - px).powi(2) + (y - py).powi(2)).sqrt();
                 if d(MCX + 92.0, MCY) < 14.0 {
                     a.lyric_toggle_mode();
@@ -54,12 +54,12 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                     let _ = a.tx.send(Cmd::Seek(((x - MX) / MW).clamp(0.0, 1.0)));
                 }
             }
-            1 => {
+            SlideId::Water => {
                 a.water_click(x, y);
                 present(a);
                 schedule(a);
             }
-            2 => {
+            SlideId::Todo => {
                 if a.editing {
                     return;
                 }
@@ -98,7 +98,7 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 }
                 present(a);
             }
-            3 => {
+            SlideId::Ledge => {
                 let mut hit: Option<(usize, bool)> = None;
                 for i in 0..a.shelf.len() {
                     let tx = LX + i as f32 * (SH_W + SH_GAP);
@@ -119,12 +119,12 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 }
                 present(a);
             }
-            5 => {
+            SlideId::Notifications => {
                 a.notif_click(x, y);
                 present(a);
                 schedule(a);
             }
-            4 => {
+            SlideId::Scrap => {
                 let in_card = in_rect(x, y, LX, NOTE_Y, CW, NOTE_H);
                 if a.note_mode {
                     if !in_card {
@@ -139,7 +139,11 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 }
                 present(a);
             }
-            _ => {}
+            SlideId::Settings => {
+                a.settings_click(x, y);
+                present(a);
+                schedule(a);
+            }
         }
     });
 }
@@ -178,6 +182,7 @@ pub(crate) unsafe fn context_menu(hwnd: HWND, goal: u32, remind: u32, autostart:
     let _ = AppendMenuW(menu, chk(minimal), sys::CMD_MINIMAL as usize, w!("Minimal notch"));
     let _ = AppendMenuW(menu, chk(notif_on), sys::CMD_NOTIF as usize, w!("Windows notifications"));
     let _ = AppendMenuW(menu, MF_STRING, sys::CMD_NOTIF_ACCESS as usize, w!("Notification access..."));
+    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_SETTINGS as usize, w!("Settings"));
     let _ = AppendMenuW(menu, MF_STRING, sys::CMD_ABOUT as usize, w!("About Hesewake Notch"));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, 1, w!("Exit"));

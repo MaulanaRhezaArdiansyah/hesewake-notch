@@ -141,30 +141,31 @@ pub(crate) fn draw(a: &mut App) {
     if p > 0.04 {
         let pos = a.sp - a.drag_dx / 160.0;
         let mut vis: Vec<(usize, f32, f32)> = Vec::new();
-        for i in 0..N_SLIDES {
-            let d = cyc(i as f32 - pos);
+        let n = a.n_slides();
+        for i in 0..n {
+            let d = cyc(i as f32 - pos, n);
             if d.abs() >= 1.0 {
                 continue;
             }
             vis.push((i, d * 48.0, (1.0 - d.abs()) * p));
         }
         for &(i, _, al) in &vis {
-            match i {
-                0 => a.music_glow(&mut g, &shape, w, h, al),
-                1 => glow(&mut g, &shape, h, (30, 110, 235), 0.40 * al),
+            match a.order[i] {
+                SlideId::Music => a.music_glow(&mut g, &shape, w, h, al),
+                SlideId::Water => glow(&mut g, &shape, h, (30, 110, 235), 0.40 * al),
                 // To-do, Ledge, Scrap, Notifications: satu warna glow (navy kebiruan) supaya slide terasa seragam.
-                2..=5 => glow(&mut g, &shape, h, SLIDE_GLOW, 0.40 * al),
-                _ => {}
+                _ => glow(&mut g, &shape, h, SLIDE_GLOW, 0.40 * al),
             }
         }
         for &(i, ox, al) in &vis {
-            match i {
-                0 => a.slide_music(&mut g, ox, al),
-                1 => a.slide_water(&mut g, ox, al),
-                2 => a.slide_todo(&mut g, ox, al),
-                3 => a.slide_shelf(&mut g, ox, al),
-                5 => a.slide_notifs(&mut g, ox, al),
-                _ => a.slide_note(&mut g, ox, al),
+            match a.order[i] {
+                SlideId::Music => a.slide_music(&mut g, ox, al),
+                SlideId::Water => a.slide_water(&mut g, ox, al),
+                SlideId::Todo => a.slide_todo(&mut g, ox, al),
+                SlideId::Ledge => a.slide_shelf(&mut g, ox, al),
+                SlideId::Notifications => a.slide_notifs(&mut g, ox, al),
+                SlideId::Settings => a.slide_settings(&mut g, ox, al),
+                SlideId::Scrap => a.slide_note(&mut g, ox, al),
             }
         }
         if !a.lyric_screen() {

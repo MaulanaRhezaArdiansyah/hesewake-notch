@@ -4,8 +4,6 @@ use super::*;
 use serde::Deserialize;
 
 const UA: &str = concat!("HesewakeNotch/", env!("CARGO_PKG_VERSION"), " (Windows; based on Poch)");
-/// Baris ditampilkan sedikit lebih awal supaya terasa tepat dengan suara.
-const LEAD_MS: u32 = 150;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct LyricLine {
@@ -153,8 +151,9 @@ fn parse_ts(ts: &str) -> Option<u32> {
 }
 
 /// Indeks baris aktif pada posisi `pos_ms`, atau None sebelum baris pertama.
-pub(crate) fn current_line(lines: &[LyricLine], pos_ms: u32) -> Option<usize> {
-    let p = pos_ms.saturating_add(LEAD_MS);
+pub(crate) fn current_line(lines: &[LyricLine], pos_ms: u32, lead_ms: i32) -> Option<usize> {
+    // `lead_ms` > 0: baris tampil lebih awal dari timestamp supaya terasa tepat dengan suara.
+    let p = (pos_ms as i64 + lead_ms as i64).max(0) as u32;
     lines.partition_point(|l| l.at_ms <= p).checked_sub(1)
 }
 
@@ -175,11 +174,15 @@ mod tests {
     #[test]
     fn current_line_edges() {
         let l = parse_lrc("[00:10.00]a\n[00:20.00]b\n");
-        assert_eq!(current_line(&l, 0), None);
-        assert_eq!(current_line(&l, 10_000 - LEAD_MS), Some(0));
-        assert_eq!(current_line(&l, 19_000), Some(0));
-        assert_eq!(current_line(&l, 20_000 - LEAD_MS), Some(1));
-        assert_eq!(current_line(&l, 999_999), Some(1));
+        const LEAD: i32 = 150;
+        assert_eq!(current_line(&l, 0, LEAD), None);
+        assert_eq!(current_line(&l, 10_000 - LEAD as u32, LEAD), Some(0));
+        assert_eq!(current_line(&l, 19_000, LEAD), Some(0));
+        assert_eq!(current_line(&l, 20_000 - LEAD as u32, LEAD), Some(1));
+        assert_eq!(current_line(&l, 999_999, LEAD), Some(1));
+        // offset negatif menunda baris; offset besar tidak membuat posisi negatif
+        assert_eq!(current_line(&l, 10_000, -500), None);
+        assert_eq!(current_line(&l, 0, -500), None);
     }
 
     #[test]
@@ -206,7 +209,7 @@ impl App {
     /// Hitung ulang baris aktif. True bila berubah (perlu redraw).
     pub(crate) fn lyric_update(&mut self) -> bool {
         let idx = match &self.lyrics {
-            Lyrics::Synced(lines) => current_line(lines, self.lyric_pos_ms()),
+            Lyrics::Synced(lines) => current_line(lines, self.lyric_pos_ms(), self.cfg.lyric_lead_ms),
             _ => None,
         };
         if idx == self.lyric_idx {

@@ -153,7 +153,7 @@ pub(crate) fn check_reminder(a: &mut App) -> bool {
     if st.wHour < 8 || st.wHour >= 22 || a.water.ml >= a.water.goal {
         return false;
     }
-    a.show(1); // slide Water (index 1)
+    a.show_id(SlideId::Water); // slide Water (index 1)
     a.water_view(0);
     a.reminding = true;
     a.peek_until = Some(now + Duration::from_secs(10));
@@ -224,7 +224,7 @@ fn fmt_l(ml: f32) -> String {
 
 impl App {
     fn water_visible(&self) -> bool {
-        self.expanded() && self.cur() == 1 && self.h > 100.0
+        self.expanded() && self.is_slide(SlideId::Water) && self.h > 100.0
     }
 
     pub(crate) fn water_view(&mut self, v: u8) {

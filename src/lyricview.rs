@@ -55,7 +55,7 @@ impl App {
 
     /// Mode lirik sedang tampil di slide Music (arah/dots disembunyikan).
     pub(crate) fn lyric_screen(&self) -> bool {
-        self.lyric_mode && self.cur() == 0
+        self.lyric_mode && self.is_slide(SlideId::Music)
     }
 
     /// Maju satu langkah pegas scroll lirik (dipanggil tiap frame dari `tick`).

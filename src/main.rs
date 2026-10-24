@@ -73,7 +73,10 @@ mod note;
 mod pace;
 mod perf;
 mod render;
+mod settings;
+mod settingsview;
 mod shelf;
+mod slides;
 mod sys;
 mod todo;
 mod toast;
@@ -83,7 +86,7 @@ mod window;
 use anim::{schedule, target, tick};
 use busy::{is_busy};
 use clock::{CLOCK_FADE_IN, DAYS_S, MONTHS, now_tm, today};
-use config::{ACCENT, SLIDE_ACCENT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, N_SLIDES, PLAYING, RX, THIN, W};
+use config::{ACCENT, SLIDE_ACCENT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
 use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
 use gfx::{Box4, Gfx, Text, acc, sacc, dummy_path, ellipsize, in_rect, notch_path, notch_path_w, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
@@ -96,6 +99,8 @@ use render::present;
 use shelf::{SH_GAP, SH_H, SH_W, SH_Y, ShelfItem, load_shelf, open_path, save_shelf};
 use todo::{ROW_H, ROW_P, load_todos, rows_geom, save_todos};
 use toast::{Toast, ToastKind};
+use settings::Settings;
+use slides::SlideId;
 use water::{Water, WaterUi, check_reminder};
 use window::{wndproc};
 
@@ -194,6 +199,10 @@ struct App {
     water: Water,
     wui: WaterUi,
     tx: Sender<Cmd>,
+    /// Pengaturan (settings.txt) dan urutan slide yang sedang tampil.
+    cfg: Settings,
+    order: Vec<SlideId>,
+    sui: settingsview::SettingsUi,
 }
 
 static APP: Mutex<Option<App>> = Mutex::new(None);
@@ -350,7 +359,8 @@ fn main() -> Result<()> {
         }
 
         let notif_slot: notif::NotifSlot = Arc::new(Mutex::new(Vec::new()));
-        let notif_on = sys::load_flag("notifications", true);
+        let cfg = Settings::load();
+        let notif_on = cfg.notifications;
         if notif_on {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }
@@ -389,8 +399,8 @@ fn main() -> Result<()> {
             last_sec: st.wSecond,
             last_min: st.wMinute,
             hover: false,
-            busy: is_busy(hwnd),
-            minimal: sys::load_minimal(),
+            busy: is_busy(hwnd, cfg.busy_on_maximized),
+            minimal: cfg.minimal,
             toast: None,
             bt_shared: bt_shared.clone(),
             notifs: Vec::new(),
@@ -460,6 +470,9 @@ fn main() -> Result<()> {
             water: Water::load(),
             wui: WaterUi::new(),
             tx,
+            order: slides::visible_order(&cfg.slides),
+            sui: settingsview::SettingsUi::new(),
+            cfg,
         };
         let (tw, th) = target(&app);
         app.w = tw;

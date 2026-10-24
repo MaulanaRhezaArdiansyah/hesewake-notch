@@ -46,7 +46,7 @@ struct Row {
 
 impl App {
     fn notif_visible(&self) -> bool {
-        self.expanded() && self.cur() == 5 && self.h > 100.0
+        self.expanded() && self.is_slide(SlideId::Notifications) && self.h > 100.0
     }
 
     /// Dipanggil tiap frame/poll: animasi masuk, tandai dibaca setelah ±0,8 dtk terlihat, bersihkan baris yang selesai

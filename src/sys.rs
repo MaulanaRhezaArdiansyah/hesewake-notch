@@ -21,6 +21,7 @@ pub(crate) const CMD_MINIMAL: i32 = 41;
 pub(crate) const CMD_ABOUT: i32 = 42;
 pub(crate) const CMD_NOTIF: i32 = 43;
 pub(crate) const CMD_NOTIF_ACCESS: i32 = 44;
+pub(crate) const CMD_SETTINGS: i32 = 45;
 
 /// Mutex single instance. Mengembalikan false bila Hesewake Notch lain sudah jalan.
 pub(crate) fn single_instance() -> bool {
@@ -91,29 +92,6 @@ pub(crate) fn set_autostart(on: bool) {
 }
 
 // ---------------------------------------------------------------- settings
-/// Flag boolean di settings.txt (baris `kunci=0|1`).
-pub(crate) fn load_flag(key: &str, default: bool) -> bool {
-    let Ok(s) = std::fs::read_to_string(data_path("settings.txt")) else { return default };
-    let prefix = format!("{key}=");
-    s.lines().find_map(|l| l.trim().strip_prefix(prefix.as_str()).map(|v| v == "1")).unwrap_or(default)
-}
-
-pub(crate) fn save_flag(key: &str, on: bool) {
-    let prefix = format!("{key}=");
-    let old = std::fs::read_to_string(data_path("settings.txt")).unwrap_or_default();
-    let mut lines: Vec<String> = old.lines().filter(|l| !l.trim().starts_with(prefix.as_str())).map(str::to_string).collect();
-    lines.push(format!("{key}={}", on as u8));
-    write_data("settings.txt", lines.join("\n") + "\n");
-}
-
-pub(crate) fn load_minimal() -> bool {
-    load_flag("minimal", false)
-}
-
-pub(crate) fn save_minimal(on: bool) {
-    save_flag("minimal", on);
-}
-
 /// Windows melaporkan layar penuh / presentasi (toast notifikasi ditahan agar tidak mengganggu).
 pub(crate) fn user_fullscreen() -> bool {
     use windows::Win32::UI::Shell::SHQueryUserNotificationState;
@@ -190,6 +168,7 @@ pub(crate) unsafe fn tray_menu(hwnd: HWND, autostart: bool, minimal: bool, notif
     let _ = AppendMenuW(menu, chk(notif_on), CMD_NOTIF as usize, w!("Windows notifications"));
     let _ = AppendMenuW(menu, MF_STRING, CMD_NOTIF_ACCESS as usize, w!("Notification access..."));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS as usize, w!("Settings"));
     let _ = AppendMenuW(menu, MF_STRING, CMD_ABOUT as usize, w!("About Hesewake Notch"));
     let _ = AppendMenuW(menu, MF_STRING, CMD_EXIT as usize, w!("Exit"));
     track(hwnd, menu)

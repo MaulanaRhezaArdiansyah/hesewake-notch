@@ -2,7 +2,6 @@
 
 use super::*;
 
-const MAXIMIZED_IS_BUSY: bool = true;
 const BUSY_APPS: &[&str] = &[
     "photoshop", "illustrator", "premiere", "afterfx", "indesign", "lightroom", "acrobat", "animate", "audition",
     "adobe",
@@ -30,7 +29,8 @@ unsafe fn exe_name(hwnd: HWND) -> String {
     full.rsplit('\\').next().unwrap_or("").to_lowercase()
 }
 
-pub(crate) unsafe fn is_busy(own: HWND) -> bool {
+/// `maximized_is_busy`: jendela maximized biasa juga dianggap sibuk (bukan hanya layar penuh / app Adobe).
+pub(crate) unsafe fn is_busy(own: HWND, maximized_is_busy: bool) -> bool {
     let fg = GetForegroundWindow();
     if fg.0.is_null() || fg == own {
         return false;
@@ -45,10 +45,11 @@ pub(crate) unsafe fn is_busy(own: HWND) -> bool {
     if !exe.is_empty() && BUSY_APPS.iter().any(|k| exe.contains(k)) {
         return true;
     }
-    if MAXIMIZED_IS_BUSY {
-        if IsZoomed(fg).as_bool() {
-            return true;
-        }
+    if maximized_is_busy && IsZoomed(fg).as_bool() {
+        return true;
+    }
+    {
+        // Layar penuh sungguhan (F11, video): jendela menutupi seluruh layar.
         let mut r = RECT::default();
         if GetWindowRect(fg, &mut r).is_ok() {
             let (sw, sh) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));

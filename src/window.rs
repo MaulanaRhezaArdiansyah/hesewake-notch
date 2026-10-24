@@ -64,7 +64,7 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     a.set_art(&d.rgba);
                 }
                 if a.media.playing && !was && !a.expanded() {
-                    a.show(0);
+                    a.show_id(SlideId::Music);
                 }
                 a.last = Instant::now();
                 present(a);
@@ -93,7 +93,7 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 a.drag_dx = 0.0;
                 a.shelf_drag = None;
                 // Deteksi kalau tombol ditekan di atas item shelf (bukan tombol ×): siapkan drag-out.
-                if a.ready() && !a.editing && a.cur() == 3 {
+                if a.ready() && !a.editing && a.is_slide(SlideId::Ledge) {
                     for i in 0..a.shelf.len() {
                         let tx = LX + i as f32 * (SH_W + SH_GAP);
                         if in_rect(x, y, tx, SH_Y, SH_W, SH_H) {
@@ -194,16 +194,16 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 }
                 let vertical = msg == WM_MOUSEWHEEL;
                 // Scrap slide: wheel / trackpad scrolls a long note instead of switching slides.
-                if vertical && a.cur() == 4 && a.note_wheel(d) {
+                if vertical && a.is_slide(SlideId::Scrap) && a.note_wheel(d) {
                     present(a);
                     return;
                 }
-                if vertical && a.cur() == 5 && a.last_wheel.elapsed() > Duration::from_millis(90) && a.notif_wheel(d) {
+                if vertical && a.is_slide(SlideId::Notifications) && a.last_wheel.elapsed() > Duration::from_millis(90) && a.notif_wheel(d) {
                     a.last_wheel = Instant::now();
                     present(a);
                     return;
                 }
-                if vertical && a.cur() == 2 && !a.editing && a.todos.len() > 3 {
+                if vertical && a.is_slide(SlideId::Todo) && !a.editing && a.todos.len() > 3 {
                     if a.last_wheel.elapsed() < Duration::from_millis(90) {
                         return;
                     }
@@ -408,7 +408,7 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             with_app(|a| {
                 a.shelf_add(paths);
                 if !a.editing {
-                    a.show(3);
+                    a.show_id(SlideId::Ledge);
                 }
                 a.peek_until = Some(Instant::now() + Duration::from_secs(4));
                 a.last = Instant::now();
@@ -460,13 +460,17 @@ unsafe fn run_command(hwnd: HWND, cmd: i32) {
             sys::CMD_AUTOSTART => sys::set_autostart(!sys::autostart_enabled()),
             sys::CMD_MINIMAL => {
                 a.minimal = !a.minimal;
-                sys::save_minimal(a.minimal);
+                a.save_settings();
             }
             sys::CMD_ABOUT => show_about = true,
+            sys::CMD_SETTINGS => {
+                a.show_id(SlideId::Settings);
+                a.peek_until = Some(Instant::now() + Duration::from_secs(8));
+            }
             sys::CMD_NOTIF => {
                 a.notif_on = !a.notif_on;
                 notif::set_enabled(a.notif_on);
-                sys::save_flag("notifications", a.notif_on);
+                a.save_settings();
                 if a.notif_on {
                     if !a.notif_started {
                         a.notif_started = true;

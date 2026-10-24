@@ -2,6 +2,23 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 0.2.0 (dalam pengerjaan)
+
+### Added
+- **Slide Settings** (slide terakhir, selalu ada) dengan tiga tab:
+  - **Slides**: tampilkan/sembunyikan tiap slide dan ubah urutannya dengan tombol naik/turun (sel bertukar tempat dengan animasi).
+  - **Display**: Minimal notch, "Thin on maximize", penyesuaian waktu lirik (-500 sampai +1000 ms), foto kontak pada notifikasi.
+  - **Features**: notifikasi Windows dan autostart.
+  Menu klik kanan dan tray punya item "Settings".
+- Registri slide (`SlideId`) dan model pengaturan (`settings.txt`: `slides=`, `lyric_lead_ms=`, `busy_on_maximized=`, ...) yang kompatibel dengan berkas lama.
+
+### Changed
+- Jendela **maximized biasa tidak lagi** membuat notch menyusut jadi garis tipis; hanya layar penuh sungguhan dan aplikasi Adobe. Bisa dikembalikan lewat Settings > Display > "Thin on maximize".
+- Pindah slide, titik slide, dan hover lonceng memakai identitas slide (bukan nomor tetap), jadi tetap benar saat slide disembunyikan atau diurutkan ulang.
+
+### Fixed
+- Menempatkan kursor dengan klik mouse di kartu Scrap tidak berfungsi karena memeriksa nomor slide yang salah.
+
 ## [0.1.0] - 2026-10-24
 
 Rilis pertama **Hesewake Notch**, fork pribadi dari [Poch](https://github.com/klawcodes/poch) 0.7.0 oleh Commonly Works (MIT).

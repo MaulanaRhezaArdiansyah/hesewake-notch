@@ -505,7 +505,7 @@ impl App {
 
     /// Mouse press inside the note card while editing: place caret, start drag-selection.
     pub(crate) unsafe fn note_mouse_down(&mut self, x: f32, y: f32, shift: bool) -> bool {
-        if !(self.ready() && self.editing && self.note_mode && self.cur() == 5 && in_rect(x, y, LX, NOTE_Y, CW, NOTE_H)) {
+        if !(self.ready() && self.editing && self.note_mode && self.is_slide(SlideId::Scrap) && in_rect(x, y, LX, NOTE_Y, CW, NOTE_H)) {
             return false;
         }
         self.clamp_nv();

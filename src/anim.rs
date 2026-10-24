@@ -38,9 +38,9 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() {
         16
-    } else if a.expanded() && a.cur() == 0 && a.tint.animating() {
+    } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide
     } else if a.media.playing && !a.expanded() && !a.busy {
         33
@@ -185,13 +185,13 @@ unsafe fn poll(a: &mut App) {
                 a.hover = inside;
                 changed = true;
                 if to_notif {
-                    a.show(5);
+                    a.show_id(SlideId::Notifications);
                 }
             }
         }
     }
     if a.tick_n % 5 == 0 {
-        let b = is_busy(HWND(a.hwnd as *mut c_void));
+        let b = is_busy(HWND(a.hwnd as *mut c_void), a.cfg.busy_on_maximized);
         if b != a.busy {
             a.busy = b;
             changed = true;
@@ -276,6 +276,7 @@ pub(crate) unsafe fn tick(id: usize) {
         a.t += dt;
         a.water_ui_step(dt);
         a.lyric_scroll_step(dt);
+        a.settings_ui_step(dt);
         a.notif_ui_step();
 
         // Only advance the eye once the notch is back to its small size, so the pop-open is actually seen.
@@ -308,7 +309,8 @@ pub(crate) unsafe fn tick(id: usize) {
             a.vh = 0.0;
             a.sp = a.slide as f32;
             a.sv = 0.0;
-            let k = a.slide.div_euclid(N_SLIDES as i32) * N_SLIDES as i32;
+            let n = a.n_slides() as i32;
+            let k = a.slide.div_euclid(n) * n;
             a.slide -= k;
             a.sp -= k as f32;
         }
