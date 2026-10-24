@@ -193,6 +193,24 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     return;
                 }
                 let vertical = msg == WM_MOUSEWHEEL;
+                // Slide Music: scroll di atas area kontrol memutar volume master (bukan pindah slide).
+                if vertical && a.is_slide(SlideId::Music) && !a.lyric_mode {
+                    let mut p = POINT::default();
+                    if GetCursorPos(&mut p).is_ok() {
+                        let (x, y) = ((p.x - a.wx) as f32, p.y as f32);
+                        if in_rect(x, y, MX - 10.0, 100.0, MW + 20.0, 56.0) {
+                            if let Some((vol, muted)) = audio::adjust(audio::wheel_step(d)) {
+                                // Notch sedang terbuka: indikator di dalam slide (toast dibatalkan saat hover).
+                                a.vol_state = ((vol * 100.0).round() as u8, muted);
+                                a.vol_t = Instant::now();
+                                a.last = Instant::now();
+                                present(a);
+                                schedule(a);
+                            }
+                            return;
+                        }
+                    }
+                }
                 // Scrap slide: wheel / trackpad scrolls a long note instead of switching slides.
                 if vertical && a.is_slide(SlideId::Scrap) && a.note_wheel(d) {
                     present(a);

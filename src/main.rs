@@ -51,6 +51,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 // ---------------------------------------------------------------- modul (satu file per fitur)
 mod anim;
+mod audio;
 mod bt;
 mod busy;
 mod clock;
@@ -208,6 +209,9 @@ struct App {
     priv_mic: Vec<String>,
     priv_cam: Vec<String>,
     priv_t: Instant,
+    /// Indikator volume di slide Music setelah scroll: waktu terakhir dan (persen, bisu).
+    vol_t: Instant,
+    vol_state: (u8, bool),
     order: Vec<SlideId>,
     sui: settingsview::SettingsUi,
 }
@@ -263,6 +267,8 @@ fn demo_toast() -> Option<ToastKind> {
         "caps" => ToastKind::Hud { kind: HudKind::Caps, on: true },
         "caps-off" => ToastKind::Hud { kind: HudKind::Caps, on: false },
         "num" => ToastKind::Hud { kind: HudKind::Num, on: true },
+        "volume" => ToastKind::Hud { kind: HudKind::Volume(46, false), on: true },
+        "mute" => ToastKind::Hud { kind: HudKind::Volume(0, true), on: true },
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
@@ -489,6 +495,8 @@ fn main() -> Result<()> {
             priv_mic: Vec::new(),
             priv_cam: Vec::new(),
             priv_t: Instant::now() - Duration::from_secs(10),
+            vol_t: Instant::now() - Duration::from_secs(10),
+            vol_state: (0, false),
             order: slides::visible_order(&cfg.slides),
             sui: settingsview::SettingsUi::new(),
             cfg,

@@ -38,7 +38,7 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() {
         16
     } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide

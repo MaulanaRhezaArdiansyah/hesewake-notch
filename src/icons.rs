@@ -114,6 +114,31 @@ impl Gfx {
         self.circle(cx + s * 0.17, cy - s * 0.08, s * 0.075, dots);
     }
 
+    /// Speaker; `level` 0..=3 gelombang suara, `muted` menggambar tanda silang.
+    pub(crate) fn icon_speaker(&mut self, cx: f32, cy: f32, s: f32, level: u8, muted: bool, p: &Paint) {
+        let pts = [(-0.62, -0.22), (-0.3, -0.22), (0.06, -0.52), (0.06, 0.52), (-0.3, 0.22), (-0.62, 0.22)];
+        if let Some(path) = path_of(&pts, cx, cy, s, true) {
+            self.fill(&path, p);
+        }
+        let st = Stroke { width: (s * 0.1).max(1.1), line_cap: LineCap::Round, ..Default::default() };
+        if muted {
+            self.line(cx + s * 0.22, cy - s * 0.2, cx + s * 0.62, cy + s * 0.2, (s * 0.1).max(1.1), p);
+            self.line(cx + s * 0.62, cy - s * 0.2, cx + s * 0.22, cy + s * 0.2, (s * 0.1).max(1.1), p);
+            return;
+        }
+        for k in 0..level.min(3) {
+            let r = 0.28 + 0.2 * k as f32;
+            let mut v = Vec::new();
+            for j in 0..=8 {
+                let a = -0.9 + 1.8 * j as f32 / 8.0;
+                v.push((0.06 + r * a.cos(), r * a.sin()));
+            }
+            if let Some(path) = path_of(&v, cx, cy, s, false) {
+                self.pm.stroke_path(&path, p, &st, Transform::identity(), None);
+            }
+        }
+    }
+
     /// Mikrofon: kapsul + lengkung penyangga + kaki.
     pub(crate) fn icon_mic(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
         self.fill(&rrect(cx - s * 0.17, cy - s * 0.46, s * 0.34, s * 0.58, s * 0.17), p);

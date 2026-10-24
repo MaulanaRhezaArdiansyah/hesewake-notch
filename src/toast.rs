@@ -15,11 +15,19 @@ pub(crate) enum HudKind {
     Caps,
     Num,
     Scroll,
+    /// Volume master (persen, bisu).
+    Volume(u8, bool),
 }
 
 impl HudKind {
+    /// Jenis yang sama (abaikan nilai): HUD beruntun diperbarui di tempat, tanpa animasi masuk ulang.
+    pub(crate) fn same_class(&self, o: &HudKind) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(o)
+    }
+
     fn label(self) -> &'static str {
         match self {
+            HudKind::Volume(..) => "Volume",
             HudKind::Caps => "Caps Lock",
             HudKind::Num => "Num Lock",
             HudKind::Scroll => "Scroll Lock",
@@ -30,6 +38,7 @@ impl HudKind {
             HudKind::Caps => "A",
             HudKind::Num => "1",
             HudKind::Scroll => "S",
+            HudKind::Volume(..) => "V",
         }
     }
 }
@@ -76,7 +85,7 @@ impl App {
         // HUD beruntun (mis. Caps Lock ditekan dua kali) menggantikan HUD yang sedang tampil, tanpa antre.
         if let (Some(cur), ToastKind::Hud { .. }) = (self.toast.as_mut(), &kind) {
             if matches!(cur.kind, ToastKind::Hud { .. }) {
-                let same = cur.kind == kind || matches!((&cur.kind, &kind), (ToastKind::Hud { kind: a, .. }, ToastKind::Hud { kind: b, .. }) if a == b);
+                let same = cur.kind == kind || matches!((&cur.kind, &kind), (ToastKind::Hud { kind: a, .. }, ToastKind::Hud { kind: b, .. }) if a.same_class(b));
                 cur.kind = kind;
                 // jenis sama: lewati animasi masuk (isi sudah tampil), hanya perpanjang waktu
                 cur.t0 = if same { Instant::now() - Duration::from_millis(450) } else { Instant::now() };
@@ -278,6 +287,24 @@ impl App {
     /// HUD kecil untuk tombol kunci: ikon huruf dalam ring, nama tombol, dan status On/Off berwarna.
     fn draw_hud_toast(g: &mut Gfx, w: f32, h: f32, al: f32, t: f32, kind: HudKind, on: bool) {
         let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        if let HudKind::Volume(pct, muted) = kind {
+            let col = if muted { GREY } else { SLIDE_ACCENT };
+            let sc = 0.7 + 0.3 * pop(t).clamp(0.0, 1.2);
+            let level = if muted || pct == 0 { 0 } else if pct < 34 { 1 } else if pct < 67 { 2 } else { 3 };
+            g.icon_speaker(x0 + 28.0, cy, 18.0 * sc, level, muted, &paint(255, 255, 255, al));
+            let k = ss(0.04, 0.26, t);
+            g.txtb("Volume", x0 + 54.0, cy - 17.0, 12.0, [200, 200, 208], al * k, 80.0);
+            let (bx, by, bw) = (x0 + 54.0, cy + 4.0, w - 54.0 - 62.0);
+            g.fill(&rrect(bx, by, bw, 6.0, 3.0), &paint(255, 255, 255, 0.16 * al));
+            let fw = (bw * pct as f32 / 100.0).max(if pct > 0 { 6.0 } else { 0.0 });
+            if fw > 0.0 {
+                g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(col[0], col[1], col[2], al));
+            }
+            let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
+            let tw = g.width_ex(&txt, 14.0, true);
+            g.txtb(&txt, x0 + w - 20.0 - tw, cy - 9.0, 14.0, [255, 255, 255], al * k, 60.0);
+            return;
+        }
         let col = if on { SLIDE_ACCENT } else { GREY };
         let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
         let (rcx, r) = (x0 + 28.0, 14.0 * sc);

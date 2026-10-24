@@ -31,6 +31,9 @@ pub(crate) struct Media {
     pub(crate) dur: u32,
     /// Posisi dalam milidetik (sudah diekstrapolasi dari LastUpdatedTime) untuk sinkron lirik.
     pub(crate) pos_ms: u32,
+    /// Nama pemutar yang dikontrol dan jumlah pemutar media yang aktif (>1 = bisa berpindah sumber).
+    pub(crate) source: String,
+    pub(crate) sources: u32,
 }
 
 impl Media {
@@ -49,6 +52,56 @@ pub(crate) enum Cmd {
     Toggle,
     Next,
     Seek(f32),
+    /// Pindah ke pemutar media berikutnya (bila ada lebih dari satu).
+    CycleSource,
+}
+
+use windows::Media::Control::GlobalSystemMediaTransportControlsSession as MediaSession;
+
+/// Sesi yang dikontrol: pilihan pengguna (AUMID) bila masih ada, selain itu sesi sistem saat ini.
+fn pick_session(mgr: &SessionManager, chosen: &mut Option<String>) -> Option<MediaSession> {
+    if let Some(id) = chosen.as_ref() {
+        if let Ok(list) = mgr.GetSessions() {
+            for s in list {
+                if s.SourceAppUserModelId().map(|h| h.to_string()).ok().as_deref() == Some(id.as_str()) {
+                    return Some(s);
+                }
+            }
+        }
+        *chosen = None; // aplikasinya sudah tutup
+    }
+    mgr.GetCurrentSession().ok()
+}
+
+fn cycle_source(mgr: &SessionManager, chosen: &mut Option<String>) {
+    let ids: Vec<String> = mgr
+        .GetSessions()
+        .map(|l| l.into_iter().filter_map(|s| s.SourceAppUserModelId().ok().map(|h| h.to_string())).collect())
+        .unwrap_or_default();
+    if ids.len() < 2 {
+        *chosen = None;
+        return;
+    }
+    let cur = chosen
+        .clone()
+        .or_else(|| mgr.GetCurrentSession().ok().and_then(|s| s.SourceAppUserModelId().ok()).map(|h| h.to_string()));
+    let pos = cur.and_then(|c| ids.iter().position(|i| *i == c)).unwrap_or(0);
+    *chosen = Some(ids[(pos + 1) % ids.len()].clone());
+}
+
+/// Nama pendek dari AUMID: `SpotifyAB.SpotifyMusic_zpdn...!Spotify` -> `Spotify`, `chrome.exe` -> `Chrome`.
+pub(crate) fn friendly_source(id: &str) -> String {
+    let id = id.strip_suffix(".exe").unwrap_or(id);
+    let base = match id.rsplit_once('!') {
+        Some((_, after)) => after,
+        None => id.split('_').next().unwrap_or(id),
+    };
+    let base = base.rsplit('.').next().unwrap_or(base);
+    let mut c = base.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
 }
 
 fn fmt_time(s: u32) -> String {
@@ -163,10 +216,13 @@ pub(crate) fn media_thread(
     let mut online_state = Arc::new(AtomicU8::new(0)); // 0 = berjalan/belum, 1 = berhasil, 2 = gagal
     let mut last_dur: u32 = 0;
     let mut net_tick: u32 = 0;
+    let mut chosen: Option<String> = None; // pemutar pilihan pengguna (AUMID)
 
     loop {
         if let Ok(cmd) = rx.recv_timeout(Duration::from_millis(1000)) {
-            if let Ok(s) = mgr.GetCurrentSession() {
+            if matches!(cmd, Cmd::CycleSource) {
+                cycle_source(&mgr, &mut chosen);
+            } else if let Some(s) = pick_session(&mgr, &mut chosen) {
                 match cmd {
                     Cmd::Prev => {
                         let _ = s.TrySkipPreviousAsync();
@@ -181,6 +237,7 @@ pub(crate) fn media_thread(
                         let ticks = (f as f64 * last_dur as f64 * 10_000_000.0) as i64;
                         let _ = s.TryChangePlaybackPositionAsync(ticks);
                     }
+                    Cmd::CycleSource => {}
                 }
             }
             std::thread::sleep(Duration::from_millis(250));
@@ -194,7 +251,9 @@ pub(crate) fn media_thread(
         let mut new = Media::default();
         let mut props: Option<MediaProps> = None;
         let mut is_spotify = false;
-        if let Ok(s) = mgr.GetCurrentSession() {
+        new.sources = mgr.GetSessions().and_then(|l| l.Size()).unwrap_or(0);
+        if let Some(s) = pick_session(&mgr, &mut chosen) {
+            new.source = s.SourceAppUserModelId().map(|h| friendly_source(&h.to_string())).unwrap_or_default();
             is_spotify = s
                 .SourceAppUserModelId()
                 .map(|h| h.to_string().to_lowercase().contains("spotify"))
@@ -697,6 +756,42 @@ impl App {
         g.txt(label, x + 12.0, y, 11.0, text, al, 140.0);
     }
 
+    /// 0..1: seberapa terlihat indikator volume (muncul cepat, memudar di akhir); 0 bila tidak aktif.
+    pub(crate) fn vol_overlay_alpha(&self) -> f32 {
+        let e = self.vol_t.elapsed().as_secs_f32();
+        if e >= 1.5 {
+            return 0.0;
+        }
+        (e / 0.1).min(1.0) * (1.0 - ((e - 1.2) / 0.3).clamp(0.0, 1.0))
+    }
+
+    pub(crate) fn vol_overlay_active(&self) -> bool {
+        self.expanded() && self.is_slide(SlideId::Music) && self.vol_t.elapsed().as_secs_f32() < 1.5
+    }
+
+    /// Indikator volume yang menimpa baris kontrol: ikon speaker, bar, persen.
+    fn draw_vol_overlay(&self, g: &mut Gfx, ox: f32, al: f32) {
+        let a = al * self.vol_overlay_alpha();
+        if a <= 0.01 {
+            return;
+        }
+        let (pct, muted) = self.vol_state;
+        let (x, y, w, h) = (MX + ox - 8.0, 110.0, MW + 16.0, 36.0);
+        g.fill(&rrect(x, y, w, h, 14.0), &paint(8, 10, 18, a));
+        let level = if muted || pct == 0 { 0 } else if pct < 34 { 1 } else if pct < 67 { 2 } else { 3 };
+        g.icon_speaker(x + 20.0, y + h / 2.0, 16.0, level, muted, &paint(255, 255, 255, a));
+        let (bx, by, bw) = (x + 40.0, y + h / 2.0 - 3.0, w - 40.0 - 50.0);
+        g.fill(&rrect(bx, by, bw, 6.0, 3.0), &paint(255, 255, 255, 0.18 * a));
+        let fw = (bw * pct as f32 / 100.0).max(if pct > 0 { 6.0 } else { 0.0 });
+        if fw > 0.0 {
+            let c = if muted { [150, 150, 158] } else { SLIDE_ACCENT };
+            g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(c[0], c[1], c[2], a));
+        }
+        let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
+        let tw = g.width_ex(&txt, 12.0, true);
+        g.txtb(&txt, x + w - 12.0 - tw, y + h / 2.0 - 7.0, 12.0, [255, 255, 255], a, 48.0);
+    }
+
     pub(crate) fn slide_music(&self, g: &mut Gfx, ox: f32, al: f32) {
         if self.lyric_mode {
             self.slide_music_lyrics(g, ox, al);
@@ -710,7 +805,21 @@ impl App {
             }
             (lyrics::Lyrics::Loading, None) => g.txt("Loading lyrics", LX + ox, 14.0, 12.0, [100, 100, 106], al, 200.0),
             (lyrics::Lyrics::Unavailable, None) => g.txt("Lyrics not available", LX + ox, 14.0, 12.0, [100, 100, 106], al, 200.0),
-            _ => g.txt("Now Playing", LX + ox, 14.0, 12.0, [140, 140, 145], al, 200.0),
+            _ => {
+                if self.media.sources > 1 && !self.media.source.is_empty() {
+                    let label = format!("Now Playing \u{b7} {}", self.media.source);
+                    g.txt(&label, LX + ox, 14.0, 12.0, [140, 140, 145], al, 180.0);
+                    // ikon tukar sumber (dua panah) setelah teks
+                    let sx = LX + ox + g.width(&label, 12.0) + 10.0;
+                    let c = paint(150, 150, 158, al);
+                    g.line(sx - 4.0, 18.0, sx + 4.0, 18.0, 1.3, &c);
+                    g.line(sx + 1.5, 15.5, sx + 4.0, 18.0, 1.3, &c);
+                    g.line(sx - 4.0, 23.0, sx + 4.0, 23.0, 1.3, &c);
+                    g.line(sx - 4.0, 23.0, sx - 1.5, 20.5, 1.3, &c);
+                } else {
+                    g.txt("Now Playing", LX + ox, 14.0, 12.0, [140, 140, 145], al, 200.0);
+                }
+            }
         }
         self.clock_side(g, RX + ox, al);
         self.art_at(g, LX + ox, 44.0, 88.0, 12.0, al);
@@ -746,6 +855,7 @@ impl App {
         } else {
             g.poly(&[(cx - 4.0, cy - 8.0), (cx - 4.0, cy + 8.0), (cx + 8.0, cy)], &blk);
         }
+        self.draw_vol_overlay(g, ox, al);
     }
 }
 
@@ -760,5 +870,19 @@ mod tests {
         assert_eq!(clean_title("Song (feat. X)"), "Song");
         assert_eq!(clean_title("Plain Title"), "Plain Title");
         assert_eq!(clean_title("/"), "/");
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::friendly_source;
+
+    #[test]
+    fn friendly_source_names() {
+        assert_eq!(friendly_source("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"), "Spotify");
+        assert_eq!(friendly_source("chrome.exe"), "Chrome");
+        assert_eq!(friendly_source("Chrome"), "Chrome");
+        assert_eq!(friendly_source("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"), "ZuneMusic");
+        assert_eq!(friendly_source(""), "");
     }
 }
