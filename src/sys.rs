@@ -1,0 +1,228 @@
+//! Integrasi sistem: single instance, autostart (registry Run), tray icon + menu, status layar (power), About.
+
+use super::*;
+use windows::Win32::System::Power::{GetSystemPowerStatus, RegisterPowerSettingNotification, SYSTEM_POWER_STATUS};
+use windows::Win32::System::Registry::{
+    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
+    KEY_SET_VALUE, REG_SZ,
+};
+use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::UI::Shell::{Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW};
+
+/// Pesan callback tray icon.
+pub(crate) const WM_TRAY: u32 = WM_APP + 1;
+
+// ---- id menu bersama (context menu notch + tray)
+pub(crate) const CMD_EXIT: i32 = 1;
+pub(crate) const CMD_SNOOZE: i32 = 12;
+pub(crate) const CMD_AUTOSTART: i32 = 40;
+pub(crate) const CMD_MINIMAL: i32 = 41;
+pub(crate) const CMD_ABOUT: i32 = 42;
+pub(crate) const CMD_NOTIF: i32 = 43;
+pub(crate) const CMD_NOTIF_ACCESS: i32 = 44;
+
+/// Mutex single instance. Mengembalikan false bila Hesewake Notch lain sudah jalan.
+pub(crate) fn single_instance() -> bool {
+    unsafe {
+        match CreateMutexW(None, true, w!("Local\\HesewakeNotch.SingleInstance")) {
+            // Handle sengaja dibiarkan terbuka sampai proses selesai.
+            Ok(_) => GetLastError() != ERROR_ALREADY_EXISTS,
+            Err(_) => true,
+        }
+    }
+}
+
+// ---------------------------------------------------------------- autostart
+const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+const RUN_NAME: PCWSTR = w!("HesewakeNotch");
+/// Nama entri autostart sebelum rebrand.
+const RUN_NAME_OLD: PCWSTR = w!("Poch");
+
+pub(crate) fn autostart_enabled() -> bool {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_READ, &mut key).is_err() {
+            return false;
+        }
+        let r = RegQueryValueExW(key, RUN_NAME, None, None, None, None);
+        let _ = RegCloseKey(key);
+        r.is_ok()
+    }
+}
+
+/// Pindahkan entri autostart lama ("Poch") ke nama baru dengan status aktif yang sama.
+pub(crate) fn migrate_autostart() {
+    let had_old = unsafe {
+        let mut key = HKEY::default();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_READ | KEY_SET_VALUE, &mut key).is_err() {
+            return;
+        }
+        let had = RegQueryValueExW(key, RUN_NAME_OLD, None, None, None, None).is_ok();
+        if had {
+            let _ = RegDeleteValueW(key, RUN_NAME_OLD);
+        }
+        let _ = RegCloseKey(key);
+        had
+    };
+    if had_old {
+        set_autostart(true);
+    }
+}
+
+pub(crate) fn set_autostart(on: bool) {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &mut key).is_err() {
+            return;
+        }
+        if on {
+            if let Ok(exe) = std::env::current_exe() {
+                let cmd = format!("\"{}\"", exe.display());
+                let wide: Vec<u16> = cmd.encode_utf16().chain(std::iter::once(0)).collect();
+                let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
+                let _ = RegSetValueExW(key, RUN_NAME, 0, REG_SZ, Some(bytes));
+            }
+        } else {
+            let _ = RegDeleteValueW(key, RUN_NAME);
+        }
+        let _ = RegCloseKey(key);
+    }
+}
+
+// ---------------------------------------------------------------- settings
+/// Flag boolean di settings.txt (baris `kunci=0|1`).
+pub(crate) fn load_flag(key: &str, default: bool) -> bool {
+    let Ok(s) = std::fs::read_to_string(data_path("settings.txt")) else { return default };
+    let prefix = format!("{key}=");
+    s.lines().find_map(|l| l.trim().strip_prefix(prefix.as_str()).map(|v| v == "1")).unwrap_or(default)
+}
+
+pub(crate) fn save_flag(key: &str, on: bool) {
+    let prefix = format!("{key}=");
+    let old = std::fs::read_to_string(data_path("settings.txt")).unwrap_or_default();
+    let mut lines: Vec<String> = old.lines().filter(|l| !l.trim().starts_with(prefix.as_str())).map(str::to_string).collect();
+    lines.push(format!("{key}={}", on as u8));
+    write_data("settings.txt", lines.join("\n") + "\n");
+}
+
+pub(crate) fn load_minimal() -> bool {
+    load_flag("minimal", false)
+}
+
+pub(crate) fn save_minimal(on: bool) {
+    save_flag("minimal", on);
+}
+
+/// Windows melaporkan layar penuh / presentasi (toast notifikasi ditahan agar tidak mengganggu).
+pub(crate) fn user_fullscreen() -> bool {
+    use windows::Win32::UI::Shell::SHQueryUserNotificationState;
+    match unsafe { SHQueryUserNotificationState() } {
+        Ok(st) => matches!(st.0, 2 | 3 | 4), // QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN, QUNS_PRESENTATION_MODE
+        Err(_) => false,
+    }
+}
+
+pub(crate) unsafe fn open_notification_settings() {
+    let _ = ShellExecuteW(None, w!("open"), w!("ms-settings:privacy-notifications"), None, None, SW_SHOWNORMAL);
+}
+
+// ---------------------------------------------------------------- power (layar nyala/mati)
+pub(crate) unsafe fn register_display_notifications(hwnd: HWND) {
+    let _ = RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
+}
+
+/// Baca WM_POWERBROADCAST: Some(true) = layar mati, Some(false) = layar menyala/redup.
+pub(crate) unsafe fn display_off_from(wp: WPARAM, lp: LPARAM) -> Option<bool> {
+    const PBT_POWERSETTINGCHANGE: usize = 0x8013;
+    if wp.0 != PBT_POWERSETTINGCHANGE || lp.0 == 0 {
+        return None;
+    }
+    let s = &*(lp.0 as *const windows::Win32::System::Power::POWERBROADCAST_SETTING);
+    if s.PowerSetting != GUID_CONSOLE_DISPLAY_STATE || s.DataLength < 4 {
+        return None;
+    }
+    let state = std::ptr::read_unaligned(s.Data.as_ptr() as *const u32);
+    Some(state == 0)
+}
+
+// ---------------------------------------------------------------- tray
+unsafe fn tray_data(hwnd: HWND) -> NOTIFYICONDATAW {
+    let mut nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
+        uCallbackMessage: WM_TRAY,
+        ..Default::default()
+    };
+    // Ikon exe (ditanam build.rs sebagai resource id 1); cadangan: ikon aplikasi standar.
+    let hinst = GetModuleHandleW(None).unwrap_or_default();
+    nid.hIcon = LoadIconW(hinst, PCWSTR(1 as *const u16)).or_else(|_| LoadIconW(None, IDI_APPLICATION)).unwrap_or_default();
+    for (d, s) in nid.szTip.iter_mut().zip("Hesewake Notch".encode_utf16().chain(std::iter::once(0))) {
+        *d = s;
+    }
+    nid
+}
+
+pub(crate) unsafe fn tray_add(hwnd: HWND) {
+    let nid = tray_data(hwnd);
+    let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+}
+
+pub(crate) unsafe fn tray_remove(hwnd: HWND) {
+    let nid = tray_data(hwnd);
+    let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+}
+
+/// Pesan "TaskbarCreated": dikirim saat Explorer restart, ikon tray harus dipasang ulang.
+pub(crate) fn taskbar_created_msg() -> u32 {
+    use std::sync::OnceLock;
+    static MSG: OnceLock<u32> = OnceLock::new();
+    *MSG.get_or_init(|| unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) })
+}
+
+pub(crate) unsafe fn tray_menu(hwnd: HWND, autostart: bool, minimal: bool, notif_on: bool) -> i32 {
+    let Ok(menu) = CreatePopupMenu() else { return 0 };
+    let chk = |on: bool| if on { MF_STRING | MF_CHECKED } else { MF_STRING };
+    let _ = AppendMenuW(menu, chk(autostart), CMD_AUTOSTART as usize, w!("Start with Windows"));
+    let _ = AppendMenuW(menu, chk(minimal), CMD_MINIMAL as usize, w!("Minimal notch"));
+    let _ = AppendMenuW(menu, chk(notif_on), CMD_NOTIF as usize, w!("Windows notifications"));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_NOTIF_ACCESS as usize, w!("Notification access..."));
+    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = AppendMenuW(menu, MF_STRING, CMD_ABOUT as usize, w!("About Hesewake Notch"));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_EXIT as usize, w!("Exit"));
+    track(hwnd, menu)
+}
+
+pub(crate) unsafe fn track(hwnd: HWND, menu: HMENU) -> i32 {
+    let prev_fg = GetForegroundWindow();
+    let mut pt = POINT::default();
+    let _ = GetCursorPos(&mut pt);
+    let _ = SetForegroundWindow(hwnd);
+    let cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, None);
+    let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+    let _ = DestroyMenu(menu);
+    if !prev_fg.0.is_null() && prev_fg != hwnd {
+        let _ = SetForegroundWindow(prev_fg);
+    }
+    cmd.0
+}
+
+pub(crate) unsafe fn about(hwnd: HWND) {
+    let text = format!(
+        "Hesewake Notch {}\nA personal notch for the top of your screen.\n\nBased on Poch by Commonly Works\n(github.com/klawcodes/poch), MIT License.\nLyrics provided by LRCLIB (lrclib.net).\nFont: Instrument Sans.",
+        env!("CARGO_PKG_VERSION")
+    );
+    let _ = MessageBoxW(hwnd, &HSTRING::from(text), w!("About Hesewake Notch"), MB_OK | MB_ICONINFORMATION);
+}
+
+/// (charger tersambung, persen baterai). None bila tidak ada baterai atau status tidak diketahui.
+pub(crate) fn power_status() -> Option<(bool, u8)> {
+    let mut st = SYSTEM_POWER_STATUS::default();
+    unsafe { GetSystemPowerStatus(&mut st).ok()? };
+    if st.BatteryFlag & 128 != 0 || st.BatteryLifePercent > 100 {
+        return None;
+    }
+    Some((st.ACLineStatus == 1, st.BatteryLifePercent))
+}
