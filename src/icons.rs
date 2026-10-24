@@ -114,6 +114,30 @@ impl Gfx {
         self.circle(cx + s * 0.17, cy - s * 0.08, s * 0.075, dots);
     }
 
+    /// Mikrofon: kapsul + lengkung penyangga + kaki.
+    pub(crate) fn icon_mic(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
+        self.fill(&rrect(cx - s * 0.17, cy - s * 0.46, s * 0.34, s * 0.58, s * 0.17), p);
+        let mut pts = Vec::new();
+        for k in 0..=12 {
+            let a = std::f32::consts::PI * k as f32 / 12.0;
+            pts.push((a.cos() * 0.62, 0.02 + a.sin() * 0.5));
+        }
+        if let Some(path) = path_of(&pts, cx, cy, s, false) {
+            let st = Stroke { width: (s * 0.1).max(1.1), line_cap: LineCap::Round, ..Default::default() };
+            self.pm.stroke_path(&path, p, &st, Transform::identity(), None);
+        }
+        self.rect(cx - s * 0.05, cy + s * 0.5, s * 0.1, s * 0.16, p);
+    }
+
+    /// Kamera: badan + "kepala" lensa segitiga di kanan.
+    pub(crate) fn icon_camera(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
+        self.fill(&rrect(cx - s * 0.5, cy - s * 0.26, s * 0.66, s * 0.52, s * 0.12), p);
+        let pts = [(0.26, -0.1), (0.78, -0.42), (0.78, 0.42), (0.26, 0.1)];
+        if let Some(path) = path_of(&pts, cx, cy, s, true) {
+            self.fill(&path, p);
+        }
+    }
+
     /// Tetes air (terisi).
     pub(crate) fn icon_drop(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
         let h = s / 2.0;

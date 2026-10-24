@@ -74,6 +74,7 @@ mod notifview;
 mod note;
 mod pace;
 mod perf;
+mod privacy;
 mod render;
 mod settings;
 mod settingsview;
@@ -203,6 +204,10 @@ struct App {
     tx: Sender<Cmd>,
     /// Pengaturan (settings.txt) dan urutan slide yang sedang tampil.
     cfg: Settings,
+    /// Aplikasi yang sedang memakai mikrofon / kamera, dan waktu perubahan terakhir (animasi titik).
+    priv_mic: Vec<String>,
+    priv_cam: Vec<String>,
+    priv_t: Instant,
     order: Vec<SlideId>,
     sui: settingsview::SettingsUi,
 }
@@ -258,6 +263,8 @@ fn demo_toast() -> Option<ToastKind> {
         "caps" => ToastKind::Hud { kind: HudKind::Caps, on: true },
         "caps-off" => ToastKind::Hud { kind: HudKind::Caps, on: false },
         "num" => ToastKind::Hud { kind: HudKind::Num, on: true },
+        "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
+        "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
         _ => ToastKind::Bluetooth { name: "soundcore R50i".into(), pct: None, connected: true },
     })
@@ -368,6 +375,8 @@ fn main() -> Result<()> {
         let notif_on = cfg.notifications;
         notif::set_avatar(cfg.notif_avatar);
         keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
+        privacy::set_enabled(cfg.privacy_dot);
+        privacy::start(hwnd.0 as isize);
         if notif_on {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }
@@ -477,6 +486,9 @@ fn main() -> Result<()> {
             water: Water::load(),
             wui: WaterUi::new(),
             tx,
+            priv_mic: Vec::new(),
+            priv_cam: Vec::new(),
+            priv_t: Instant::now() - Duration::from_secs(10),
             order: slides::visible_order(&cfg.slides),
             sui: settingsview::SettingsUi::new(),
             cfg,

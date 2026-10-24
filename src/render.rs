@@ -137,6 +137,9 @@ pub(crate) fn draw(a: &mut App) {
     let ca = if hold { 1.0 } else { (1.0 - p * 2.0).clamp(0.0, 1.0) * ((h - 16.0) / 12.0).clamp(0.0, 1.0) };
     if ca > 0.03 {
         a.draw_collapsed(&mut g, w, h, ca);
+        if a.toast.is_none() {
+            a.draw_privacy_dots(&mut g, w, ca);
+        }
     }
     if p > 0.04 {
         let pos = a.sp - a.drag_dx / 160.0;

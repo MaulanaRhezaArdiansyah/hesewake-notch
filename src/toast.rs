@@ -7,6 +7,7 @@ pub(crate) const TOAST_CHARGE: (f32, f32) = (336.0, 70.0);
 pub(crate) const TOAST_BT: (f32, f32) = (372.0, 70.0);
 /// HUD kecil (tombol kunci, volume, kecerahan): lebih pendek dari toast biasa.
 pub(crate) const TOAST_HUD: (f32, f32) = (244.0, 46.0);
+pub(crate) const TOAST_PRIV: (f32, f32) = (292.0, 46.0);
 
 /// Jenis HUD kecil.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,6 +44,8 @@ pub(crate) enum ToastKind {
     Notification { id: u32 },
     /// HUD kecil: tombol kunci (On/Off).
     Hud { kind: HudKind, on: bool },
+    /// Aplikasi mulai memakai mikrofon (`cam: false`) atau kamera (`cam: true`).
+    Privacy { cam: bool, app: String },
 }
 
 pub(crate) struct Toast {
@@ -94,6 +97,7 @@ impl App {
             ToastKind::Bluetooth { .. } => 3.8,
             ToastKind::Notification { .. } => 4.5,
             ToastKind::Hud { .. } => 1.9,
+            ToastKind::Privacy { .. } => 2.6,
             _ => 3.4,
         };
         perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
@@ -133,6 +137,7 @@ impl App {
         match self.toast.as_ref().map(|t| &t.kind) {
             Some(ToastKind::Bluetooth { .. }) | Some(ToastKind::Notification { .. }) => TOAST_BT,
             Some(ToastKind::Hud { .. }) => TOAST_HUD,
+            Some(ToastKind::Privacy { .. }) => TOAST_PRIV,
             _ => TOAST_CHARGE,
         }
     }
@@ -170,6 +175,10 @@ impl App {
             Self::draw_hud_toast(g, w, h, al, t, *kind, *on);
             return;
         }
+        if let ToastKind::Privacy { cam, app } = &ts.kind {
+            Self::draw_privacy_toast(g, w, h, al, t, *cam, app);
+            return;
+        }
 
         // (warna aksen, judul, subjudul, fraksi ring, teks kanan)
         let (rgb, title, sub, frac, right) = match &ts.kind {
@@ -184,7 +193,7 @@ impl App {
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } => unreachable!(),
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } => unreachable!(),
         };
 
         // Ring + ikon: membesar dengan pegas, ring menyapu dari 0.
@@ -207,7 +216,7 @@ impl App {
             ToastKind::Unplugged { pct } => g.icon_battery(rcx, cy, 16.0 * sc, *pct as f32 / 100.0, &ic),
             ToastKind::LowBattery { .. } => g.icon_battery(rcx, cy, 16.0 * sc, 0.12, &ic),
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } => {}
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } => {}
         }
 
         // Teks: geser 6 px + fade dengan jeda singkat.
@@ -282,5 +291,28 @@ impl App {
         let state = if on { "On" } else { "Off" };
         let sw = g.width_ex(state, 14.0, true);
         g.txtb(state, x0 + w - 20.0 - sw, cy - 9.0, 14.0, col, al * k, 50.0);
+    }
+}
+
+impl App {
+    /// "Microphone in use" / "Camera in use" + nama aplikasi; ikon mic/kamera dalam ring berwarna (oranye / hijau).
+    fn draw_privacy_toast(g: &mut Gfx, w: f32, h: f32, al: f32, t: f32, cam: bool, app: &str) {
+        let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        let rgb = if cam { [48u8, 209, 88] } else { [255u8, 159, 10] };
+        let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
+        let (rcx, r) = (x0 + 28.0, 14.0 * sc);
+        g.ring(rcx, cy, r, 1.0, 3.0, &paint(rgb[0], rgb[1], rgb[2], 0.28 * al), &paint(rgb[0], rgb[1], rgb[2], al));
+        let ic = paint(rgb[0], rgb[1], rgb[2], al);
+        if cam {
+            g.icon_camera(rcx, cy, 14.0 * sc, &ic);
+        } else {
+            g.icon_mic(rcx, cy, 14.0 * sc, &ic);
+        }
+        let k = ss(0.08, 0.32, t);
+        let label = if cam { "Camera in use" } else { "Microphone in use" };
+        g.txtb(label, x0 + 54.0 + (1.0 - k) * 6.0, cy - 9.0, 14.0, [255, 255, 255], al * k, 150.0);
+        let name = if g.width(app, 12.0) > 96.0 { ellipsize(g, app, 12.0, 96.0) } else { app.to_string() };
+        let nw = g.width(&name, 12.0);
+        g.txt(&name, x0 + w - 16.0 - nw, cy - 7.0, 12.0, GREY, al * k, 100.0);
     }
 }

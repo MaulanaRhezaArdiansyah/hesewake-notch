@@ -38,7 +38,7 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() {
         16
     } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide
@@ -97,6 +97,14 @@ unsafe fn poll(a: &mut App) {
     a.notif_ui_step();
     if a.splash.is_none() {
         if let Some(k) = a.demo_toast.take() {
+            if let toast::ToastKind::Privacy { cam, app } = &k {
+                if *cam {
+                    a.priv_cam = vec![app.clone()];
+                } else {
+                    a.priv_mic = vec![app.clone()];
+                }
+                a.priv_t = Instant::now();
+            }
             if let toast::ToastKind::Notification { id } = &k {
                 a.notifs.insert(0, notif::NotifItem {
                     id: *id,

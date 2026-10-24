@@ -18,6 +18,8 @@ pub(crate) struct Settings {
     pub(crate) notif_avatar: bool,
     /// Toast saat Caps/Num/Scroll Lock ditekan.
     pub(crate) lock_toast: bool,
+    /// Titik + toast saat aplikasi memakai mikrofon/kamera.
+    pub(crate) privacy_dot: bool,
     pub(crate) slides: SlideCfg,
 }
 
@@ -34,6 +36,7 @@ impl Default for Settings {
             lyric_lead_ms: 150,
             notif_avatar: true,
             lock_toast: true,
+            privacy_dot: true,
             slides: slides::default_cfg(),
         }
     }
@@ -53,6 +56,7 @@ impl Settings {
                 "busy_on_maximized" => s.busy_on_maximized = flag,
                 "notif_avatar" => s.notif_avatar = flag,
                 "lock_toast" => s.lock_toast = flag,
+                "privacy_dot" => s.privacy_dot = flag,
                 "lyric_lead_ms" => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.lyric_lead_ms = n.clamp(LEAD_MIN, LEAD_MAX);
@@ -70,13 +74,14 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
             self.lyric_lead_ms,
             self.notif_avatar as u8,
             self.lock_toast as u8,
+            self.privacy_dot as u8,
             slides::format_slides(&self.slides),
         )
     }

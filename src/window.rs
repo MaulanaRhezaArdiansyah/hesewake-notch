@@ -314,6 +314,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             run_command(hwnd, cmd);
             LRESULT(0)
         }
+        privacy::WM_PRIVACY => {
+            with_app(|a| {
+                a.privacy_apply();
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         keys::WM_LOCKKEY => {
             let vk = wp.0 as u32;
             if let Some(kind) = keys::kind_of(vk) {

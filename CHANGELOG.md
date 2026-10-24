@@ -12,6 +12,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
   Menu klik kanan dan tray punya item "Settings".
 - **Foto profil kontak pada notifikasi** (mis. WhatsApp Web): avatar bulat di toast dan daftar, dengan logo aplikasi sebagai lencana kecil. Gambar diambil dari payload toast di `wpndatabase.db` (dibuka read-only, hanya satu id, hanya berkas lokal) dan dari salinan yang dibuat pemantau folder `Notification Resources` milik Chrome/Edge/Brave, karena browser menghapus berkas gambarnya sesaat setelah toast tampil. Bisa dimatikan di Settings > Display > "Contact photos".
 - **Toast tombol kunci**: Caps Lock, Num Lock, dan Scroll Lock menampilkan HUD kecil On/Off di notch (hook keyboard low-level yang hanya terpasang saat fitur aktif; toggle di Settings > Features > "Lock keys"). HUD beruntun menggantikan yang sedang tampil tanpa antre.
+- **Indikator mikrofon/kamera**: titik oranye (mic) atau hijau (kamera) di pojok kanan atas notch kecil selama ada aplikasi yang memakainya, plus toast "Microphone/Camera in use" dengan nama aplikasi saat mulai. Dipantau lewat event registry `CapabilityAccessManager` (tanpa polling). Toggle di Settings > Features > "Mic / camera dot".
 - Registri slide (`SlideId`) dan model pengaturan (`settings.txt`: `slides=`, `lyric_lead_ms=`, `busy_on_maximized=`, ...) yang kompatibel dengan berkas lama.
 
 ### Changed

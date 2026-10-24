@@ -80,6 +80,7 @@ impl App {
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
                 Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
+                Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
             ],
             _ => Vec::new(),
         }
@@ -255,6 +256,11 @@ impl App {
                 (2, 2) => {
                     self.cfg.lock_toast = !self.cfg.lock_toast;
                     keys::set_enabled(self.hwnd, self.cfg.lock_toast);
+                }
+                (2, 3) => {
+                    self.cfg.privacy_dot = !self.cfg.privacy_dot;
+                    privacy::set_enabled(self.cfg.privacy_dot);
+                    self.priv_t = Instant::now();
                 }
                 _ => {}
             }
