@@ -26,6 +26,12 @@ Hesewake Notch sits flush against the top edge of your screen as a small black n
 
 ---
 
+## <img src="https://api.iconify.design/lucide/plus.svg?color=%23ff453a" width="20" align="top"> What this fork adds to Poch
+
+Synced lyrics (with a scrolling lyrics mode), cover art in the notch, a redesigned Water slide, Windows notifications with contact photos, toasts (charger, Bluetooth, Caps/Num/Scroll Lock, microphone/camera in use), volume control by scrolling, a **Settings** slide (show/hide/reorder slides, display and feature toggles), a tray menu, a blue theme, and an installer. See [CHANGELOG.md](CHANGELOG.md) for details.
+
+---
+
 ## <img src="https://api.iconify.design/lucide/layout-grid.svg?color=%23ff453a" width="20" align="top"> Slides
 
 Swipe, scroll, drag, use the arrow buttons or click the dots to move through an endless carousel.

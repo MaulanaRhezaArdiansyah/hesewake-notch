@@ -2,7 +2,7 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 0.2.0 (dalam pengerjaan)
+## [0.2.0] - 2026-10-24
 
 ### Added
 - **Slide Settings** (slide terakhir, selalu ada) dengan tiga tab:
