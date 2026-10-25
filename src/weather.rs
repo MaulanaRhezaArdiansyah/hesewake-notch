@@ -15,8 +15,8 @@ const STAGE_SECS: f32 = 4.0;
 const TRANS_SECS: f32 = 0.38;
 const HOT_C: f32 = 32.0;
 
-/// Kota bawaan untuk dipilih di Settings (nama, lintang, bujur). Kota lain: ubah `weather_*` di settings.txt.
-pub(crate) const CITIES: [(&str, f32, f32); 16] = [
+/// Kota bawaan untuk dipilih di Settings (nama, lintang, bujur). Tambah kota baru di sini (urutan lama dipertahankan agar indeks tersimpan tetap valid).
+pub(crate) const CITIES: &[(&str, f32, f32)] = &[
     ("Jakarta", -6.2088, 106.8456),
     ("Bandung", -6.9175, 107.6191),
     ("Surabaya", -7.2575, 112.7521),
@@ -33,6 +33,26 @@ pub(crate) const CITIES: [(&str, f32, f32); 16] = [
     ("Tangerang", -6.1783, 106.6319),
     ("Balikpapan", -1.2379, 116.8529),
     ("Pontianak", -0.0263, 109.3425),
+    ("Karawang", -6.3215, 107.3376),
+    ("Cikarang", -6.2615, 107.1527),
+    ("Purwakarta", -6.5569, 107.4431),
+    ("Subang", -6.5716, 107.7586),
+    ("Cirebon", -6.7063, 108.5570),
+    ("Sukabumi", -6.9277, 106.9300),
+    ("Tasikmalaya", -7.3274, 108.2207),
+    ("Serang", -6.1201, 106.1503),
+    ("Cilegon", -6.0025, 106.0111),
+    ("Surakarta", -7.5666, 110.8168),
+    ("Bandar Lampung", -5.4292, 105.2610),
+    ("Pekanbaru", 0.5071, 101.4478),
+    ("Batam", 1.0456, 104.0305),
+    ("Padang", -0.9471, 100.4172),
+    ("Banda Aceh", 5.5483, 95.3238),
+    ("Banjarmasin", -3.3194, 114.5908),
+    ("Manado", 1.4748, 124.8421),
+    ("Mataram", -8.5833, 116.1167),
+    ("Kupang", -10.1772, 123.6070),
+    ("Jayapura", -2.5337, 140.7181),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
