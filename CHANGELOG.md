@@ -2,7 +2,7 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 0.3.0 (dalam pengerjaan)
+## [0.3.0] - 2026-10-25
 
 ### Added
 - **HUD volume dan kecerahan** di notch kecil: bar dengan ikon speaker/matahari dan persen, muncul saat volume berubah dari luar (tombol media, mixer Windows) atau kecerahan layar berubah (tombol Fn, slider Windows). Volume dipantau lewat callback `IAudioEndpointVolume` (otomatis pindah saat perangkat audio default berganti), kecerahan lewat notifikasi daya `GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS` (terbukti di laptop ini). Perubahan beruntun memperbarui bar di tempat. Toggle di Settings > Features. HUD bawaan Windows tetap muncul (tidak bisa dimatikan secara resmi).
