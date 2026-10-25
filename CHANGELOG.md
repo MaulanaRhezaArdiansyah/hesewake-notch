@@ -6,6 +6,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 
 ### Fixed
 - **Teks Jepang, Mandarin, dan Korea** (judul lagu, lirik, notifikasi, to-do) sebelumnya tampil sebagai kotak kosong karena font bawaan tidak punya kana, kanji, atau hangul. Karakter CJK kini dirender lewat GDI dari font sistem (Yu Gothic UI, Meiryo UI, MS Gothic, Microsoft YaHei UI, Malgun Gothic) dan masuk ke cache glyph yang sama. Memuat font CJK ke `fontdue` sempat dicoba tetapi menaikkan memori sekitar 420 MB, jadi tidak dipakai; jalur GDI tidak menambah memori.
+- Lirik tidak lagi dicari (dan "Loading lyrics" tidak muncul) untuk media yang bukan lagu: sumber/judul/artis berisi "Netflix", atau durasi 20 menit ke atas (film, episode, podcast). Sebelumnya judul serial memunculkan lirik lagu yang salah.
 - Flag uji `--demo-text=judul|isi` untuk melihat notifikasi dengan teks non-Latin.
 
 ## [0.3.0] - 2026-10-25

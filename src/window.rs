@@ -30,7 +30,11 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     a.prev_art = a.art.take();
                     a.art_key = key;
                     a.title_t0 = a.t;
-                    a.lyrics = if a.media.title.is_empty() { lyrics::Lyrics::None } else { lyrics::Lyrics::Loading };
+                    a.lyrics = if a.media.title.is_empty() || lyrics::skip(&a.media.source, &a.media.title, &a.media.artist, a.media.dur) {
+                        lyrics::Lyrics::None
+                    } else {
+                        lyrics::Lyrics::Loading
+                    };
                     a.lyric_idx = None;
                     a.lyric_w = 0.0;
                 }

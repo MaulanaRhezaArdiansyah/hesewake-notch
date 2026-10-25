@@ -302,7 +302,9 @@ pub(crate) fn media_thread(
             art_done = new.title.is_empty();
             online_started = false;
             online_state = Arc::new(AtomicU8::new(0));
-            if !new.title.is_empty() {
+            if !new.title.is_empty() && lyrics::skip(&new.source, &new.title, &new.artist, new.dur) {
+                perf::note(&format!("lyrics: dilewati (bukan lagu) source={} dur={}", new.source, new.dur));
+            } else if !new.title.is_empty() {
                 let (t, ar, k, d) = (new.title.clone(), new.artist.clone(), key.clone(), new.dur);
                 let slot = lyr_shared.clone();
                 std::thread::spawn(move || {

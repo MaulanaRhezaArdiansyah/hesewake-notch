@@ -68,6 +68,20 @@ pub(crate) fn get_string(url: &str) -> Option<String> {
     }
 }
 
+/// Layanan video yang tidak punya lirik lagu (judul serial/film malah menarik lirik lagu yang salah).
+const NO_LYRICS_SOURCES: [&str; 1] = ["netflix"];
+/// Media yang lebih panjang dari ini (film, episode, podcast) tidak dicarikan lirik.
+const MAX_LYRIC_SECS: u32 = 20 * 60;
+
+/// True bila media ini bukan lagu: tidak perlu fetch lirik (dan tidak menampilkan "Loading lyrics").
+pub(crate) fn skip(source: &str, title: &str, artist: &str, dur_secs: u32) -> bool {
+    let hit = |s: &str| {
+        let s = s.to_lowercase();
+        NO_LYRICS_SOURCES.iter().any(|k| s.contains(k))
+    };
+    hit(source) || hit(title) || hit(artist) || dur_secs >= MAX_LYRIC_SECS
+}
+
 /// Cari lirik untuk satu lagu. Blocking: panggil dari thread terpisah.
 pub(crate) fn fetch(title: &str, artist: &str, dur_secs: u32) -> Lyrics {
     let base = format!("track_name={}&artist_name={}", pct(title), pct(artist));
@@ -165,6 +179,16 @@ pub(crate) fn current_line(lines: &[LyricLine], pos_ms: u32, lead_ms: i32) -> Op
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn skips_video_services_and_long_media() {
+        assert!(skip("Netflix", "Stranger Things", "", 0));
+        assert!(skip("Chrome", "Money Heist", "NETFLIX", 2400));
+        assert!(skip("Chrome", "Watch Netflix", "", 0));
+        assert!(skip("Spotify", "Long mix", "DJ", 20 * 60));
+        assert!(!skip("Spotify", "Lemon", "Kenshi Yonezu", 255));
+        assert!(!skip("Chrome", "One more time, One more chance", "Masayoshi Yamazaki", 0));
+    }
+
     use super::*;
 
     #[test]
