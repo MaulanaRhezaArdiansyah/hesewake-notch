@@ -2,7 +2,7 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 0.3.2
+## [0.3.2] - 2026-10-25
 
 ### Fixed
 - **Lag saat notifikasi muncul**, terutama pesan panjang atau yang berisi emoji, tanda kutip melengkung, dan simbol. Dua penyebab:
