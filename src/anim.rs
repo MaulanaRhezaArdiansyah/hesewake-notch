@@ -123,11 +123,16 @@ unsafe fn poll(a: &mut App) {
                 a.priv_t = Instant::now();
             }
             if let toast::ToastKind::Notification { id } = &k {
+                // `--demo-text=judul|isi`: uji tampilan teks non-Latin (Jepang, Korea, Mandarin)
+                let demo_text = std::env::args()
+                    .find_map(|a| a.strip_prefix("--demo-text=").map(str::to_string))
+                    .and_then(|t| t.split_once('|').map(|(a, b)| (a.to_string(), b.to_string())))
+                    .unwrap_or_else(|| ("Alice".to_string(), "Are we still on for dinner tonight?".to_string()));
                 a.notifs.insert(0, notif::NotifItem {
                     id: *id,
                     app: "Messages".into(),
-                    title: "Alice".into(),
-                    body: "Are we still on for dinner tonight?".into(),
+                    title: demo_text.0,
+                    body: demo_text.1,
                     at_unix: notif::now_unix(),
                     unread: true,
                     icon: None,

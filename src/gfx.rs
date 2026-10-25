@@ -59,8 +59,11 @@ fn glyph_of<'a>(
         cache.clear();
     }
     cache.entry(key).or_insert_with(|| {
-        let f = chain.iter().find(|f| f.lookup_glyph_index(ch) != 0).unwrap_or(&chain[0]);
-        f.rasterize(ch, size)
+        match chain.iter().find(|f| f.lookup_glyph_index(ch) != 0) {
+            Some(f) => f.rasterize(ch, size),
+            // kana / kanji / hanzi / hangul: font CJK Windows lewat GDI (lihat cjk.rs)
+            None => cjk::rasterize(ch, size, bold).unwrap_or_else(|| chain[0].rasterize(ch, size)),
+        }
     })
 }
 

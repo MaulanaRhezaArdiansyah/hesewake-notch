@@ -54,6 +54,7 @@ mod anim;
 mod audio;
 mod bt;
 mod busy;
+mod cjk;
 mod clock;
 mod config;
 mod data;

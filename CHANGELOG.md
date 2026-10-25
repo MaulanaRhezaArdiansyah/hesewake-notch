@@ -2,6 +2,12 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 0.3.1
+
+### Fixed
+- **Teks Jepang, Mandarin, dan Korea** (judul lagu, lirik, notifikasi, to-do) sebelumnya tampil sebagai kotak kosong karena font bawaan tidak punya kana, kanji, atau hangul. Karakter CJK kini dirender lewat GDI dari font sistem (Yu Gothic UI, Meiryo UI, MS Gothic, Microsoft YaHei UI, Malgun Gothic) dan masuk ke cache glyph yang sama. Memuat font CJK ke `fontdue` sempat dicoba tetapi menaikkan memori sekitar 420 MB, jadi tidak dipakai; jalur GDI tidak menambah memori.
+- Flag uji `--demo-text=judul|isi` untuk melihat notifikasi dengan teks non-Latin.
+
 ## [0.3.0] - 2026-10-25
 
 ### Added
