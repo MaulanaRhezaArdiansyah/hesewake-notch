@@ -1,9 +1,9 @@
-//! Glyph Jepang / Mandarin / Korea lewat GDI.
+//! Glyph di luar font bawaan (Jepang / Mandarin / Korea, simbol, tanda baca khusus) lewat GDI.
 //!
-//! Font bawaan (Instrument Sans) dan Segoe UI tidak punya kana, kanji, atau hangul. Memuat font CJK Windows ke
-//! `fontdue` ternyata mahal (Yu Gothic: +420 MB private, karena semua outline di-parse sekaligus), jadi karakter
-//! CJK dirender satu per satu oleh GDI dari font sistem (di-map dari berkas, tanpa salinan besar) dan hasilnya
-//! masuk ke cache glyph yang sama dengan font lain.
+//! Font bawaan (Instrument Sans) tidak punya kana, kanji, hangul, dan banyak simbol. Memuat font Windows ke `fontdue`
+//! ternyata mahal: semua outline di-parse sekaligus (Yu Gothic +420 MB, Segoe UI +38 MB dan macet ±160 ms saat notifikasi
+//! pertama yang berisi emoji/tanda kutip melengkung muncul). Karena itu karakter yang kurang dirender satu per satu oleh
+//! GDI dari font sistem (di-map dari berkas, tanpa salinan besar) dan hasilnya masuk ke cache glyph yang sama.
 
 use super::*;
 use std::cell::RefCell;
@@ -12,6 +12,8 @@ use std::collections::HashMap;
 /// Urutan font untuk kana/kanji/hanzi; font pertama yang punya glyph-nya dipakai.
 const FACES_CJK: [&str; 5] = ["Yu Gothic UI", "Meiryo UI", "MS Gothic", "Microsoft YaHei UI", "Malgun Gothic"];
 const FACES_HANGUL: [&str; 2] = ["Malgun Gothic", "Yu Gothic UI"];
+/// Simbol, tanda baca khusus, dan huruf non-Latin lain.
+const FACES_SYMBOL: [&str; 4] = ["Segoe UI", "Segoe UI Symbol", "Segoe UI Emoji", "Arial Unicode MS"];
 
 struct Ctx {
     dc: HDC,
@@ -30,9 +32,10 @@ pub(crate) fn is_cjk(c: char) -> bool {
     matches!(c as u32, 0x2E80..=0x2FFF | 0x3000..=0x30FF | 0x31F0..=0x31FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF)
 }
 
-/// Karakter yang dilayani jalur GDI ini.
+/// Karakter yang dilayani jalur GDI ini: semua karakter BMP yang bukan kontrol (karakter di luar BMP, mis. emoji
+/// berwarna, tetap jatuh ke kotak "tidak ada").
 pub(crate) fn wants(c: char) -> bool {
-    (c as u32) <= 0xFFFF && (is_cjk(c) || is_hangul(c))
+    (c as u32) <= 0xFFFF && !c.is_control()
 }
 
 fn fixed(v: i16) -> FIXED {
@@ -54,7 +57,13 @@ pub(crate) fn rasterize(ch: char, size: f32, bold: bool) -> Option<(fontdue::Met
             *c = Some(Ctx { dc, fonts: HashMap::new() });
         }
         let ctx = c.as_mut()?;
-        let faces: &[&'static str] = if is_hangul(ch) { &FACES_HANGUL } else { &FACES_CJK };
+        let faces: &[&'static str] = if is_hangul(ch) {
+            &FACES_HANGUL
+        } else if is_cjk(ch) {
+            &FACES_CJK
+        } else {
+            &FACES_SYMBOL
+        };
         let px = size.round().max(6.0) as u32;
         for &name in faces {
             let font = *ctx.fonts.entry((px, bold, name)).or_insert_with(|| unsafe {
@@ -124,8 +133,9 @@ mod tests {
 
     #[test]
     fn script_ranges() {
-        assert!(wants('日') && wants('の') && wants('ト') && wants('한') && wants('，'));
-        assert!(!wants('a') && !wants('é') && !wants('😀'));
+        assert!(wants('日') && wants('の') && wants('ト') && wants('한') && wants('，') && wants('“') && wants('✓'));
+        // di luar BMP dan karakter kontrol tidak dilayani
+        assert!(!wants('😀') && !wants('\n'));
         assert!(is_hangul('가') && !is_hangul('日'));
     }
 
@@ -140,6 +150,15 @@ mod tests {
         // spasi ideografis: tanpa bitmap tapi punya lebar
         if let Some((m, bm)) = rasterize('\u{3000}', 16.0, false) {
             assert!(bm.is_empty() && m.advance_width > 8.0);
+        }
+    }
+
+    #[test]
+    fn symbols_render_without_loading_big_fonts() {
+        // tanda kutip melengkung, em dash, centang, dan panah: dulu memicu pemuatan Segoe UI (+38 MB, macet 160 ms)
+        for ch in ['\u{201c}', '\u{2014}', '\u{2713}', '\u{2192}', '\u{20ac}'] {
+            let Some((m, _)) = rasterize(ch, 14.0, false) else { continue };
+            assert!(m.advance_width > 2.0, "{ch:?} advance {}", m.advance_width);
         }
     }
 }

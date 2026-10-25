@@ -39,7 +39,6 @@ pub(crate) type GlyphKey = (char, u32, bool);
 pub(crate) struct Text {
     pub(crate) reg: Vec<fontdue::Font>,
     pub(crate) bold: Vec<fontdue::Font>,
-    pub(crate) fallback_tried: bool,
     pub(crate) cache: HashMap<GlyphKey, (fontdue::Metrics, Vec<u8>)>,
 }
 
@@ -73,7 +72,7 @@ impl Text {
         let mut bold = vec![load_font(FONT_BOLD)?];
         reg.extend(load_font(FONT_REG_EXT));
         bold.extend(load_font(FONT_BOLD_EXT));
-        Some(Text { reg, bold, fallback_tried: false, cache: HashMap::new() })
+        Some(Text { reg, bold, cache: HashMap::new() })
     }
 
     /// Rasterisasi awal karakter umum pada ukuran yang dipakai UI, supaya frame pertama saat expand tidak melonjak.
@@ -86,27 +85,26 @@ impl Text {
         self.measure("0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ", 12.0, true);
     }
 
-    fn ensure_fallback(&mut self, s: &str) {
-        // ASCII selalu ada di Instrument Sans; lewati scan lookup_glyph_index per karakter.
-        if self.fallback_tried || s.is_ascii() {
-            return;
+    /// `s` dipotong lalu diberi "…" sehingga lebarnya <= `maxw`. Satu putaran (jumlah advance per karakter), hasilnya
+    /// sama dengan memangkas karakter satu per satu sambil mengukur ulang seluruh string.
+    pub(crate) fn ellipsize(&mut self, s: &str, size: f32, bold: bool, maxw: f32) -> String {
+        let chain: &[fontdue::Font] = if bold { &self.bold } else { &self.reg };
+        let ell = glyph_of(&mut self.cache, chain, '\u{2026}', size, bold).0.advance_width;
+        let (mut acc, mut keep) = (0.0f32, 0usize);
+        for (i, ch) in s.char_indices() {
+            let adv = glyph_of(&mut self.cache, chain, ch, size, bold).0.advance_width;
+            if acc + adv + ell > maxw {
+                break;
+            }
+            acc += adv;
+            keep = i + ch.len_utf8();
         }
-        let missing = s.chars().any(|c| !c.is_control() && self.reg.iter().all(|f| f.lookup_glyph_index(c) == 0));
-        if !missing {
-            return;
-        }
-        self.fallback_tried = true;
-        if let Some(f) = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf").ok().and_then(|d| load_font(&d)) {
-            self.reg.push(f);
-        }
-        if let Some(f) = std::fs::read(r"C:\Windows\Fonts\segoeuib.ttf").ok().and_then(|d| load_font(&d)) {
-            self.bold.push(f);
-        }
-        self.cache.clear();
+        let mut out = s[..keep].to_string();
+        out.push('\u{2026}');
+        out
     }
 
     fn measure(&mut self, s: &str, size: f32, bold: bool) -> f32 {
-        self.ensure_fallback(s);
         let chain: &[fontdue::Font] = if bold { &self.bold } else { &self.reg };
         let mut total = 0.0;
         for ch in s.chars() {
@@ -132,7 +130,6 @@ impl Text {
         if alpha <= 0.02 {
             return;
         }
-        self.ensure_fallback(s);
         let (pw, ph) = (pm.width() as i32, pm.height() as i32);
         let chain: &[fontdue::Font] = if bold { &self.bold } else { &self.reg };
         let asc = size * ASC;
@@ -430,10 +427,51 @@ pub(crate) fn wrap_lines_ex(g: &mut Gfx, s: &str, size: f32, maxw: f32, bold: bo
 
 /// Cuts `s` so that `s + "..."` fits in `maxw`.
 pub(crate) fn ellipsize(g: &mut Gfx, s: &str, size: f32, maxw: f32) -> String {
-    let mut t = s.to_string();
-    while !t.is_empty() && g.width(&format!("{}\u{2026}", t), size) > maxw {
-        t.pop();
+    match g.text.as_mut() {
+        Some(t) => t.ellipsize(s, size, false, maxw),
+        None => format!("{}\u{2026}", s),
     }
-    t.push('\u{2026}');
-    t
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Implementasi lama (kuadratik) sebagai acuan kebenaran.
+    fn ellipsize_slow(t: &mut Text, s: &str, size: f32, maxw: f32) -> String {
+        let mut x = s.to_string();
+        while !x.is_empty() && t.measure(&format!("{}\u{2026}", x), size, false) > maxw {
+            x.pop();
+        }
+        x.push('\u{2026}');
+        x
+    }
+
+    #[test]
+    fn ellipsize_matches_slow_version_and_is_fast() {
+        let mut t = Text::load().expect("font bawaan");
+        let long = "Halo, apakah kamu masih ingat janji kita kemarin? Café résumé — \u{201c}kutipan\u{201d} dan lain-lain ".repeat(4);
+        for s in ["", "a", "pendek", "Halo dunia yang cukup panjang untuk dipotong", "日本語のテストです。これは長い文章です", long.as_str()] {
+            for w in [0.0f32, 10.0, 40.0, 120.0, 300.0, 5000.0] {
+                assert_eq!(t.ellipsize(s, 12.0, false, w), ellipsize_slow(&mut t, s, 12.0, w), "s={s:?} w={w}");
+            }
+        }
+        // karakter di luar font bawaan dirender lewat GDI: daftar font fontdue tidak boleh bertambah
+        let before = (t.reg.len(), t.bold.len());
+        let _ = t.measure("\u{201c}Halo\u{201d} \u{2014} \u{2713} 日本語 \u{1F600}", 13.0, false);
+        let _ = t.measure("\u{201c}Halo\u{201d} \u{2014} \u{2713}", 13.0, true);
+        assert_eq!((t.reg.len(), t.bold.len()), before, "font besar tidak boleh dimuat ke fontdue");
+        // 8 baris x 200 frame (sekitar 3 detik animasi) harus tetap murah
+        let t0 = std::time::Instant::now();
+        for _ in 0..1600 {
+            let _ = t.ellipsize(&long, 12.0, false, 300.0);
+        }
+        let fast = t0.elapsed();
+        let t1 = std::time::Instant::now();
+        for _ in 0..16 {
+            let _ = ellipsize_slow(&mut t, &long, 12.0, 300.0);
+        }
+        // informasi: per panggilan, versi lama vs baru (jalankan dengan --nocapture)
+        eprintln!("ellipsize 400 karakter: baru {:?} | lama {:?}", fast / 1600, t1.elapsed() / 16);
+        assert!(fast.as_millis() < 400, "ellipsize terlalu lambat: {fast:?}");
+    }
 }

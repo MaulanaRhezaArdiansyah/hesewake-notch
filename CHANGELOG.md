@@ -2,6 +2,13 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 0.3.2
+
+### Fixed
+- **Lag saat notifikasi muncul**, terutama pesan panjang atau yang berisi emoji, tanda kutip melengkung, dan simbol. Dua penyebab:
+  - Pemotongan teks dengan "…" memangkas satu karakter lalu mengukur ulang seluruh string, jadi pesan panjang jadi kuadratik dan dihitung ulang tiap frame untuk tiap baris. Kini satu putaran dengan hasil identik (400 karakter: 7,4 ms jadi 8 µs). Waktu gambar toast turun dari ±3,7 ms ke ±0,28 ms per frame.
+  - Karakter yang tidak ada di font bawaan memicu pemuatan font Segoe UI penuh ke `fontdue`: frame macet ±95-160 ms dan memori naik dari ±12 MB ke ±50 MB (lonjakan memori sporadis yang dulu belum terjelaskan). Kini karakter itu dirender per karakter lewat GDI (jalur yang sama dengan teks Jepang), tanpa memuat font besar: frame terlama ±6 ms dan memori tetap ±12 MB.
+
 ## [0.3.1] - 2026-10-25
 
 ### Fixed
