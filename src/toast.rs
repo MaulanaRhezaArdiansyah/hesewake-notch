@@ -69,7 +69,7 @@ pub(crate) struct Toast {
 
 const GREEN: [u8; 3] = [60, 200, 110];
 const BLUE: [u8; 3] = [90, 190, 255];
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 
 fn ss(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);

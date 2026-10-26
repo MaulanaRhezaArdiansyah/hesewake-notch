@@ -14,7 +14,7 @@ const CELL_W: f32 = 178.0;
 const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
 const GRID_GAP_Y: f32 = 4.0;
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 const BLUE: [u8; 3] = [90, 170, 255];
 const MAX_ROWS: usize = 16;
 
@@ -396,7 +396,7 @@ impl App {
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
-            let lab = if on { [255, 255, 255] } else { [120, 120, 128] };
+            let lab = if on { [255, 255, 255] } else { [160, 164, 176] };
             g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0);
             let dim = |ok: bool| paint(220, 220, 228, if ok { 0.9 } else { 0.25 } * a);
             // chevron naik / turun
@@ -418,7 +418,7 @@ impl App {
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             Self::draw_cell_bg(g, x, y, a);
             g.txtb(r.label, x + 12.0, y + 4.0, 12.0, [255, 255, 255], a, CELL_W - 62.0);
-            g.txt(r.sub, x + 12.0, y + 19.0, 10.0, GREY, a, CELL_W - 62.0);
+            g.txt(r.sub, x + 12.0, y + 19.0, 11.0, GREY, a, CELL_W - 62.0);
             match &r.kind {
                 RowKind::Toggle(_) => g.toggle(x + CELL_W - 44.0, y + (CELL_H - 20.0) / 2.0, 34.0, 20.0, self.sui.knob[i], 0.0, a),
                 RowKind::Stepper(v) => {

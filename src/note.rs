@@ -559,12 +559,12 @@ impl App {
         if editing || n > 0 {
             let label = format!("{} / {}", fmt_num(n), fmt_num(NOTE_MAX_CHARS));
             let tw = g.width_ex(NOTE_NAME, 15.0, true);
-            let col = if n >= NOTE_MAX_CHARS { ACCENT } else { [112, 112, 118] };
+            let col = if n >= NOTE_MAX_CHARS { ACCENT } else { [150, 152, 160] };
             g.txt(&label, x + tw + 10.0, 16.0, 11.0, col, al * if editing { 1.0 } else { 0.8 }, 140.0);
         }
 
         let (hint, hcol) = if editing {
-            ("Esc to save", [150, 150, 155])
+            ("Esc to save", TEXT_FAINT)
         } else if n > 0 {
             ("Clear", SLIDE_ACCENT)
         } else {
@@ -582,7 +582,7 @@ impl App {
         let tx = x + 14.0;
         if n == 0 {
             if !editing {
-                g.txt("Click to write a note", tx, NOTE_Y + NOTE_TOP, NOTE_SIZE, [132, 146, 176], al, NOTE_W);
+                g.txt("Click to write a note", tx, NOTE_Y + NOTE_TOP, NOTE_SIZE, [160, 172, 200], al, NOTE_W);
             }
             if editing && self.caret_on {
                 g.rect(tx, NOTE_Y + NOTE_TOP + 1.0, 1.5, 15.0, &paint(255, 255, 255, al));

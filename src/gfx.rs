@@ -143,6 +143,7 @@ impl Text {
         let asc = size * ASC;
         let mut pen = 0.0f32;
         let data = pm.data_mut();
+        let lut = if is_light(col) { Some(boost_lut()) } else { None };
         for ch in s.chars() {
             let (m, bm) = glyph_of(&mut self.cache, chain, ch, size, bold);
             if pen + m.advance_width > max_w {
@@ -161,6 +162,7 @@ impl Text {
                         if cov == 0 {
                             continue;
                         }
+                        let cov = lut.map_or(cov, |l| l[cov as usize]);
                         let (px, py) = (gx + colx as i32, gy + row as i32);
                         if px < 0 || py < 0 || px >= pw || py >= ph {
                             continue;
@@ -186,6 +188,23 @@ impl Text {
             pen += m.advance_width;
         }
     }
+}
+
+/// Teks terang di atas latar gelap tampak lebih tipis daripada sebaliknya karena campuran alfa linear; tepi glyph
+/// diperkuat dengan kurva ringan agar goresan 1 px tetap terbaca.
+fn is_light(col: [u8; 3]) -> bool {
+    (col[0] as u32 * 299 + col[1] as u32 * 587 + col[2] as u32 * 114) / 1000 > 128
+}
+
+fn boost_lut() -> &'static [u8; 256] {
+    static LUT: std::sync::OnceLock<[u8; 256]> = std::sync::OnceLock::new();
+    LUT.get_or_init(|| {
+        let mut t = [0u8; 256];
+        for (i, v) in t.iter_mut().enumerate() {
+            *v = (255.0 * (i as f32 / 255.0).powf(0.7)).round().clamp(0.0, 255.0) as u8;
+        }
+        t
+    })
 }
 
 // ---------------------------------------------------------------- drawing primitives
@@ -463,6 +482,15 @@ pub(crate) fn ellipsize(g: &mut Gfx, s: &str, size: f32, maxw: f32) -> String {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn light_text_edges_are_boosted_but_bounded() {
+        let l = boost_lut();
+        assert_eq!((l[0], l[255]), (0, 255));
+        assert!(l.windows(2).all(|w| w[0] <= w[1]), "kurva harus menaik");
+        assert!(l[64] > 64 && l[128] > 128, "tepi tengah harus lebih tebal");
+        assert!(is_light([200, 203, 214]) && is_light([255, 255, 255]) && !is_light([20, 20, 28]));
+    }
+
     use super::*;
 
     fn fnv(data: &[u8]) -> u64 {
@@ -547,7 +575,8 @@ mod tests {
     fn scene_at_100_percent_is_unchanged() {
         let mut g = gfx_100();
         scene(&mut g);
-        assert_eq!(fnv(g.pm.data()), 6528788650261307270, "hash adegan 100% harus sama dengan sebelum skala DPI");
+        // Hash diperbarui sekali saat tepi teks terang diperkuat (boost_lut); sebelum itu 6528788650261307270 (= sebelum skala DPI).
+        assert_eq!(fnv(g.pm.data()), 4458421239539419709, "hash adegan 100% berubah: pastikan perubahan gambar memang disengaja");
     }
 
     /// Implementasi lama (kuadratik) sebagai acuan kebenaran.

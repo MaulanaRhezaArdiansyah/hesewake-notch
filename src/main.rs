@@ -96,7 +96,7 @@ mod window;
 use anim::{schedule, target, tick};
 use busy::{is_busy};
 use clock::{CLOCK_FADE_IN, DAYS_S, MONTHS, now_tm, today};
-use config::{ACCENT, SLIDE_ACCENT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
+use config::{ACCENT, SLIDE_ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
 use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
 use gfx::{Box4, Gfx, acc, sacc, dummy_path, ellipsize, in_rect, notch_path, notch_path_w, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
@@ -407,7 +407,8 @@ fn main() -> Result<()> {
             let (_, lat, lon) = weather::CITIES[cfg.weather_city];
             weather::start(hwnd.0 as isize, cfg.weather_on, lat, lon);
         }
-        if notif_on {
+        let demo_notifs = std::env::args().any(|a| a == "--demo-notifs");
+        if notif_on && !demo_notifs {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }
 
@@ -445,8 +446,8 @@ fn main() -> Result<()> {
             minimal: cfg.minimal,
             toast: None,
             bt_shared: bt_shared.clone(),
-            notifs: Vec::new(),
-            notif_access: notif::Access::Unknown,
+            notifs: if demo_notifs { notif::demo_items() } else { Vec::new() },
+            notif_access: if demo_notifs { notif::Access::Allowed } else { notif::Access::Unknown },
             notif_slot: notif_slot.clone(),
             notif_on,
             notif_started: notif_on,

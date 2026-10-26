@@ -750,7 +750,7 @@ impl App {
             return;
         }
         let (rgb, text) = match st {
-            net::CONNECTED => ((60, 200, 110), [110, 110, 116]),
+            net::CONNECTED => ((60, 200, 110), TEXT_FAINT),
             net::NO_INTERNET => ((255, 190, 60), [255, 205, 120]),
             _ => ((255, 69, 58), [255, 130, 120]),
         };
@@ -786,7 +786,7 @@ impl App {
         g.fill(&rrect(bx, by, bw, 6.0, 3.0), &paint(255, 255, 255, 0.18 * a));
         let fw = (bw * pct as f32 / 100.0).max(if pct > 0 { 6.0 } else { 0.0 });
         if fw > 0.0 {
-            let c = if muted { [150, 150, 158] } else { SLIDE_ACCENT };
+            let c = if muted { TEXT_DIM } else { SLIDE_ACCENT };
             g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(c[0], c[1], c[2], a));
         }
         let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
@@ -805,12 +805,12 @@ impl App {
                 let line = if g.width_ex(line, 13.0, true) > CW { ellipsize(g, line, 13.0, CW) } else { line.to_string() };
                 g.txt_c(&line, (LX + RX) / 2.0 + ox, 13.0, 13.0, [255, 255, 255], a, CW + 2.0, true);
             }
-            (lyrics::Lyrics::Loading, None) => g.txt("Loading lyrics", LX + ox, 14.0, 12.0, [100, 100, 106], al, 200.0),
-            (lyrics::Lyrics::Unavailable, None) => g.txt("Lyrics not available", LX + ox, 14.0, 12.0, [100, 100, 106], al, 200.0),
+            (lyrics::Lyrics::Loading, None) => g.txt("Loading lyrics", LX + ox, 14.0, 12.0, [150, 152, 160], al, 200.0),
+            (lyrics::Lyrics::Unavailable, None) => g.txt("Lyrics not available", LX + ox, 14.0, 12.0, [150, 152, 160], al, 200.0),
             _ => {
                 if self.media.sources > 1 && !self.media.source.is_empty() {
                     let label = format!("Now Playing \u{b7} {}", self.media.source);
-                    g.txt(&label, LX + ox, 14.0, 12.0, [140, 140, 145], al, 180.0);
+                    g.txt(&label, LX + ox, 14.0, 12.0, TEXT_DIM, al, 180.0);
                     // ikon tukar sumber (dua panah) setelah teks
                     let sx = LX + ox + g.width(&label, 12.0) + 10.0;
                     let c = paint(150, 150, 158, al);
@@ -819,7 +819,7 @@ impl App {
                     g.line(sx - 4.0, 23.0, sx + 4.0, 23.0, 1.3, &c);
                     g.line(sx - 4.0, 23.0, sx - 1.5, 20.5, 1.3, &c);
                 } else {
-                    g.txt("Now Playing", LX + ox, 14.0, 12.0, [140, 140, 145], al, 200.0);
+                    g.txt("Now Playing", LX + ox, 14.0, 12.0, TEXT_DIM, al, 200.0);
                 }
             }
         }
@@ -832,10 +832,10 @@ impl App {
             let fr = (self.media.pos as f32 / self.media.dur as f32).clamp(0.0, 1.0);
             g.fill(&rrect(MX + ox, 96.0, MW, 4.0, 2.0), &paint(255, 255, 255, 0.18 * al));
             g.fill(&rrect(MX + ox, 96.0, (MW * fr).max(4.0), 4.0, 2.0), &sacc(al));
-            g.txt(&fmt_time(self.media.pos), MX + ox, 104.0, 11.0, [140, 140, 145], al, 60.0);
+            g.txt(&fmt_time(self.media.pos), MX + ox, 104.0, 11.0, TEXT_DIM, al, 60.0);
             let ds = fmt_time(self.media.dur);
             let dw = g.width(&ds, 11.0);
-            g.txt(&ds, MX + ox + MW - dw, 104.0, 11.0, [140, 140, 145], al, 60.0);
+            g.txt(&ds, MX + ox + MW - dw, 104.0, 11.0, TEXT_DIM, al, 60.0);
         }
         self.net_indicator(g, LX + ox, 148.0, al);
         let cx = MCX + ox;

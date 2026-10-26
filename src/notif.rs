@@ -252,6 +252,27 @@ fn logo_rgba(d: &windows::ApplicationModel::AppDisplayInfo) -> Option<Vec<u8>> {
     Some(img.resize_to_fill(ICON_PX, ICON_PX, image::imageops::FilterType::Triangle).to_rgba8().into_raw())
 }
 
+/// `--demo-notifs`: daftar notifikasi palsu untuk uji visual slide Notifications (tanpa membaca notifikasi asli).
+pub(crate) fn demo_items() -> Vec<NotifItem> {
+    let now = now_unix();
+    let mk = |id: u32, app: &str, title: &str, body: &str, ago: u64, unread: bool| NotifItem {
+        id,
+        app: app.to_string(),
+        title: title.to_string(),
+        body: body.to_string(),
+        at_unix: now.saturating_sub(ago),
+        unread,
+        icon: None,
+        avatar: None,
+        dismiss: None,
+    };
+    vec![
+        mk(1, "Screenshot", "Lightshot", "Your screenshot is copied to clipboard", 120, false),
+        mk(2, "Team Chat", "Tim Proyek", "Rina \u{1F4CB} Laporan Task Total task: 59 Detail rapat besok pagi jam sembilan", 720, true),
+        mk(3, "Chat", "Budi Santoso: Rapat \u{2713} 日本語", "oke, kita cek di bulan yg bru ntar ya \u{201c}siap\u{201d} \u{2014} terima kasih", 960, true),
+    ]
+}
+
 /// Waktu relatif singkat: "now", "5m", "3h", "2d".
 pub(crate) fn relative_time(at_unix: u64, now_unix: u64) -> String {
     let d = now_unix.saturating_sub(at_unix);

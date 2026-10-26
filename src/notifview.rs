@@ -12,7 +12,7 @@ const VIS: usize = 3;
 const CLEAR: (f32, f32, f32, f32) = (RX - 88.0, 8.0, 88.0, 24.0);
 const OPEN_BTN: (f32, f32, f32, f32) = (LX + CW / 2.0 - 84.0, 100.0, 168.0, 30.0);
 const DISMISS_SECS: f32 = 0.25;
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 const BLUE: [u8; 3] = [90, 170, 255];
 
 pub(crate) struct NotifUi {
@@ -169,12 +169,12 @@ impl App {
             g.icon_bell(LX + CW / 2.0 + ox, 66.0, 26.0, 0.0, &paint(255, 255, 255, 0.28 * al));
             g.txt_c(a, LX + CW / 2.0 + ox, 90.0, 13.0, [220, 220, 228], al, CW, true);
             if !b.is_empty() {
-                g.txt_c(b, LX + CW / 2.0 + ox, 110.0, 11.0, GREY, al, CW, false);
+                g.txt_c(b, LX + CW / 2.0 + ox, 110.0, 12.0, GREY, al, CW, false);
             }
         };
         if self.notif_access == Access::Denied {
             g.txt_c("Notification access is off", LX + CW / 2.0 + ox, 62.0, 13.0, [220, 220, 228], al, CW, true);
-            g.txt_c("Allow Hesewake Notch in Windows Settings to see them here.", LX + CW / 2.0 + ox, 80.0, 11.0, GREY, al, CW, false);
+            g.txt_c("Allow Hesewake Notch in Windows Settings to see them here.", LX + CW / 2.0 + ox, 80.0, 12.0, GREY, al, CW, false);
             g.pill(OPEN_BTN.0 + ox, OPEN_BTN.1, OPEN_BTN.2, OPEN_BTN.3, BLUE, 0.28 * al, 1.0);
             g.txt_c("Open Settings", OPEN_BTN.0 + ox + OPEN_BTN.2 / 2.0, OPEN_BTN.1 + ty(OPEN_BTN.3, 13.0), 13.0, [200, 228, 255], al, OPEN_BTN.2, true);
             return;
@@ -203,14 +203,14 @@ impl App {
             let max_w = CW - 40.0 - 52.0;
             let title = if n.title.is_empty() { n.app.as_str() } else { n.title.as_str() };
             let title = if g.width_ex(title, 12.0, true) > max_w { ellipsize(g, title, 12.0, max_w) } else { title.to_string() };
-            g.txtb(&title, tx, r.y + 4.0, 12.0, [255, 255, 255], a, max_w + 2.0);
+            g.txtb(&title, tx, r.y + 3.0, 12.0, [255, 255, 255], a, max_w + 2.0);
             let body = if n.body.is_empty() { n.app.clone() } else { n.body.replace('\n', " ") };
-            let body = if g.width(&body, 11.0) > max_w { ellipsize(g, &body, 11.0, max_w) } else { body };
-            g.txt(&body, tx, r.y + 19.0, 11.0, GREY, a, max_w + 2.0);
+            let body = if g.width(&body, 12.0) > max_w { ellipsize(g, &body, 12.0, max_w) } else { body };
+            g.txt(&body, tx, r.y + 18.0, 12.0, GREY, a, max_w + 2.0);
             // waktu relatif + tombol hapus
             let t = notif::relative_time(n.at_unix, now);
-            let tw = g.width(&t, 10.0);
-            g.txt(&t, x + CW - 30.0 - tw, r.y + 5.0, 10.0, GREY, a * 0.9, 40.0);
+            let tw = g.width(&t, 11.0);
+            g.txt(&t, x + CW - 30.0 - tw, r.y + 4.0, 11.0, GREY, a, 40.0);
             if n.unread {
                 g.circle(x + CW - 40.0 - tw, r.y + 10.0, 2.6, &paint(BLUE[0], BLUE[1], BLUE[2], a));
             }

@@ -8,7 +8,7 @@ pub(crate) const SNOOZE: Duration = Duration::from_secs(10 * 60);
 // ---------------------------------------------------------------- layout (koordinat kanvas, slide di LX..RX)
 const BLUE: [u8; 3] = [80, 170, 255];
 const GREEN: [u8; 3] = [60, 200, 110];
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 
 const TOGGLE: (f32, f32, f32, f32) = (LX + 152.0, 42.0, 46.0, 26.0);
 const DRINK: (f32, f32, f32, f32) = (LX, 116.0, 84.0, 32.0);
@@ -512,7 +512,7 @@ impl App {
                     x += 6.0;
                 }
             }
-            g.txt(&label, pr + 8.0, y - 6.0, 10.0, GREY, al, 40.0);
+            g.txt(&label, pr + 8.0, y - 6.0, 11.0, GREY, al, 40.0);
         }
         // Batang: latar redup penuh + isi bergradasi yang tumbuh dari dasar.
         for i in 0..N_BARS {
@@ -528,7 +528,7 @@ impl App {
                 }
             }
             if i % 3 == 0 {
-                g.txt_c(&format!("{:02}", start + i), x + bw / 2.0, PLOT_B + 6.0, 10.0, GREY, al, 24.0, false);
+                g.txt_c(&format!("{:02}", start + i), x + bw / 2.0, PLOT_B + 6.0, 11.0, GREY, al, 24.0, false);
             }
         }
     }

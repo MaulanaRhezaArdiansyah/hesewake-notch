@@ -2,6 +2,15 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 0.4.0 (dalam pengerjaan)
+
+### Added
+- Skala DPI: notch mengikuti scaling Windows di monitor tempatnya berada, dengan pilihan "Notch size" di Settings (kontribusi dari @MaulanaRhezaArdiansyah, PR #1).
+- Flag uji `--demo-notifs`: slide Notifications berisi data palsu untuk uji visual tanpa membaca notifikasi asli.
+
+### Changed
+- **Teks lebih mudah dibaca** di semua slide dan toast: warna teks sekunder (isi pesan, label, satuan) dibuat lebih terang lewat satu konstanta bersama (`TEXT_DIM` / `TEXT_FAINT`), teks isi yang sebelumnya 10-11 px dinaikkan ke 11-12 px (isi dan waktu notifikasi, label System, sumbu grafik Water, keterangan Settings), dan tepi huruf terang di atas latar gelap diperkuat sedikit agar goresan tipis tidak hilang.
+
 ## [0.3.2] - 2026-10-25
 
 ### Fixed
@@ -44,7 +53,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 - **Toast tombol kunci**: Caps Lock, Num Lock, dan Scroll Lock menampilkan HUD kecil On/Off di notch (hook keyboard low-level yang hanya terpasang saat fitur aktif; toggle di Settings > Features > "Lock keys"). HUD beruntun menggantikan yang sedang tampil tanpa antre.
 - **Indikator mikrofon/kamera**: titik oranye (mic) atau hijau (kamera) di pojok kanan atas notch kecil selama ada aplikasi yang memakainya, plus toast "Microphone/Camera in use" dengan nama aplikasi saat mulai. Dipantau lewat event registry `CapabilityAccessManager` (tanpa polling). Toggle di Settings > Features > "Mic / camera dot".
 - **Musik**: scroll mouse di atas baris kontrol slide Music mengatur **volume master** (2% per takik) dengan indikator di dalam slide; jika ada lebih dari satu pemutar media, header "Now Playing · <pemutar>" bisa diklik untuk berpindah sumber.
-- **Installer** (`hesewake-notch.iss`, Inno Setup 6) dan `scriptsuild-installer.ps1`: pasang per-pengguna tanpa admin, pilihan autostart, menutup aplikasi yang sedang jalan sebelum memperbarui, dan opsi menghapus data saat uninstall.
+- **Installer** (`hesewake-notch.iss`, Inno Setup 6) dan `scripts\build-installer.ps1`: pasang per-pengguna tanpa admin, pilihan autostart, menutup aplikasi yang sedang jalan sebelum memperbarui, dan opsi menghapus data saat uninstall.
 - Registri slide (`SlideId`) dan model pengaturan (`settings.txt`: `slides=`, `lyric_lead_ms=`, `busy_on_maximized=`, ...) yang kompatibel dengan berkas lama.
 
 ### Changed
