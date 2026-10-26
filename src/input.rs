@@ -5,6 +5,12 @@ use super::*;
 // ---------------------------------------------------------------- input
 pub(crate) unsafe fn click(x: f32, y: f32) {
     with_app(|a| {
+        if a.toast_click(x, y) {
+            a.last = Instant::now();
+            present(a);
+            schedule(a);
+            return;
+        }
         if !a.ready() {
             return;
         }

@@ -153,6 +153,9 @@ unsafe fn poll(a: &mut App) {
                 a.open_settings();
             } else {
                 a.show(n);
+                if std::env::args().any(|x| x == "--demo-water-settings") {
+                    a.water_view(1);
+                }
             }
             a.peek_until = Some(Instant::now() + Duration::from_secs(25));
             redraw = true;
@@ -212,7 +215,8 @@ unsafe fn poll(a: &mut App) {
             };
             let x = (p.x - a.wx) as f32 / a.scale;
             let y = (p.y - a.wy) as f32 / a.scale;
-            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh;
+            // Toast Water punya tombol: hover di atasnya tidak boleh membuka notch (itu membatalkan toast-nya).
+            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh && !a.water_toast();
             if inside != a.hover {
                 // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.
                 let to_notif = inside

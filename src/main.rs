@@ -304,6 +304,7 @@ fn demo_toast() -> Option<ToastKind> {
         "volume" => ToastKind::Hud { kind: HudKind::Volume(46, false), on: true },
         "brightness" => ToastKind::Hud { kind: HudKind::Brightness(72), on: true },
         "mute" => ToastKind::Hud { kind: HudKind::Volume(0, true), on: true },
+        "water" => ToastKind::Water,
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
