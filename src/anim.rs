@@ -209,8 +209,8 @@ unsafe fn poll(a: &mut App) {
             } else {
                 (a.w.max(IDLE.0) + 12.0, a.h.max(IDLE.1) + 6.0)
             };
-            let x = (p.x - a.wx) as f32;
-            let y = (p.y - a.wy) as f32;
+            let x = (p.x - a.wx) as f32 / a.scale;
+            let y = (p.y - a.wy) as f32 / a.scale;
             let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh;
             if inside != a.hover {
                 // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.

@@ -204,7 +204,7 @@ impl App {
                     iy,
                     ic.as_ref(),
                     &PixmapPaint { opacity: al, ..Default::default() },
-                    Transform::identity(),
+                    g.ts,
                     None,
                 );
             }

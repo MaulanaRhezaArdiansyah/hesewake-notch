@@ -33,7 +33,7 @@ impl Gfx {
         let pts = [(-0.5, -0.5), (0.5, 0.42), (0.0, 0.95), (0.0, -0.95), (0.5, -0.42), (-0.5, 0.5)];
         if let Some(path) = path_of(&pts, cx, cy, s, false) {
             let st = Stroke { width: (s * 0.13).max(1.2), line_cap: LineCap::Round, line_join: tiny_skia::LineJoin::Round, ..Default::default() };
-            self.pm.stroke_path(&path, p, &st, Transform::identity(), None);
+            self.pm.stroke_path(&path, p, &st, self.ts, None);
         }
     }
 
@@ -47,7 +47,7 @@ impl Gfx {
         }
         if let Some(path) = path_of(&pts, cx, cy, s, false) {
             let st = Stroke { width: (s * 0.11).max(1.2), line_cap: LineCap::Round, ..Default::default() };
-            self.pm.stroke_path(&path, p, &st, Transform::identity(), None);
+            self.pm.stroke_path(&path, p, &st, self.ts, None);
         }
         let (cw, ch) = (s * 0.2, s * 0.42);
         for sign in [-1.0f32, 1.0] {
@@ -61,7 +61,7 @@ impl Gfx {
         let (w, h) = (s * 1.0, s * 0.56);
         let (x, y) = (cx - w / 2.0 - s * 0.04, cy - h / 2.0);
         let st = Stroke { width: (s * 0.09).max(1.0), ..Default::default() };
-        self.pm.stroke_path(&rrect(x, y, w, h, h * 0.28), p, &st, Transform::identity(), None);
+        self.pm.stroke_path(&rrect(x, y, w, h, h * 0.28), p, &st, self.ts, None);
         self.rect(x + w + s * 0.03, cy - h * 0.2, s * 0.07, h * 0.4, p);
         let pad = s * 0.1;
         let fw = (w - pad * 2.0) * frac.clamp(0.0, 1.0);
@@ -144,7 +144,7 @@ impl Gfx {
                 v.push((0.06 + r * a.cos(), r * a.sin()));
             }
             if let Some(path) = path_of(&v, cx, cy, s, false) {
-                self.pm.stroke_path(&path, p, &st, Transform::identity(), None);
+                self.pm.stroke_path(&path, p, &st, self.ts, None);
             }
         }
     }
@@ -159,7 +159,7 @@ impl Gfx {
         }
         if let Some(path) = path_of(&pts, cx, cy, s, false) {
             let st = Stroke { width: (s * 0.1).max(1.1), line_cap: LineCap::Round, ..Default::default() };
-            self.pm.stroke_path(&path, p, &st, Transform::identity(), None);
+            self.pm.stroke_path(&path, p, &st, self.ts, None);
         }
         self.rect(cx - s * 0.05, cy + s * 0.5, s * 0.1, s * 0.16, p);
     }
