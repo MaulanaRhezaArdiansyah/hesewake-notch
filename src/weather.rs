@@ -258,9 +258,26 @@ pub(crate) fn parse_cache(s: &str, lat: f32, lon: f32, now: u64) -> Option<Weath
 // ---------------------------------------------------------------- tahap bergantian
 /// (indeks tahap global, tahap 0 = suhu / 1 = ikon, progres transisi 0..1; 1 = transisi selesai).
 pub(crate) fn stage_at(secs: f32) -> (u64, u8, f32) {
+    let (idx, st, prog) = stage_of(secs, 2);
+    (idx, st as u8, prog)
+}
+
+/// Sama dengan `stage_at` untuk `n` tahap. Satu tahap: diam, tanpa transisi.
+pub(crate) fn stage_of(secs: f32, n: usize) -> (u64, usize, f32) {
     let idx = (secs / STAGE_SECS) as u64;
+    if n <= 1 {
+        return (idx, 0, 1.0);
+    }
     let since = secs - idx as f32 * STAGE_SECS;
-    (idx, (idx % 2) as u8, (since / TRANS_SECS).clamp(0.0, 1.0))
+    (idx, (idx % n as u64) as usize, (since / TRANS_SECS).clamp(0.0, 1.0))
+}
+
+/// Isi slot kiri jam: suhu, ikon cuaca, dan (15 menit sebelum waktu sholat) hitung mundur.
+#[derive(Clone, Copy, PartialEq)]
+enum Slot {
+    Temp,
+    Cond,
+    Prayer,
 }
 
 fn ss(e0: f32, e1: f32, x: f32) -> f32 {
@@ -269,16 +286,31 @@ fn ss(e0: f32, e1: f32, x: f32) -> f32 {
 }
 
 impl App {
-    /// Cuaca sedang ditampilkan di notch: idle, fase jam, tanpa lagu/toast.
+    /// Tahap yang bergantian di slot kiri jam.
+    fn slots(&self) -> ([Slot; 3], usize) {
+        let mut v = [Slot::Temp; 3];
+        let mut n = 0;
+        if self.cfg.weather_on && current().is_some() {
+            v[0] = Slot::Temp;
+            v[1] = Slot::Cond;
+            n = 2;
+        }
+        if self.prayer_countdown().is_some() {
+            v[n] = Slot::Prayer;
+            n += 1;
+        }
+        (v, n)
+    }
+
+    /// Slot kiri jam sedang tampil: idle, fase jam, tanpa lagu/toast, dan ada isinya (cuaca / hitung mundur).
     pub(crate) fn weather_shown(&self) -> bool {
-        self.cfg.weather_on
-            && current().is_some()
-            && !self.expanded()
+        !self.expanded()
             && !self.media.playing
             && !self.thin()
             && self.toast.is_none()
             && self.splash_t().is_none()
             && self.idle_phase() == IdlePhase::Clock
+            && self.slots().1 > 0
     }
 
     /// Indeks tahap saat ini (untuk memicu redraw tiap pergantian).
@@ -291,37 +323,46 @@ impl App {
         if !self.weather_shown() {
             return false;
         }
-        let (_, stage, prog) = stage_at(secs());
-        prog < 1.0 || (stage == 1 && current().map_or(false, animated))
+        let (v, n) = self.slots();
+        let (_, stage, prog) = stage_of(secs(), n);
+        (n > 1 && prog < 1.0) || (v[stage] == Slot::Cond && current().map_or(false, animated))
     }
 
     pub(crate) fn draw_weather(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {
         if !self.weather_shown() {
             return;
         }
-        let Some(wx) = current() else { return };
+        let wx = current();
+        let label = self.prayer_label();
         // ikut memudar bersama jam saat fase mata selesai
         let fade = ((self.idle_secs() % IDLE_CYCLE_SECS) / CLOCK_FADE_IN).clamp(0.0, 1.0);
         let ca = ca * fade;
         let t = secs();
-        let (_, stage, prog) = stage_at(t);
-        let (cx, cy) = (CX - w / 2.0 + 32.0, h / 2.0);
-        let draw_stage = |g: &mut Gfx, st: u8, a: f32, dy: f32| {
+        let (v, n) = self.slots();
+        let (_, stage, prog) = stage_of(t, n);
+        // Tengah slot antara tepi kiri notch dan jam; notch melebar saat hitung mundur tampil.
+        let (cx, cy) = (CX - w / 2.0 + 32.0 + (w - IDLE.0).max(0.0) / 4.0, h / 2.0);
+        let draw_stage = |g: &mut Gfx, st: Slot, a: f32, dy: f32| {
             if a <= 0.01 {
                 return;
             }
-            if st == 0 {
-                let txt = format!("{:.0}\u{b0}", wx.temp);
-                let col = if wx.hot() { [255, 150, 70] } else { [255, 255, 255] };
-                g.txt_c(&txt, cx, ty(h, 13.0) + dy, 13.0, col, a, 40.0, true);
-            } else {
-                draw_cond(g, wx, t, cx, cy + dy, 15.0, a);
+            match (st, wx, label.as_deref()) {
+                (Slot::Temp, Some(wx), _) => {
+                    let txt = format!("{:.0}\u{b0}", wx.temp);
+                    let col = if wx.hot() { [255, 150, 70] } else { [255, 255, 255] };
+                    g.txt_c(&txt, cx, ty(h, 13.0) + dy, 13.0, col, a, 40.0, true);
+                }
+                (Slot::Cond, Some(wx), _) => draw_cond(g, wx, t, cx, cy + dy, 15.0, a),
+                (Slot::Prayer, _, Some(lbl)) => g.txt_c(lbl, cx, ty(h, 12.0) + dy, 12.0, prayer::GOLD, a, 80.0, false),
+                _ => {}
             }
         };
         // transisi: tahap lama naik + memudar, tahap baru naik dari bawah
         let e = ss(0.0, 1.0, prog);
-        draw_stage(g, 1 - stage, ca * (1.0 - e), -7.0 * e);
-        draw_stage(g, stage, ca * e, 7.0 * (1.0 - e));
+        if n > 1 {
+            draw_stage(g, v[(stage + n - 1) % n], ca * (1.0 - e), -7.0 * e);
+        }
+        draw_stage(g, v[stage], ca * e, 7.0 * (1.0 - e));
     }
 }
 
@@ -459,6 +500,18 @@ mod tests {
         assert_eq!(stage_at(1.0).2, 1.0); // transisi selesai
         assert_eq!(stage_at(4.0).1, 1);
         assert_eq!(stage_at(8.5).1, 0);
+    }
+
+    #[test]
+    fn three_stages_cycle_when_prayer_countdown_joins() {
+        assert_eq!(stage_of(0.5, 3).1, 0);
+        assert_eq!(stage_of(4.5, 3).1, 1);
+        assert_eq!(stage_of(8.5, 3).1, 2);
+        assert_eq!(stage_of(12.5, 3).1, 0);
+        // satu tahap saja: diam, tanpa transisi
+        assert_eq!(stage_of(4.1, 1), (1, 0, 1.0));
+        let (i, s, p) = stage_of(5.0, 2);
+        assert_eq!((i, s as u8, p), stage_at(5.0));
     }
 
     #[test]

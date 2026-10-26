@@ -12,11 +12,12 @@ pub(crate) fn target(a: &App) -> (f32, f32) {
         THIN
     } else if a.media.playing && a.lyric_w > 0.0 {
         // Lebar menyesuaikan baris lirik (ruang teks = lebar - 88 px untuk ikon dan equalizer, + lonceng).
-        ((a.lyric_w + 88.0 + 16.0 + a.bell_extra()).clamp(PLAYING.0 + a.bell_extra(), EXP_W), PLAYING.1)
+        let extra = a.bell_extra() + a.prayer_play_extra();
+        ((a.lyric_w + 88.0 + 16.0 + extra).clamp(PLAYING.0 + extra, EXP_W), PLAYING.1)
     } else if a.media.playing {
-        (PLAYING.0 + a.bell_extra(), PLAYING.1)
+        (PLAYING.0 + a.bell_extra() + a.prayer_play_extra(), PLAYING.1)
     } else {
-        IDLE
+        (IDLE.0 + a.prayer_idle_extra(), IDLE.1)
     }
 }
 
@@ -269,6 +270,13 @@ unsafe fn poll(a: &mut App) {
     }
     if !expanded && !a.thin() && !a.media.playing && cur_phase == IdlePhase::Clock && st.wMinute != a.last_min {
         redraw = true;
+    }
+    // Pergantian menit: jadwal sholat (toast saat masuk waktu, hitung mundur berkurang).
+    if st.wMinute != a.last_min {
+        a.prayer_minute();
+        if a.prayer_countdown().is_some() || a.toast.is_some() {
+            redraw = true;
+        }
     }
     a.last_sec = st.wSecond;
     a.last_min = st.wMinute;

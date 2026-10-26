@@ -77,6 +77,7 @@ mod notifview;
 mod note;
 mod pace;
 mod perf;
+mod prayer;
 mod privacy;
 mod render;
 mod settings;
@@ -140,6 +141,9 @@ struct App {
     tick_n: u32,
     last_sec: u16,
     last_min: u16,
+    /// Jadwal sholat hari ini: (kunci tanggal+kota, menit Subuh..Isya), dan waktu terakhir yang sudah di-toast.
+    prayer: Option<(u32, [u16; 5])>,
+    prayer_fired: Option<(u32, usize)>,
     hover: bool,
     busy: bool,
     /// Mode "Minimal notch": garis tipis saat tidak ada musik, buka dengan hover.
@@ -281,6 +285,7 @@ fn demo_toast() -> Option<ToastKind> {
         "bt" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: Some(70), connected: true },
         "notif" => ToastKind::Notification { id: DEMO_NOTIF_ID },
         "caps" => ToastKind::Hud { kind: HudKind::Caps, on: true },
+        "prayer" => ToastKind::Prayer { idx: 2, at: 14 * 60 + 52 },
         "caps-off" => ToastKind::Hud { kind: HudKind::Caps, on: false },
         "num" => ToastKind::Hud { kind: HudKind::Num, on: true },
         "volume" => ToastKind::Hud { kind: HudKind::Volume(46, false), on: true },
@@ -445,6 +450,8 @@ fn main() -> Result<()> {
             tick_n: 0,
             last_sec: st.wSecond,
             last_min: st.wMinute,
+            prayer: None,
+            prayer_fired: None,
             hover: false,
             busy: is_busy(hwnd, cfg.busy_on_maximized, &mon),
             minimal: cfg.minimal,
@@ -531,6 +538,7 @@ fn main() -> Result<()> {
             weather_idx: 0,
             cfg,
         };
+        app.prayer_refresh();
         let (tw, th) = target(&app);
         app.w = tw;
         app.h = th;

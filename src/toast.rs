@@ -59,6 +59,8 @@ pub(crate) enum ToastKind {
     Hud { kind: HudKind, on: bool },
     /// Aplikasi mulai memakai mikrofon (`cam: false`) atau kamera (`cam: true`).
     Privacy { cam: bool, app: String },
+    /// Masuk waktu sholat: indeks di `prayer::NAMES` dan jamnya (menit sejak 00:00).
+    Prayer { idx: u8, at: u16 },
 }
 
 pub(crate) struct Toast {
@@ -118,6 +120,7 @@ impl App {
             ToastKind::Notification { .. } => 4.5,
             ToastKind::Hud { .. } => 1.9,
             ToastKind::Privacy { .. } => 2.6,
+            ToastKind::Prayer { .. } => 6.0,
             _ => 3.4,
         };
         perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
@@ -213,6 +216,9 @@ impl App {
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
+            ToastKind::Prayer { idx, at } => {
+                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), "Prayer time".to_string(), 1.0, Some(prayer::hhmm(*at)))
+            }
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } => unreachable!(),
         };
 
@@ -236,6 +242,7 @@ impl App {
             ToastKind::Unplugged { pct } => g.icon_battery(rcx, cy, 16.0 * sc, *pct as f32 / 100.0, &ic),
             ToastKind::LowBattery { .. } => g.icon_battery(rcx, cy, 16.0 * sc, 0.12, &ic),
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
+            ToastKind::Prayer { .. } => g.icon_crescent(rcx, cy, 18.0 * sc, &ic),
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } => {}
         }
 

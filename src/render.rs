@@ -256,7 +256,13 @@ impl App {
                 let bh = 4.0 + 12.0 * (0.5 + 0.5 * (self.t * 6.0 + i as f32 * 1.7).sin());
                 g.rect(x0 + w - 34.0 + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &sacc(ca));
             }
-            let (rl, rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra());
+            let (rl, mut rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra());
+            // Hitung mundur sholat: rata kanan sebelum lonceng/equalizer; judul/lirik memberi ruang.
+            if let Some(lbl) = self.prayer_label() {
+                let tw = g.width(&lbl, 12.0);
+                g.txt(&lbl, rr - tw, ty(h, 12.0), 12.0, prayer::GOLD, ca, tw + 2.0);
+                rr -= prayer::PLAY_EXTRA;
+            }
             let rw = rr - rl;
             let lyric = self.lyric_text();
             let title = lyric.unwrap_or(self.media.title.as_str());
