@@ -8,6 +8,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 - Skala DPI: notch mengikuti scaling Windows di monitor tempatnya berada, dengan pilihan "Notch size" di Settings (kontribusi dari @MaulanaRhezaArdiansyah, PR #1).
 - Flag uji `--demo-notifs`: slide Notifications berisi data palsu untuk uji visual tanpa membaca notifikasi asli.
 - **Emoji** di notifikasi, to-do, dan judul lagu tampil sebagai ikon monokrom (Segoe UI Emoji lewat GDI, indeks glyph dari tabel `cmap`), bukan kotak kosong. Penanda variasi, ZWJ, dan pengubah warna kulit tidak lagi menyisakan kotak. Emoji berwarna penuh belum didukung.
+- Flag uji `--demo-playing` (lagu palsu) dan `--demo-priv=cam,mic` (titik kamera/mikrofon) untuk uji tata letak notch kecil.
+
+### Fixed
+- **Titik indikator mikrofon/kamera menimpa lonceng notifikasi** (saat idle) dan lonceng, equalizer, serta teks judul/lirik (saat lagu diputar). Titik kini punya slot sendiri di tepi kanan, sejajar tengah; notch melebar sebesar slot itu dan elemen lain bergeser ke kiri.
 
 ### Changed
 - **Teks lebih mudah dibaca** di semua slide dan toast: warna teks sekunder (isi pesan, label, satuan) dibuat lebih terang lewat satu konstanta bersama (`TEXT_DIM` / `TEXT_FAINT`), teks isi yang sebelumnya 10-11 px dinaikkan ke 11-12 px (isi dan waktu notifikasi, label System, sumbu grafik Water, keterangan Settings), dan tepi huruf terang di atas latar gelap diperkuat sedikit agar goresan tipis tidak hilang.

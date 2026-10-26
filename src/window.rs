@@ -21,6 +21,9 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_APP => {
+            if demo_playing() {
+                return LRESULT(0);
+            }
             with_app(|a| {
                 let was = a.media.playing;
                 let prev_pos = a.media.pos_ms;

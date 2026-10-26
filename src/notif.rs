@@ -360,9 +360,9 @@ impl App {
             return None;
         }
         if self.media.playing {
-            Some((CX + self.w / 2.0 - 58.0, self.h / 2.0))
+            Some((CX + self.w / 2.0 - 58.0 - self.priv_extra(), self.h / 2.0))
         } else if self.unread_count() > 0 && !self.thin() {
-            Some((CX + self.w / 2.0 - 20.0, self.h / 2.0))
+            Some((CX + self.w / 2.0 - 20.0 - self.priv_extra(), self.h / 2.0))
         } else {
             None
         }

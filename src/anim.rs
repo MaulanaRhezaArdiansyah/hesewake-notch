@@ -12,11 +12,12 @@ pub(crate) fn target(a: &App) -> (f32, f32) {
         THIN
     } else if a.media.playing && a.lyric_w > 0.0 {
         // Lebar menyesuaikan baris lirik (ruang teks = lebar - 88 px untuk ikon dan equalizer, + lonceng).
-        ((a.lyric_w + 88.0 + 16.0 + a.bell_extra()).clamp(PLAYING.0 + a.bell_extra(), EXP_W), PLAYING.1)
+        let extra = a.bell_extra() + a.priv_extra();
+        ((a.lyric_w + 88.0 + 16.0 + extra).clamp(PLAYING.0 + extra, EXP_W), PLAYING.1)
     } else if a.media.playing {
-        (PLAYING.0 + a.bell_extra(), PLAYING.1)
+        (PLAYING.0 + a.bell_extra() + a.priv_extra(), PLAYING.1)
     } else {
-        IDLE
+        (IDLE.0 + a.priv_extra(), IDLE.1)
     }
 }
 

@@ -279,6 +279,17 @@ impl App {
 /// `--demo-toast=charging|unplugged|low|bt|bt-off`: tampilkan satu toast setelah start (uji visual tanpa colok kabel).
 const DEMO_NOTIF_ID: u32 = 999_999;
 
+/// `--demo-playing`: lagu palsu sedang diputar (uji tata letak notch kecil tanpa pemutar media sungguhan).
+pub(crate) fn demo_playing() -> bool {
+    std::env::args().any(|a| a == "--demo-playing")
+}
+
+/// `--demo-priv=cam,mic`: nyalakan titik kamera dan/atau mikrofon sejak start.
+fn demo_priv(dev: &str) -> Vec<String> {
+    let on = std::env::args().find_map(|a| a.strip_prefix("--demo-priv=").map(|v| v.split(',').any(|d| d == dev)));
+    if on == Some(true) { vec!["Demo".to_string()] } else { Vec::new() }
+}
+
 fn demo_toast() -> Option<ToastKind> {
     let arg = std::env::args().find_map(|a| a.strip_prefix("--demo-toast=").map(str::to_string))?;
     Some(match arg.as_str() {
@@ -487,7 +498,11 @@ fn main() -> Result<()> {
             lyric_sv: 0.0,
             lyric_t: Instant::now(),
             pos_at: Instant::now(),
-            media: Media::default(),
+            media: if demo_playing() {
+                Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 }
+            } else {
+                Media::default()
+            },
             art: None,
             prev_art: None,
             art_t0: Instant::now() - Duration::from_secs(10),
@@ -513,8 +528,8 @@ fn main() -> Result<()> {
             water: Water::load(),
             wui: WaterUi::new(),
             tx,
-            priv_mic: Vec::new(),
-            priv_cam: Vec::new(),
+            priv_mic: demo_priv("mic"),
+            priv_cam: demo_priv("cam"),
             priv_t: Instant::now() - Duration::from_secs(10),
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,
