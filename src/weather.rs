@@ -305,7 +305,7 @@ impl App {
         let ca = ca * fade;
         let t = secs();
         let (_, stage, prog) = stage_at(t);
-        let (cx, cy) = (CX - w / 2.0 + 32.0, h / 2.0);
+        let (cx, cy) = (self.idle_weather_cx(w), h / 2.0);
         let draw_stage = |g: &mut Gfx, st: u8, a: f32, dy: f32| {
             if a <= 0.01 {
                 return;

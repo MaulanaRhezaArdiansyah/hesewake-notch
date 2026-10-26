@@ -21,7 +21,7 @@ impl App {
     pub(crate) fn clock_text(&self, g: &mut Gfx, w: f32, h: f32, al: f32) {
         let st = now_tm();
         let s = format!("{:02}:{:02}", st.wHour, st.wMinute);
-        g.txt_c(&s, CX, ty(h, 14.0), 14.0, [255, 255, 255], al, w, true);
+        g.txt_c(&s, self.idle_clock_cx(w), ty(h, 14.0), 14.0, [255, 255, 255], al, w, true);
     }
 
     pub(crate) fn draw_clock_collapsed(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {

@@ -12,9 +12,26 @@ pub(crate) const PRESETS: [u32; 6] = [60, 300, 600, 900, 1500, 2700];
 const MIN_PRESET: u32 = 60;
 const MAX_PRESET: u32 = 3 * 3600;
 
-/// Ruang tambahan (px) di notch idle saat timer berjalan, untuk pil waktu di kanan jam (lebih lebar bila ada jam).
-const CHIP_EXTRA: f32 = 86.0;
-const CHIP_EXTRA_HOURS: f32 = 104.0;
+// Tata letak notch idle saat timer berjalan (px). Isi disusun sebagai satu deret dengan jarak sama:
+// [margin][cuaca][jam][pil][margin atau lonceng]; lebar notch mengikuti isi supaya kiri-kanan seimbang.
+const PAD: f32 = 18.0;
+const GAP: f32 = 12.0;
+const CLOCK_W: f32 = 38.0;
+const WEATHER_W: f32 = 24.0;
+const PILL_W: f32 = 62.0;
+const PILL_W_HOURS: f32 = 80.0;
+/// Ruang di kanan pil bila ada lonceng (ikon 16 px + jarak).
+const BELL_PAD: f32 = 36.0;
+/// Fase mata: mata tetap di tengah, pil di kanannya pada jarak ini dari tengah.
+const EYE_GAP: f32 = 24.0;
+
+/// Posisi elemen idle saat timer berjalan, relatif ke tepi kiri notch (fase jam) atau ke tengah (fase mata).
+pub(crate) struct IdleSlots {
+    /// Lebar isi (tanpa slot titik mic/kamera): notch idle dilebarkan sampai ini bila lebih lebar dari `IDLE`.
+    pub(crate) raw: f32,
+    /// Fase jam: (pusat ikon cuaca bila tampil, pusat jam, awal pil), semuanya dari tepi kiri notch.
+    clock: Option<(Option<f32>, f32, f32)>,
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum TMode {
@@ -194,6 +211,26 @@ fn t_hits(mode: TMode) -> Vec<(THit, (f32, f32, f32, f32))> {
     v
 }
 
+/// Susunan murni: fase mata / jam, cuaca tampil, lonceng tampil, pil lebar (jam >= 1 j).
+fn idle_slots(eye: bool, weather: bool, bell: bool, wide: bool) -> IdleSlots {
+    let pw = if wide { PILL_W_HOURS } else { PILL_W };
+    let right = if bell { BELL_PAD } else { PAD };
+    if eye {
+        return IdleSlots { raw: 2.0 * (EYE_GAP + pw + right), clock: None };
+    }
+    let mut x = PAD;
+    let weather_c = if weather {
+        let c = x + WEATHER_W / 2.0;
+        x += WEATHER_W + GAP;
+        Some(c)
+    } else {
+        None
+    };
+    let clock_c = x + CLOCK_W / 2.0;
+    x += CLOCK_W + GAP;
+    IdleSlots { raw: x + pw + right, clock: Some((weather_c, clock_c, x)) }
+}
+
 impl App {
     fn timer_visible(&self) -> bool {
         self.expanded() && self.is_slide(SlideId::Timer) && self.h > 100.0
@@ -204,14 +241,38 @@ impl App {
         self.timer_visible() && self.tm.running()
     }
 
-    /// Tambahan lebar notch idle saat timer berjalan (pil waktu di kanan jam). Ikut menampung titik mic/kamera yang
-    /// menggeser lonceng ke kiri, supaya pil tidak menabrak lonceng.
+    /// Pil timer tampil di notch idle: timer berjalan dan notch kecil dalam keadaan diam.
+    fn timer_chip_active(&self) -> bool {
+        self.tm.running() && !self.expanded() && self.toast.is_none() && !self.thin() && !self.media.playing && self.splash_t().is_none()
+    }
+
+    /// Susunan notch idle saat timer berjalan; None bila pil tidak tampil.
+    pub(crate) fn timer_slots(&self) -> Option<IdleSlots> {
+        if !self.timer_chip_active() {
+            return None;
+        }
+        let wide = self.tm.display_secs(Instant::now()) >= 3600;
+        Some(idle_slots(self.idle_phase() == IdlePhase::Eye, self.weather_shown(), self.bell_pos().is_some(), wide))
+    }
+
+    /// Tambahan lebar notch idle saat timer berjalan (di atas `IDLE`; slot titik mic/kamera ditambah terpisah).
     pub(crate) fn timer_extra(&self) -> f32 {
-        if self.tm.running() && !self.expanded() && self.toast.is_none() && !self.thin() && !self.media.playing {
-            let base = if self.tm.display_secs(Instant::now()) >= 3600 { CHIP_EXTRA_HOURS } else { CHIP_EXTRA };
-            base + self.priv_extra()
-        } else {
-            0.0
+        self.timer_slots().map_or(0.0, |s| (s.raw - IDLE.0).max(0.0))
+    }
+
+    /// Pusat jam di notch idle (bergeser ke kiri saat pil timer tampil di sebelah kanannya).
+    pub(crate) fn idle_clock_cx(&self, w: f32) -> f32 {
+        match self.timer_slots().and_then(|s| s.clock) {
+            Some((_, c, _)) => CX - w / 2.0 + c,
+            None => CX,
+        }
+    }
+
+    /// Pusat ikon/suhu cuaca di notch idle.
+    pub(crate) fn idle_weather_cx(&self, w: f32) -> f32 {
+        match self.timer_slots().and_then(|s| s.clock).and_then(|(wc, _, _)| wc) {
+            Some(c) => CX - w / 2.0 + c,
+            None => CX - w / 2.0 + 32.0,
         }
     }
 
@@ -313,7 +374,7 @@ impl App {
     }
 
     /// Pil waktu di kanan jam saat timer berjalan dan notch idle: ring progres + waktu, biru (tidak menyerupai mata).
-    pub(crate) fn draw_timer_chip(&self, g: &mut Gfx, _w: f32, h: f32, ca: f32) {
+    pub(crate) fn draw_timer_chip(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {
         if self.timer_extra() <= 0.0 || ca <= 0.05 {
             return;
         }
@@ -324,7 +385,11 @@ impl App {
             TMode::Stopwatch => (self.tm.elapsed(now).as_secs_f32() % 60.0) / 60.0,
         };
         let tw = g.width_ex(&text, 12.0, true);
-        let (x, pw, ph) = (CX + 24.0, 24.0 + tw + 8.0, 20.0);
+        let x = match self.timer_slots().and_then(|s| s.clock) {
+            Some((_, _, px)) => CX - w / 2.0 + px,
+            None => CX + EYE_GAP,
+        };
+        let (pw, ph) = (24.0 + tw + 8.0, 20.0);
         g.fill(&rrect(x, h / 2.0 - ph / 2.0, pw, ph, ph / 2.0), &paint(40, 90, 170, 0.22 * ca));
         g.ring(x + 12.0, h / 2.0, 5.5, frac.clamp(0.0, 1.0), 2.0, &paint(255, 255, 255, 0.18 * ca), &paint(BLUE[0], BLUE[1], BLUE[2], ca));
         g.txtb(&text, x + 24.0, ty(h, 12.0), 12.0, BLUE, ca, tw + 4.0);
@@ -434,5 +499,27 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn idle_slots_are_evenly_spaced() {
+        // cuaca + jam + pil: margin kiri = margin kanan, jarak antar elemen sama
+        let s = idle_slots(false, true, false, false);
+        let (wc, cc, px) = s.clock.unwrap();
+        let wc = wc.unwrap();
+        assert!((wc - WEATHER_W / 2.0 - PAD).abs() < 0.01, "margin kiri");
+        assert!(((cc - CLOCK_W / 2.0) - (wc + WEATHER_W / 2.0) - GAP).abs() < 0.01, "jarak cuaca-jam");
+        assert!((px - (cc + CLOCK_W / 2.0) - GAP).abs() < 0.01, "jarak jam-pil");
+        assert!((s.raw - (px + PILL_W) - PAD).abs() < 0.01, "margin kanan");
+        // tanpa cuaca: jam menempel di margin kiri
+        let n = idle_slots(false, false, false, false);
+        let (w0, c0, _) = n.clock.unwrap();
+        assert!(w0.is_none() && (c0 - CLOCK_W / 2.0 - PAD).abs() < 0.01);
+        // lonceng menambah ruang kanan; pil jam lebih lebar
+        assert!(idle_slots(false, true, true, false).raw > s.raw);
+        assert!(idle_slots(false, true, false, true).raw > s.raw);
+        // fase mata simetris terhadap tengah
+        let e = idle_slots(true, false, false, false);
+        assert!(e.clock.is_none() && (e.raw / 2.0 - (EYE_GAP + PILL_W + PAD)).abs() < 0.01);
     }
 }
