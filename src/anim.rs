@@ -153,9 +153,6 @@ unsafe fn poll(a: &mut App) {
                 a.open_settings();
             } else {
                 a.show(n);
-                if std::env::args().any(|x| x == "--demo-water-settings") {
-                    a.water_view(1);
-                }
             }
             a.peek_until = Some(Instant::now() + Duration::from_secs(25));
             redraw = true;

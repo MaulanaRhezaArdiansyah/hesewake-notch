@@ -382,6 +382,12 @@ impl App {
             u.enter_t = Instant::now();
             u.shown = 0.0;
             u.knob = if on { 1.0 } else { 0.0 };
+            // `--demo-water-settings`: buka langsung tampilan Settings (uji visual)
+            if std::env::args().any(|a| a == "--demo-water-settings") {
+                u.view = 1;
+                u.view_dir = 1.0;
+                u.view_t0 = Instant::now() - Duration::from_secs(1);
+            }
         }
         spring(&mut u.shown, &mut u.vel, ml, 190.0, 24.0, dt);
         spring(&mut u.knob, &mut u.kvel, if on { 1.0 } else { 0.0 }, 380.0, 30.0, dt);

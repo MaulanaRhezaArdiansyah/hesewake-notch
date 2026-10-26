@@ -8,6 +8,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 - Skala DPI: notch mengikuti scaling Windows di monitor tempatnya berada, dengan pilihan "Notch size" di Settings (kontribusi dari @MaulanaRhezaArdiansyah, PR #1).
 - Flag uji `--demo-notifs`: slide Notifications berisi data palsu untuk uji visual tanpa membaca notifikasi asli.
 - **Emoji** di notifikasi, to-do, dan judul lagu tampil sebagai ikon monokrom (Segoe UI Emoji lewat GDI, indeks glyph dari tabel `cmap`), bukan kotak kosong. Penanda variasi, ZWJ, dan pengubah warna kulit tidak lagi menyisakan kotak. Emoji berwarna penuh belum didukung.
+- **Pengingat minum berupa toast "Time to Drink"** dengan tombol **Snooze** (tunda 10 menit) dan **Drank** (catat satu Glass), menggantikan membuka slide Water selama 10 detik. Hover di toast tidak membuka notch; klik di luar tombol membuka slide Water. Bila notch sedang terbuka, pengingat tetap tampil di dalam slide seperti sebelumnya. Flag uji `--demo-toast=water`.
+- **Settings Water baru** (tombol kembali bulat di header): stepper **Bottle** dan **Glass**, chip **Goal** dan **Remind**, **Hours** (jam mulai dan selesai pengingat, menggantikan batas 08:00-22:00 yang tetap), kartu statistik **reminders** (pengingat yang sudah muncul hari ini) dan **refills** (berapa kali botol habis), serta tombol **Reset today** yang menghapus progres, pengingat, dan refill hari itu. `water.txt` mendapat field opsional (bottle, jam mulai/selesai, jumlah pengingat); berkas lama tetap terbaca. Flag uji `--demo-water-settings`.
 - Flag uji `--demo-playing` (lagu palsu) dan `--demo-priv=cam,mic` (titik kamera/mikrofon) untuk uji tata letak notch kecil.
 
 ### Fixed
