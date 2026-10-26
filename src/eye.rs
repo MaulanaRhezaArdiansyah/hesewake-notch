@@ -323,9 +323,11 @@ pub(crate) fn splash_tick(a: &mut App) -> bool {
         return false;
     }
     a.splash = None;
-    a.idle_base = CLOCK_FADE_IN;
+    // `--demo-eye`: langsung ke fase mata (uji tata letak notch idle tanpa menunggu 10 menit)
+    let demo_eye = std::env::args().any(|x| x == "--demo-eye");
+    a.idle_base = if demo_eye { CLOCK_PHASE_SECS + 1.0 } else { CLOCK_FADE_IN };
     a.idle_mark = if a.idle() { Some(Instant::now()) } else { None };
-    a.cur_phase = IdlePhase::Clock;
+    a.cur_phase = if demo_eye { IdlePhase::Eye } else { IdlePhase::Clock };
     a.was_idle = a.idle();
     true
 }

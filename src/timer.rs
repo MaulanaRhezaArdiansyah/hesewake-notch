@@ -12,8 +12,9 @@ pub(crate) const PRESETS: [u32; 6] = [60, 300, 600, 900, 1500, 2700];
 const MIN_PRESET: u32 = 60;
 const MAX_PRESET: u32 = 3 * 3600;
 
-/// Ruang tambahan (px) di notch idle saat timer berjalan, untuk teks waktu di kanan jam.
-pub(crate) const CHIP_EXTRA: f32 = 64.0;
+/// Ruang tambahan (px) di notch idle saat timer berjalan, untuk pil waktu di kanan jam (lebih lebar bila ada jam).
+const CHIP_EXTRA: f32 = 86.0;
+const CHIP_EXTRA_HOURS: f32 = 104.0;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum TMode {
@@ -203,9 +204,15 @@ impl App {
         self.timer_visible() && self.tm.running()
     }
 
-    /// Tambahan lebar notch idle saat timer berjalan (teks waktu di kanan jam).
+    /// Tambahan lebar notch idle saat timer berjalan (pil waktu di kanan jam). Ikut menampung titik mic/kamera yang
+    /// menggeser lonceng ke kiri, supaya pil tidak menabrak lonceng.
     pub(crate) fn timer_extra(&self) -> f32 {
-        if self.tm.running() && !self.expanded() && self.toast.is_none() && !self.thin() && !self.media.playing { CHIP_EXTRA } else { 0.0 }
+        if self.tm.running() && !self.expanded() && self.toast.is_none() && !self.thin() && !self.media.playing {
+            let base = if self.tm.display_secs(Instant::now()) >= 3600 { CHIP_EXTRA_HOURS } else { CHIP_EXTRA };
+            base + self.priv_extra()
+        } else {
+            0.0
+        }
     }
 
     /// Dipanggil tiap poll: selesaikan hitung mundur (toast) dan minta redraw saat detik yang tampil berubah.
@@ -305,17 +312,22 @@ impl App {
         }
     }
 
-    /// Teks waktu kecil di kanan jam saat timer berjalan dan notch idle.
+    /// Pil waktu di kanan jam saat timer berjalan dan notch idle: ring progres + waktu, biru (tidak menyerupai mata).
     pub(crate) fn draw_timer_chip(&self, g: &mut Gfx, _w: f32, h: f32, ca: f32) {
         if self.timer_extra() <= 0.0 || ca <= 0.05 {
             return;
         }
-        let secs = self.tm.display_secs(Instant::now());
-        let rgb = if self.tm.mode == TMode::Countdown { BLUE } else { GREEN };
-        let pulse = 0.65 + 0.35 * (self.t * 4.0).sin().abs();
-        let x = CX + 30.0;
-        g.circle(x - 6.0, h / 2.0, 2.4, &paint(rgb[0], rgb[1], rgb[2], ca * pulse));
-        g.txtb(&fmt_clock(secs), x, ty(h, 12.0), 12.0, [235, 238, 245], ca, 48.0);
+        let now = Instant::now();
+        let text = fmt_clock(self.tm.display_secs(now));
+        let frac = match self.tm.mode {
+            TMode::Countdown => self.tm.remaining(now).as_secs_f32() / self.tm.preset.max(1) as f32,
+            TMode::Stopwatch => (self.tm.elapsed(now).as_secs_f32() % 60.0) / 60.0,
+        };
+        let tw = g.width_ex(&text, 12.0, true);
+        let (x, pw, ph) = (CX + 24.0, 24.0 + tw + 8.0, 20.0);
+        g.fill(&rrect(x, h / 2.0 - ph / 2.0, pw, ph, ph / 2.0), &paint(40, 90, 170, 0.22 * ca));
+        g.ring(x + 12.0, h / 2.0, 5.5, frac.clamp(0.0, 1.0), 2.0, &paint(255, 255, 255, 0.18 * ca), &paint(BLUE[0], BLUE[1], BLUE[2], ca));
+        g.txtb(&text, x + 24.0, ty(h, 12.0), 12.0, BLUE, ca, tw + 4.0);
     }
 }
 
