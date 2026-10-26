@@ -123,7 +123,7 @@ impl App {
                 Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
                 Row { label: "Monitor", sub: "Follow = under cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
-                Row { label: "Notch size", sub: "Auto = Windows scaling", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
+                Row { label: "Notch size", sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
