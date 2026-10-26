@@ -40,6 +40,8 @@ pub(crate) struct Text {
     pub(crate) reg: Vec<fontdue::Font>,
     pub(crate) bold: Vec<fontdue::Font>,
     pub(crate) cache: HashMap<GlyphKey, (fontdue::Metrics, Vec<u8>)>,
+    /// Skala DPI: glyph dirasterisasi di `size * s`, ukuran yang dikembalikan tetap piksel logis.
+    pub(crate) s: f32,
 }
 
 fn load_font(data: &[u8]) -> Option<fontdue::Font> {
@@ -72,7 +74,7 @@ impl Text {
         let mut bold = vec![load_font(FONT_BOLD)?];
         reg.extend(load_font(FONT_REG_EXT));
         bold.extend(load_font(FONT_BOLD_EXT));
-        Some(Text { reg, bold, cache: HashMap::new() })
+        Some(Text { reg, bold, cache: HashMap::new(), s: 1.0 })
     }
 
     /// Rasterisasi awal karakter umum pada ukuran yang dipakai UI, supaya frame pertama saat expand tidak melonjak.
@@ -88,6 +90,7 @@ impl Text {
     /// `s` dipotong lalu diberi "…" sehingga lebarnya <= `maxw`. Satu putaran (jumlah advance per karakter), hasilnya
     /// sama dengan memangkas karakter satu per satu sambil mengukur ulang seluruh string.
     pub(crate) fn ellipsize(&mut self, s: &str, size: f32, bold: bool, maxw: f32) -> String {
+        let (size, maxw) = (size * self.s, maxw * self.s);
         let chain: &[fontdue::Font] = if bold { &self.bold } else { &self.reg };
         let ell = glyph_of(&mut self.cache, chain, '\u{2026}', size, bold).0.advance_width;
         let (mut acc, mut keep) = (0.0f32, 0usize);
@@ -105,13 +108,14 @@ impl Text {
     }
 
     fn measure(&mut self, s: &str, size: f32, bold: bool) -> f32 {
+        let size = size * self.s;
         let chain: &[fontdue::Font] = if bold { &self.bold } else { &self.reg };
         let mut total = 0.0;
         for ch in s.chars() {
             let (m, _) = glyph_of(&mut self.cache, chain, ch, size, bold);
             total += m.advance_width;
         }
-        total
+        total / self.s
     }
 
     pub(crate) fn draw(
@@ -130,6 +134,10 @@ impl Text {
         if alpha <= 0.02 {
             return;
         }
+        // Semua masukan logis -> piksel fisik (s = 1 tidak mengubah apa pun).
+        let k = self.s;
+        let (x, y, size, max_w) = (x * k, y * k, size * k, max_w * k);
+        let clip = clip.map(|(cl, cr, fd)| (cl * k, cr * k, fd * k));
         let (pw, ph) = (pm.width() as i32, pm.height() as i32);
         let chain: &[fontdue::Font] = if bold { &self.bold } else { &self.reg };
         let asc = size * ASC;
@@ -196,9 +204,30 @@ pub(crate) struct Gfx {
     pub(crate) prev_box: Box4,
     /// Region that must be copied to the window bitmap for the current frame.
     pub(crate) dirty: Box4,
+    /// Skala DPI dan transform-nya: semua gambar memakai koordinat logis (lihat scale.rs).
+    pub(crate) s: f32,
+    pub(crate) ts: Transform,
 }
 
 impl Gfx {
+    /// Kanvas kosong untuk skala `s` (prev_box/dirty = seluruh kanvas, kotak dalam piksel fisik).
+    pub(crate) fn new(s: f32) -> Gfx {
+        let (w, h) = scale::canvas(s);
+        let full = (0, 0, w as usize, h as usize);
+        Gfx {
+            pm: Pixmap::new(w as u32, h as u32).expect("kanvas"),
+            text: Text::load().map(|mut t| {
+                t.s = s;
+                t
+            }),
+            mask: Mask::new(w as u32, h as u32),
+            prev_box: full,
+            dirty: full,
+            s,
+            ts: Transform::from_scale(s, s),
+        }
+    }
+
     pub(crate) fn clear_box(&mut self, b: Box4) {
         let pw = self.pm.width() as usize;
         let ph = self.pm.height() as usize;
@@ -213,15 +242,15 @@ impl Gfx {
     }
 
     pub(crate) fn fill(&mut self, path: &Path, p: &Paint) {
-        self.pm.fill_path(path, p, FillRule::Winding, Transform::identity(), None);
+        self.pm.fill_path(path, p, FillRule::Winding, self.ts, None);
     }
     pub(crate) fn stroke(&mut self, path: &Path, p: &Paint, w: f32) {
         let st = Stroke { width: w, ..Default::default() };
-        self.pm.stroke_path(path, p, &st, Transform::identity(), None);
+        self.pm.stroke_path(path, p, &st, self.ts, None);
     }
     pub(crate) fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, p: &Paint) {
         if let Some(r) = Rect::from_xywh(x, y, w, h) {
-            self.pm.fill_rect(r, p, Transform::identity(), None);
+            self.pm.fill_rect(r, p, self.ts, None);
         }
     }
     pub(crate) fn circle(&mut self, x: f32, y: f32, r: f32, p: &Paint) {
@@ -277,7 +306,7 @@ impl Gfx {
     pub(crate) fn ring(&mut self, cx: f32, cy: f32, r: f32, frac: f32, wd: f32, track: &Paint, fg: &Paint) {
         if let Some(path) = PathBuilder::from_circle(cx, cy, r) {
             let st = Stroke { width: wd, ..Default::default() };
-            self.pm.stroke_path(&path, track, &st, Transform::identity(), None);
+            self.pm.stroke_path(&path, track, &st, self.ts, None);
         }
         if frac > 0.001 {
             let steps = ((frac * 64.0).ceil() as i32).max(2);
@@ -293,7 +322,7 @@ impl Gfx {
             }
             if let Some(path) = pb.finish() {
                 let st = Stroke { width: wd, line_cap: LineCap::Round, ..Default::default() };
-                self.pm.stroke_path(&path, fg, &st, Transform::identity(), None);
+                self.pm.stroke_path(&path, fg, &st, self.ts, None);
             }
         }
     }
@@ -435,6 +464,91 @@ pub(crate) fn ellipsize(g: &mut Gfx, s: &str, size: f32, maxw: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fnv(data: &[u8]) -> u64 {
+        data.iter().fold(0xcbf29ce484222325u64, |h, &b| (h ^ b as u64).wrapping_mul(0x100000001b3))
+    }
+
+    fn gfx_100() -> Gfx {
+        Gfx::new(1.0)
+    }
+
+    fn alpha_at(g: &Gfx, x: u32, y: u32) -> u8 {
+        g.pm.pixel(x, y).map_or(0, |p| p.alpha())
+    }
+
+    fn opaque_count(g: &Gfx) -> usize {
+        g.pm.data().chunks_exact(4).filter(|p| p[3] > 0).count()
+    }
+
+    #[test]
+    fn canvas_and_boxes_are_physical() {
+        let g = Gfx::new(1.5);
+        assert_eq!((g.pm.width(), g.pm.height()), (810, 288));
+        assert_eq!(g.dirty, (0, 0, 810, 288));
+    }
+
+    #[test]
+    fn shapes_use_logical_coordinates() {
+        let mut g = Gfx::new(2.0);
+        g.rect(10.0, 10.0, 20.0, 20.0, &paint(255, 255, 255, 1.0));
+        assert_eq!(alpha_at(&g, 25, 25), 255, "logis (12.5, 12.5) di dalam");
+        assert_eq!(alpha_at(&g, 55, 55), 255, "logis (27.5, 27.5) di dalam");
+        assert_eq!(alpha_at(&g, 65, 65), 0, "logis (32.5, 32.5) di luar");
+    }
+
+    #[test]
+    fn text_is_measured_in_logical_px_and_drawn_scaled() {
+        let mut g1 = Gfx::new(1.0);
+        let mut g2 = Gfx::new(2.0);
+        let (w1, w2) = (g1.width_ex("Avenged Sevenfold", 17.0, true), g2.width_ex("Avenged Sevenfold", 17.0, true));
+        assert!((w1 - w2).abs() <= 1.0, "lebar logis harus hampir sama: {w1} vs {w2}");
+        g2.txt("Hello", 100.0, 50.0, 13.0, [255, 255, 255], 1.0, 400.0);
+        let mut xs = (u32::MAX, 0u32);
+        for y in 0..g2.pm.height() {
+            for x in 0..g2.pm.width() {
+                if alpha_at(&g2, x, y) > 0 {
+                    xs = (xs.0.min(x), xs.1.max(x));
+                }
+            }
+        }
+        assert!(xs.0 >= 196 && xs.0 <= 206, "teks mulai di x fisik ~200, dapat {}", xs.0);
+        let w_phys = (xs.1 - xs.0) as f32;
+        let w_log = g1.width("Hello", 13.0);
+        assert!((w_phys / 2.0 - w_log).abs() <= 3.0, "lebar fisik {w_phys} harus ~2x lebar logis {w_log}");
+    }
+
+    #[test]
+    fn whole_scene_scales_area_by_square_of_scale() {
+        let mut g1 = Gfx::new(1.0);
+        let mut g2 = Gfx::new(2.0);
+        scene(&mut g1);
+        scene(&mut g2);
+        let (a1, a2) = (opaque_count(&g1) as f32, opaque_count(&g2) as f32);
+        assert!((a2 / a1 - 4.0).abs() < 0.2, "luas 2x skala harus ~4x: {a1} -> {a2}");
+    }
+
+    /// Satu adegan yang memakai semua jalur gambar: bentuk, garis, ring, gradasi, ikon garis, teks biasa/tebal/terpotong.
+    fn scene(g: &mut Gfx) {
+        let shape = notch_path(EXP_W, EXP_H);
+        g.fill(&shape, &paint(0, 0, 0, 1.0));
+        crate::render::glow(g, &shape, EXP_H, (90, 120, 200), 0.4);
+        g.fill(&rrect(40.5, 30.25, 120.0, 40.0, 12.0), &paint(90, 150, 255, 0.8));
+        g.circle(300.0, 60.0, 14.5, &paint(255, 69, 58, 1.0));
+        g.line(200.0, 100.0, 330.0, 140.0, 3.0, &paint(255, 255, 255, 0.6));
+        g.ring(420.0, 80.0, 18.0, 0.62, 4.0, &paint(255, 255, 255, 0.2), &paint(90, 150, 255, 1.0));
+        g.icon_bluetooth(470.0, 140.0, 16.0, &paint(255, 255, 255, 1.0));
+        g.txt("Almost Easy · 15:19", 60.0, 90.0, 13.0, [255, 255, 255], 1.0, 400.0);
+        g.txtb("Avenged Sevenfold", 60.0, 110.0, 17.0, [200, 220, 255], 0.9, 400.0);
+        g.txt_clip("I'm not insane, I'm not insane", 50.0, 135.0, 12.0, [255, 255, 255], 1.0, 70.0, 220.0, 6.0);
+    }
+
+    #[test]
+    fn scene_at_100_percent_is_unchanged() {
+        let mut g = gfx_100();
+        scene(&mut g);
+        assert_eq!(fnv(g.pm.data()), 6528788650261307270, "hash adegan 100% harus sama dengan sebelum skala DPI");
+    }
 
     /// Implementasi lama (kuadratik) sebagai acuan kebenaran.
     fn ellipsize_slow(t: &mut Text, s: &str, size: f32, maxw: f32) -> String {
