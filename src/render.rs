@@ -165,6 +165,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Notifications => a.slide_notifs(&mut g, ox, al),
                 SlideId::Settings => a.slide_settings(&mut g, ox, al),
                 SlideId::System => a.slide_system(&mut g, ox, al),
+                SlideId::Timer => a.slide_timer(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
             }
         }
@@ -306,6 +307,7 @@ impl App {
                 }
                 IdlePhase::Eye => self.draw_eye(g, w, h, ca),
             }
+            self.draw_timer_chip(g, w, h, ca);
             self.draw_bell(g, ca);
         }
     }

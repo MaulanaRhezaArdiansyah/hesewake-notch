@@ -89,6 +89,7 @@ mod sys;
 mod sysview;
 mod weather;
 mod todo;
+mod timer;
 mod toast;
 mod water;
 mod window;
@@ -217,6 +218,8 @@ struct App {
     nv: NoteView,
     water: Water,
     wui: WaterUi,
+    /// Stopwatch / hitung mundur (slide Timer).
+    tm: timer::TimerState,
     tx: Sender<Cmd>,
     /// Pengaturan (settings.txt) dan urutan slide yang sedang tampil.
     cfg: Settings,
@@ -291,6 +294,17 @@ fn demo_priv(dev: &str) -> Vec<String> {
     if on == Some(true) { vec!["Demo".to_string()] } else { Vec::new() }
 }
 
+/// `--demo-timer=count|stop`: mulai hitung mundur / stopwatch sejak start (uji tampilan chip di notch idle).
+fn demo_timer(mut t: timer::TimerState) -> timer::TimerState {
+    match std::env::args().find_map(|a| a.strip_prefix("--demo-timer=").map(str::to_string)).as_deref() {
+        Some("stop") => t.set_mode(timer::TMode::Stopwatch),
+        Some("count") => t.set_mode(timer::TMode::Countdown),
+        _ => return t,
+    }
+    t.start(Instant::now());
+    t
+}
+
 fn demo_toast() -> Option<ToastKind> {
     let arg = std::env::args().find_map(|a| a.strip_prefix("--demo-toast=").map(str::to_string))?;
     Some(match arg.as_str() {
@@ -306,6 +320,7 @@ fn demo_toast() -> Option<ToastKind> {
         "brightness" => ToastKind::Hud { kind: HudKind::Brightness(72), on: true },
         "mute" => ToastKind::Hud { kind: HudKind::Volume(0, true), on: true },
         "water" => ToastKind::Water,
+        "timer" => ToastKind::Timer { label: "5 min timer".into() },
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
@@ -529,6 +544,7 @@ fn main() -> Result<()> {
             nv: NoteView::default(),
             water: Water::load(),
             wui: WaterUi::new(),
+            tm: demo_timer(timer::TimerState::load()),
             tx,
             priv_mic: demo_priv("mic"),
             priv_cam: demo_priv("cam"),

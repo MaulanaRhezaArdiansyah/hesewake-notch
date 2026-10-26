@@ -11,18 +11,20 @@ pub(crate) enum SlideId {
     Notifications,
     /// CPU, memori, jaringan, baterai. Default tersembunyi.
     System,
+    /// Stopwatch dan hitung mundur. Default tersembunyi.
+    Timer,
     /// Hanya muncul (di akhir) selama dibuka lewat item menu "Settings"; tidak ada di carousel saat tertutup.
     Settings,
 }
 
 impl SlideId {
     /// Slide yang bisa diatur pengguna (urutan bawaan).
-    pub(crate) const USER: [SlideId; 7] =
-        [SlideId::Music, SlideId::Water, SlideId::Todo, SlideId::Ledge, SlideId::Scrap, SlideId::Notifications, SlideId::System];
+    pub(crate) const USER: [SlideId; 8] =
+        [SlideId::Music, SlideId::Water, SlideId::Todo, SlideId::Ledge, SlideId::Scrap, SlideId::Notifications, SlideId::System, SlideId::Timer];
 
     /// Aktif secara bawaan? (slide opsional dimulai tersembunyi)
     pub(crate) fn default_on(self) -> bool {
-        !matches!(self, SlideId::System)
+        !matches!(self, SlideId::System | SlideId::Timer)
     }
 
     pub(crate) fn key(self) -> &'static str {
@@ -34,6 +36,7 @@ impl SlideId {
             SlideId::Scrap => "scrap",
             SlideId::Notifications => "notifs",
             SlideId::System => "system",
+            SlideId::Timer => "timer",
             SlideId::Settings => "settings",
         }
     }
@@ -47,6 +50,7 @@ impl SlideId {
             SlideId::Scrap => "Scrap",
             SlideId::Notifications => "Notifications",
             SlideId::System => "System",
+            SlideId::Timer => "Timer",
             SlideId::Settings => "Settings",
         }
     }
@@ -124,7 +128,7 @@ mod tests {
         assert_eq!(c.len(), SlideId::USER.len());
         assert_eq!(c[3], (SlideId::Ledge, true));
         // slide opsional yang baru muncul di versi baru tetap tersembunyi
-        assert_eq!(c.last(), Some(&(SlideId::System, false)));
+        assert_eq!(&c[c.len() - 2..], &[(SlideId::System, false), (SlideId::Timer, false)]);
     }
 
     #[test]
@@ -139,7 +143,7 @@ mod tests {
     fn roundtrips() {
         let c = parse_slides("scrap,!ledge,music,water,todo,notifs");
         assert_eq!(parse_slides(&format_slides(&c)), c);
-        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system");
+        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer");
     }
 
     #[test]

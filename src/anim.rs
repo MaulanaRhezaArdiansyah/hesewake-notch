@@ -17,7 +17,7 @@ pub(crate) fn target(a: &App) -> (f32, f32) {
     } else if a.media.playing {
         (PLAYING.0 + a.bell_extra() + a.priv_extra(), PLAYING.1)
     } else {
-        (IDLE.0 + a.priv_extra(), IDLE.1)
+        (IDLE.0 + a.priv_extra() + a.timer_extra(), IDLE.1)
     }
 }
 
@@ -39,7 +39,7 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.weather_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.weather_animating() || a.timer_animating() {
         16
     } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide
@@ -103,6 +103,9 @@ unsafe fn poll(a: &mut App) {
         redraw = true;
     }
     if a.sys_sample() {
+        redraw = true;
+    }
+    if a.timer_poll() {
         redraw = true;
     }
     // pergantian tahap suhu <-> ikon memicu transisi
