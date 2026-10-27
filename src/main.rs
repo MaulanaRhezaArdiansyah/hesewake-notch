@@ -85,6 +85,8 @@ mod settings;
 mod settingsview;
 mod shelf;
 mod slides;
+#[cfg(test)]
+mod snapshot;
 mod sys;
 mod sysview;
 mod weather;

@@ -24,7 +24,18 @@ jobs:
       - name: Build (warning = error)
         run: cargo build --locked
       - name: Test
+        # SNAPSHOT_DIR: tes di src/snapshot.rs menyimpan gambar tampilan notch ke sini (lihat artifact di bawah).
+        env:
+          SNAPSHOT_DIR: ${{ github.workspace }}/ui-snapshots
         run: cargo test --locked
+      - name: Upload snapshot tampilan
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-snapshots
+          path: ui-snapshots/*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: Clippy (laporan saja)
         # Masih banyak temuan lama (mis. too_many_arguments); belum dijadikan syarat lolos.
         env:
