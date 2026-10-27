@@ -1,4 +1,4 @@
-# Perbarui SHA action yang di-pin di .github/workflows setiap minggu.
+# Bump the pinned action SHAs in .github/workflows every week.
 version: 2
 updates:
   - package-ecosystem: github-actions
