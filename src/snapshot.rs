@@ -1,15 +1,15 @@
-//! Snapshot tampilan untuk review visual tanpa menjalankan exe. Tiap tes menyusun satu keadaan `App`
-//! (tanpa window), menggambarnya lewat `render::draw` ke kanvas di memori, lalu memeriksa notch benar-benar
-//! tergambar. Bila env `SNAPSHOT_DIR` diisi (dipakai CI), hasilnya disimpan sebagai PNG di atas latar abu-abu
-//! supaya tepi notch hitam terlihat; CI mengunggahnya sebagai artifact `ui-snapshots`.
+//! UI snapshots for visual review without running the exe. Each test builds one `App` state (no window),
+//! draws it with `render::draw` into an in-memory canvas, and checks that the notch was actually drawn.
+//! When the `SNAPSHOT_DIR` env var is set (CI does this), the result is saved as a PNG over a grey background
+//! so the black notch edges stay visible; CI uploads them as the `ui-snapshots` artifact.
 //!
-//! Tambah keadaan baru dengan satu fungsi `#[test]` yang memanggil `shot`.
+//! Add a new state with one `#[test]` function that calls `shot`.
 
 use super::*;
 use tiny_skia::PixmapPaint;
 
-/// App tanpa window, data pengguna, atau thread latar: semua slide aktif, splash sudah lewat.
-/// Cuaca tidak pernah tampil (tidak ada data cuaca di tes), jadi notch idle selalu dalam keadaan "tanpa cuaca".
+/// An App with no window, user data or background threads: every slide enabled, splash already over.
+/// Weather never shows (tests have no weather data), so the idle notch is always in its "no weather" state.
 fn test_app(s: f32) -> App {
     let (tx, _rx) = channel();
     let mut cfg = Settings::default();
@@ -69,7 +69,7 @@ fn test_app(s: f32) -> App {
         peek_until: None,
         reminding: false,
         splash: None,
-        // jam idle sudah selesai fade-in (fase jam, lihat `idle_phase`)
+        // the idle clock has finished fading in (clock phase, see `idle_phase`)
         idle_base: 5.0,
         idle_mark: None,
         was_idle: false,
@@ -96,7 +96,7 @@ fn test_app(s: f32) -> App {
         icon: None,
         art_key: String::new(),
         title_t0: 0.0,
-        todos: vec![(true, "Skala DPI layar".into()), (false, "Mode Pomodoro".into()), (false, "Riwayat clipboard".into())],
+        todos: vec![(true, "Display DPI scaling".into()), (false, "Pomodoro mode".into()), (false, "Clipboard history".into())],
         todo_scroll: 0,
         edit_mode: false,
         editing: false,
@@ -131,18 +131,18 @@ fn test_app(s: f32) -> App {
     }
 }
 
-/// Buka slide `id` di notch besar.
+/// Open slide `id` in the expanded notch.
 fn open_slide(a: &mut App, id: SlideId) {
     a.hover = true;
-    a.slide = a.order.iter().position(|&s| s == id).expect("slide aktif") as i32;
+    a.slide = a.order.iter().position(|&s| s == id).expect("slide is enabled") as i32;
 }
 
-/// Toast yang animasi munculnya sudah selesai.
+/// A toast whose pop-in animation has finished.
 fn show_toast(a: &mut App, kind: ToastKind) {
     a.toast = Some(Toast { kind, t0: Instant::now() - Duration::from_millis(1500), dur: 60.0 });
 }
 
-/// Gambar satu keadaan pada skala `s`, cek ada isinya, dan simpan sebagai `<name>@<persen>.png` bila diminta.
+/// Draw one state at scale `s`, check it has content, and save it as `<name>@<percent>.png` when asked.
 fn shot(name: &str, s: f32, setup: impl FnOnce(&mut App)) {
     let mut a = test_app(s);
     setup(&mut a);
@@ -152,15 +152,15 @@ fn shot(name: &str, s: f32, setup: impl FnOnce(&mut App)) {
     render::draw(&mut a);
     let g = a.gfx.as_ref().expect("gfx");
     let opaque = g.pm.data().chunks_exact(4).filter(|p| p[3] == 255).count();
-    assert!(opaque > (w * h * s * s) as usize / 2, "{name}: notch hampir kosong ({opaque} piksel)");
+    assert!(opaque > (w * h * s * s) as usize / 2, "{name}: notch is almost empty ({opaque} pixels)");
 
     let Some(dir) = std::env::var_os("SNAPSHOT_DIR") else { return };
-    let mut out = Pixmap::new(g.pm.width(), g.pm.height()).expect("ukuran kanvas");
+    let mut out = Pixmap::new(g.pm.width(), g.pm.height()).expect("canvas size");
     out.fill(Color::from_rgba8(118, 124, 134, 255));
     out.draw_pixmap(0, 0, g.pm.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
-    std::fs::create_dir_all(&dir).expect("buat folder snapshot");
+    std::fs::create_dir_all(&dir).expect("create snapshot folder");
     let file = std::path::Path::new(&dir).join(format!("{name}@{}.png", (s * 100.0).round() as u32));
-    out.save_png(&file).expect("simpan png");
+    out.save_png(&file).expect("save png");
 }
 
 const SCALES: [f32; 2] = [1.0, 1.5];
@@ -176,7 +176,7 @@ fn snap_idle_clock() {
 fn snap_idle_eye() {
     shot("idle-eye", 1.0, |a| {
         a.cfg.idle_display = 2;
-        // jalankan animasi 3 detik: mata sudah selesai muncul dan terbuka
+        // run 3 seconds of animation: the eyes have appeared and are open
         for _ in 0..180 {
             a.eye.update(1.0 / 60.0);
         }
@@ -235,8 +235,8 @@ fn snap_slide_music_empty() {
     shot("slide-music-empty", 1.0, |a| open_slide(a, SlideId::Music));
 }
 
-/// Buka Settings pada tab `tab`. Knob toggle disetel ke keadaan sebenarnya selagi slide belum terlihat,
-/// sama seperti saat aplikasi membuka Settings.
+/// Open Settings on tab `tab`. Toggle knobs are snapped to their real state while the slide is still hidden,
+/// just like when the app opens Settings.
 fn open_settings_tab(a: &mut App, tab: u8) {
     a.open_settings();
     a.sui.tab = tab;

@@ -268,9 +268,9 @@ impl Gfx {
         self.pm.stroke_path(path, p, &st, self.ts, None);
     }
     pub(crate) fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, p: &Paint) {
-        // Lewat path, bukan `Pixmap::fill_rect`: fill_rect anti-alias tiny-skia 0.11 (hanya dipakai pada skala 100%)
-        // memicu debug_assert untuk persegi selebar 1-2 px yang tidak menutupi satu piksel penuh, mis. ikon "+"
-        // di To-do. Di build debug itu panic.
+        // Fill through a path, not `Pixmap::fill_rect`: tiny-skia 0.11's anti-aliased fill_rect (only used at 100%
+        // scale) hits a debug_assert for a 1-2 px wide rect that covers no pixel fully, e.g. the "+" icon in
+        // To-do. That panics in debug builds.
         if let Some(r) = Rect::from_xywh(x, y, w, h) {
             self.fill(&PathBuilder::from_rect(r), p);
         }
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn thin_rect_straddling_two_pixels_does_not_panic() {
-        // 10.6..11.9: menyentuh dua piksel tanpa menutupi satu pun penuh (dulu panic di build debug)
+        // 10.6..11.9: touches two pixels without fully covering either (used to panic in debug builds)
         let mut g = gfx_100();
         g.rect(10.6, 4.0, 1.3, 7.0, &paint(255, 255, 255, 1.0));
         g.rect(4.0, 10.6, 7.0, 1.3, &paint(255, 255, 255, 1.0));
