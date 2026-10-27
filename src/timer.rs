@@ -538,7 +538,9 @@ impl App {
 
     /// Pil waktu di kanan jam saat timer berjalan dan notch idle: ring progres + waktu, biru (tidak menyerupai mata).
     pub(crate) fn draw_timer_chip(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {
-        if self.timer_extra() <= 0.0 || ca <= 0.05 {
+        // Cek susunan, bukan `timer_extra`: tanpa cuaca isinya (148 px) muat di lebar IDLE (150 px) sehingga
+        // tambahan lebarnya 0, padahal pil tetap harus tampil.
+        if self.timer_slots().is_none() || ca <= 0.05 {
             return;
         }
         let now = Instant::now();
