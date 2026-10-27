@@ -2,7 +2,7 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 0.4.1
+## [0.4.1] - 2026-10-27
 
 ### Added
 - **Idle display** di Settings > Display: **Cycle** (bawaan: 10 menit jam, 15 menit mata, bergantian), **Clock** (jam saja), atau **Eyes** (mata saja). Pada Clock/Eyes, Ctrl+Alt+H dan tombol H tidak mengganti tampilan.
