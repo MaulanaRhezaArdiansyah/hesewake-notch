@@ -137,7 +137,7 @@ impl App {
                 Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
                 Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
                 Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
-                Row { label: "City", sub: "Weather/prayer", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
+                Row { label: "City", sub: "Location", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
                 Row { label: "Prayer times", sub: "Countdown + toast", kind: RowKind::Toggle(self.cfg.prayer_on) },
             ],
             _ => Vec::new(),
