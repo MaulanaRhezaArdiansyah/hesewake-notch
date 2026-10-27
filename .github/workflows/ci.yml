@@ -15,7 +15,7 @@ jobs:
       # RUSTFLAGS menggantikan rustflags di .cargo/config.toml, jadi +crt-static diulang di sini.
       RUSTFLAGS: -C target-feature=+crt-static -D warnings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
