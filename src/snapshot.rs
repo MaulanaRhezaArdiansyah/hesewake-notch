@@ -9,6 +9,7 @@ use super::*;
 use tiny_skia::PixmapPaint;
 
 /// App tanpa window, data pengguna, atau thread latar: semua slide aktif, splash sudah lewat.
+/// Cuaca tidak pernah tampil (tidak ada data cuaca di tes), jadi notch idle selalu dalam keadaan "tanpa cuaca".
 fn test_app(s: f32) -> App {
     let (tx, _rx) = channel();
     let mut cfg = Settings::default();
@@ -68,7 +69,8 @@ fn test_app(s: f32) -> App {
         peek_until: None,
         reminding: false,
         splash: None,
-        idle_base: 0.0,
+        // jam idle sudah selesai fade-in (fase jam, lihat `idle_phase`)
+        idle_base: 5.0,
         idle_mark: None,
         was_idle: false,
         eye: EyeAnim::new(),
@@ -171,6 +173,11 @@ fn snap_idle_clock() {
 }
 
 #[test]
+fn snap_idle_eye() {
+    shot("idle-eye", 1.0, |a| a.cfg.idle_display = 2);
+}
+
+#[test]
 fn snap_playing() {
     shot("playing", 1.0, |a| {
         a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
@@ -202,10 +209,23 @@ fn snap_timer_toast() {
 }
 
 #[test]
-fn snap_other_slides() {
-    for (name, id) in [("todo", SlideId::Todo), ("water", SlideId::Water), ("system", SlideId::System), ("music-empty", SlideId::Music)] {
-        shot(&format!("slide-{name}"), 1.0, |a| open_slide(a, id));
-    }
+fn snap_slide_todo() {
+    shot("slide-todo", 1.0, |a| open_slide(a, SlideId::Todo));
+}
+
+#[test]
+fn snap_slide_water() {
+    shot("slide-water", 1.0, |a| open_slide(a, SlideId::Water));
+}
+
+#[test]
+fn snap_slide_system() {
+    shot("slide-system", 1.0, |a| open_slide(a, SlideId::System));
+}
+
+#[test]
+fn snap_slide_music_empty() {
+    shot("slide-music-empty", 1.0, |a| open_slide(a, SlideId::Music));
 }
 
 #[test]
