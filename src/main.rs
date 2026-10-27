@@ -294,7 +294,7 @@ fn demo_priv(dev: &str) -> Vec<String> {
     if on == Some(true) { vec!["Demo".to_string()] } else { Vec::new() }
 }
 
-/// `--demo-timer=count|stop|pomo`: mulai hitung mundur / stopwatch / Pomodoro sejak start (uji tampilan chip di notch idle).
+/// `--demo-timer=count|stop|pomo`: start a countdown / stopwatch / Pomodoro at launch (visual check of the idle-notch chip).
 fn demo_timer(mut t: timer::TimerState) -> timer::TimerState {
     match std::env::args().find_map(|a| a.strip_prefix("--demo-timer=").map(str::to_string)).as_deref() {
         Some("stop") => t.set_mode(timer::TMode::Stopwatch),

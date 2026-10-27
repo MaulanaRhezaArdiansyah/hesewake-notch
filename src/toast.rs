@@ -63,7 +63,7 @@ pub(crate) enum ToastKind {
     Privacy { cam: bool, app: String },
     /// Pengingat minum; teksnya dibaca dari `App.water`, tombol Snooze/Drank bisa diklik (lihat `toast_click`).
     Water,
-    /// Hitung mundur habis; `title` mis. "Time's up" / "Break over", `label` mis. "5 min timer".
+    /// A countdown ended; `title` e.g. "Time's up" / "Break over", `label` e.g. "5 min timer".
     Timer { title: String, label: String },
 }
 

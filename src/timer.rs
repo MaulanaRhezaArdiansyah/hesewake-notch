@@ -37,11 +37,11 @@ pub(crate) struct IdleSlots {
 pub(crate) enum TMode {
     Stopwatch,
     Countdown,
-    /// Siklus fokus/istirahat otomatis di atas mesin hitung mundur yang sama.
+    /// Automatic focus/break cycle on top of the same countdown engine.
     Pomodoro,
 }
 
-// Pomodoro klasik: fokus 25 menit, istirahat 5 menit, istirahat panjang 15 menit tiap 4 sesi fokus.
+// Classic Pomodoro: 25 min focus, 5 min break, a 15 min long break after every 4 focus sessions.
 const FOCUS_SECS: u32 = 25 * 60;
 const SHORT_SECS: u32 = 5 * 60;
 const LONG_SECS: u32 = 15 * 60;
@@ -78,8 +78,8 @@ impl Phase {
     }
 }
 
-/// Fase berikutnya dan jumlah sesi fokus yang selesai. `completed` = fase saat ini habis waktunya
-/// (bukan dilewati): fokus yang dilewati tidak dihitung dan tidak memicu istirahat panjang.
+/// Next phase and the number of finished focus sessions. `completed` = the current phase ran out
+/// (it was not skipped): a skipped focus session does not count and never triggers the long break.
 fn next_phase(phase: Phase, done: u32, completed: bool) -> (Phase, u32) {
     match phase {
         Phase::Focus if completed => {
@@ -91,16 +91,16 @@ fn next_phase(phase: Phase, done: u32, completed: bool) -> (Phase, u32) {
     }
 }
 
-/// Status timer. Satu mekanisme untuk semua mode: `elapsed` = waktu terkumpul + waktu sejak mulai.
+/// Timer state. One mechanism for every mode: `elapsed` = accumulated time + time since start.
 pub(crate) struct TimerState {
     pub(crate) mode: TMode,
-    /// Durasi hitung mundur (detik); Pomodoro memakai durasi fasenya sendiri dan tidak mengubah ini.
+    /// Countdown length (seconds); Pomodoro uses its own phase lengths and leaves this alone.
     pub(crate) preset: u32,
     base: Duration,
     started: Option<Instant>,
     /// Detik yang terakhir ditampilkan; berubah = perlu redraw.
     shown: u64,
-    /// Pomodoro: fase berjalan dan jumlah sesi fokus selesai sejak siklus dimulai (tidak disimpan ke berkas).
+    /// Pomodoro: current phase and focus sessions finished since the cycle started (not saved to disk).
     pub(crate) phase: Phase,
     pub(crate) done: u32,
 }
@@ -118,8 +118,8 @@ impl TimerState {
         }
     }
 
-    /// Format berkas: `mode|preset_detik` (`s` = stopwatch, `c` = hitung mundur, `p` = pomodoro).
-    /// Isi rusak -> bawaan (hitung mundur 5 menit).
+    /// File format: `mode|preset_secs` (`s` = stopwatch, `c` = countdown, `p` = pomodoro).
+    /// Bad content -> default (5 minute countdown).
     pub(crate) fn parse(s: &str) -> TimerState {
         let mut it = s.trim().split('|');
         let mode = match it.next() {
@@ -155,12 +155,12 @@ impl TimerState {
         self.started.is_some()
     }
 
-    /// Hitung mundur atau Pomodoro (bukan stopwatch).
+    /// Countdown or Pomodoro (not stopwatch).
     pub(crate) fn counts_down(&self) -> bool {
         self.mode != TMode::Stopwatch
     }
 
-    /// Durasi hitung mundur yang berlaku (detik).
+    /// The countdown length in effect (seconds).
     pub(crate) fn duration(&self) -> u32 {
         if self.mode == TMode::Pomodoro { self.phase.secs() } else { self.preset }
     }
@@ -222,15 +222,15 @@ impl TimerState {
         }
     }
 
-    /// Tombol Reset: nolkan waktu; di Pomodoro juga mengulang siklus dari sesi fokus pertama.
+    /// Reset button: zero the time; in Pomodoro also restart the cycle from the first focus session.
     pub(crate) fn reset_all(&mut self) {
         self.reset();
         self.phase = Phase::Focus;
         self.done = 0;
     }
 
-    /// Pindah ke fase Pomodoro berikutnya. Bila timer sedang berjalan (atau fase habis waktunya), fase baru
-    /// langsung mulai; bila dijeda, fase baru menunggu Start.
+    /// Move to the next Pomodoro phase. If the timer is running (or the phase ran out), the new phase starts
+    /// right away; if paused, it waits for Start.
     pub(crate) fn advance(&mut self, now: Instant, completed: bool) {
         let go = self.running() || completed;
         (self.phase, self.done) = next_phase(self.phase, self.done, completed);
@@ -263,7 +263,7 @@ pub(crate) fn fmt_clock(secs: u64) -> String {
     if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m:02}:{s:02}") }
 }
 
-/// Judul dan isi toast saat fase Pomodoro `ended` habis dan `next` dimulai; `done` = sesi fokus selesai.
+/// Toast title and body when Pomodoro phase `ended` runs out and `next` begins; `done` = finished focus sessions.
 fn pomo_toast(ended: Phase, next: Phase, done: u32) -> (String, String) {
     match ended {
         Phase::Focus => (format!("Focus #{done} done"), format!("{} \u{b7} {}", next.name(), fmt_preset(next.secs()))),
@@ -271,7 +271,7 @@ fn pomo_toast(ended: Phase, next: Phase, done: u32) -> (String, String) {
     }
 }
 
-/// Isi titik progres Pomodoro: berapa dari `LONG_EVERY` titik terisi pada siklus ini.
+/// Pomodoro progress dots: how many of the `LONG_EVERY` dots are filled in this cycle.
 fn pomo_dots(phase: Phase, done: u32) -> u32 {
     if phase == Phase::Long && done > 0 { LONG_EVERY } else { done % LONG_EVERY }
 }
@@ -295,7 +295,7 @@ enum THit {
     Preset(usize),
     Minus,
     Plus,
-    /// Pomodoro: lewati fase ini.
+    /// Pomodoro: skip this phase.
     Skip,
 }
 
@@ -400,7 +400,7 @@ impl App {
         let now = Instant::now();
         if self.tm.running() && self.tm.finished(now) {
             if self.tm.mode == TMode::Pomodoro {
-                // fase habis: umumkan fase berikutnya lalu langsung jalankan
+                // phase ran out: announce the next phase and start it right away
                 let ended = self.tm.phase;
                 self.tm.advance(now, true);
                 let (title, label) = pomo_toast(ended, self.tm.phase, self.tm.done);
@@ -487,7 +487,7 @@ impl App {
             }
         }
 
-        // Pomodoro: titik progres siklus (4 sesi fokus) dan jumlah sesi selesai, di kolom kanan.
+        // Pomodoro: cycle progress dots (4 focus sessions) and finished-session count, in the right column.
         if pomo {
             let filled = pomo_dots(tm.phase, tm.done);
             g.txt("Sessions", PX + ox, 40.0, 12.0, GREY, al, 120.0);
@@ -496,7 +496,7 @@ impl App {
                 if i < filled {
                     g.circle(cx, cy, 7.0, &paint(TOMATO[0], TOMATO[1], TOMATO[2], al));
                 } else if i == filled && tm.phase == Phase::Focus {
-                    // sesi yang sedang berjalan: ring progres
+                    // the session in progress: a ring
                     let frac = tm.elapsed(now).as_secs_f32() / FOCUS_SECS as f32;
                     g.ring(cx, cy, 6.0, frac, 2.5, &paint(255, 255, 255, 0.16 * al), &paint(TOMATO[0], TOMATO[1], TOMATO[2], al));
                 } else {
@@ -538,8 +538,8 @@ impl App {
 
     /// Pil waktu di kanan jam saat timer berjalan dan notch idle: ring progres + waktu, biru (tidak menyerupai mata).
     pub(crate) fn draw_timer_chip(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {
-        // Cek susunan, bukan `timer_extra`: tanpa cuaca isinya (148 px) muat di lebar IDLE (150 px) sehingga
-        // tambahan lebarnya 0, padahal pil tetap harus tampil.
+        // Check the layout, not `timer_extra`: without weather the row (148 px) fits in the IDLE width (150 px),
+        // so the extra width is 0, but the pill must still show.
         if self.timer_slots().is_none() || ca <= 0.05 {
             return;
         }
@@ -555,7 +555,7 @@ impl App {
             Some((_, _, px)) => CX - w / 2.0 + px,
             None => CX + EYE_GAP,
         };
-        // Pomodoro: merah tomat saat fokus, hijau saat istirahat; mode lain biru.
+        // Pomodoro: tomato red while focusing, green on a break; other modes blue.
         let (fg, bg) = if self.tm.mode == TMode::Pomodoro { (self.tm.phase.color(), self.tm.phase.color()) } else { (BLUE, [40, 90, 170]) };
         let (pw, ph) = (24.0 + tw + 8.0, 20.0);
         g.fill(&rrect(x, h / 2.0 - ph / 2.0, pw, ph, ph / 2.0), &paint(bg[0], bg[1], bg[2], 0.22 * ca));
@@ -659,7 +659,7 @@ mod tests {
         use Phase::*;
         assert_eq!(seq, [Short, Focus, Short, Focus, Short, Focus, Long, Focus, Short, Focus, Short, Focus, Short, Focus, Long, Focus]);
         assert_eq!(d, 8);
-        // fokus yang dilewati: tidak dihitung, selalu istirahat pendek
+        // a skipped focus session: not counted, always a short break
         assert_eq!(next_phase(Focus, 3, false), (Short, 3));
         assert_eq!(next_phase(Long, 4, false), (Focus, 4));
     }
@@ -677,11 +677,11 @@ mod tests {
         t.advance(end, true);
         assert!(t.running() && t.phase == Phase::Short && t.done == 1);
         assert_eq!(t.display_secs(end), SHORT_SECS as u64);
-        // skip saat dijeda: pindah fase tanpa mulai
+        // skip while paused: change phase without starting
         t.pause(at(t0, FOCUS_SECS as u64 * 1000 + 1000));
         t.advance(at(t0, FOCUS_SECS as u64 * 1000 + 2000), false);
         assert!(!t.running() && t.phase == Phase::Focus && t.done == 1);
-        // reset mengulang siklus; kembali ke Countdown memakai preset lama
+        // reset restarts the cycle; going back to Countdown keeps the old preset
         t.reset_all();
         assert_eq!((t.phase, t.done), (Phase::Focus, 0));
         t.set_mode(TMode::Countdown);
