@@ -9,6 +9,19 @@ const UA: &str = concat!("HesewakeNotch/", env!("CARGO_PKG_VERSION"), " (Windows
 pub(crate) struct LyricLine {
     pub(crate) at_ms: u32,
     pub(crate) text: String,
+    /// Romaji untuk baris Jepang (diisi `romaji::annotate`), kosong bila tidak ada.
+    pub(crate) roma: String,
+}
+
+impl LyricLine {
+    /// Teks yang ditampilkan: romaji bila diminta dan tersedia, selain itu teks asli.
+    pub(crate) fn shown(&self, romaji: bool) -> &str {
+        if romaji && !self.roma.is_empty() {
+            &self.roma
+        } else {
+            &self.text
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -146,7 +159,7 @@ pub(crate) fn parse_lrc(body: &str) -> Vec<LyricLine> {
         }
         let text = rest.trim();
         for ms in stamps {
-            out.push(LyricLine { at_ms: ms, text: text.to_string() });
+            out.push(LyricLine { at_ms: ms, text: text.to_string(), roma: String::new() });
         }
     }
     out.sort_by_key(|l| l.at_ms);
@@ -195,10 +208,19 @@ mod tests {
     fn parses_basic_and_multi_stamps() {
         let l = parse_lrc("[ar:Someone]\n[00:12.34]Hello\n[00:10.00][00:50.5]Again\n[01:00.123]\n");
         assert_eq!(l.len(), 4);
-        assert_eq!(l[0], LyricLine { at_ms: 10_000, text: "Again".into() });
+        assert_eq!(l[0], LyricLine { at_ms: 10_000, text: "Again".into(), roma: String::new() });
         assert_eq!(l[1].at_ms, 12_340);
         assert_eq!(l[2].at_ms, 50_500);
-        assert_eq!(l[3], LyricLine { at_ms: 60_123, text: String::new() });
+        assert_eq!(l[3], LyricLine { at_ms: 60_123, text: String::new(), roma: String::new() });
+    }
+
+    #[test]
+    fn shown_prefers_romaji_only_when_present() {
+        let mut l = LyricLine { at_ms: 0, text: "夜に駆ける".into(), roma: String::new() };
+        assert_eq!(l.shown(true), "夜に駆ける");
+        l.roma = "yoru ni kakeru".into();
+        assert_eq!(l.shown(true), "yoru ni kakeru");
+        assert_eq!(l.shown(false), "夜に駆ける");
     }
 
     #[test]
@@ -264,9 +286,31 @@ impl App {
     /// Teks baris aktif (None sebelum baris pertama atau saat jeda instrumental/baris kosong).
     pub(crate) fn lyric_text(&self) -> Option<&str> {
         match (&self.lyrics, self.lyric_idx) {
-            (Lyrics::Synced(lines), Some(i)) => lines.get(i).map(|l| l.text.as_str()).filter(|t| !t.is_empty()),
+            (Lyrics::Synced(lines), Some(i)) => lines.get(i).map(|l| l.shown(self.cfg.romaji_lyrics)).filter(|t| !t.is_empty()),
             _ => None,
         }
+    }
+
+    /// Setelah toggle "Romaji lyrics": lirik lagu sekarang yang belum punya romaji dikonversi di thread terpisah
+    /// (hasilnya lewat slot lirik + WM_APP, jalur yang sama dengan fetch), dan baris aktif dihitung ulang.
+    pub(crate) fn romaji_refresh(&mut self) {
+        if let (true, Lyrics::Synced(lines)) = (self.cfg.romaji_lyrics, &self.lyrics) {
+            if lines.iter().all(|l| l.roma.is_empty()) && lines.iter().any(|l| romaji::has_kana(&l.text)) {
+                let (mut v, key, slot, hwnd) = (lines.clone(), self.art_key.clone(), self.lyr_shared.clone(), self.hwnd);
+                std::thread::spawn(move || {
+                    romaji::annotate(&mut v);
+                    let mut s = slot.lock().unwrap_or_else(|p| p.into_inner());
+                    // Jangan menimpa hasil fetch lagu berikutnya yang sudah menunggu di slot.
+                    if s.as_ref().map_or(true, |(k, _)| *k == key) {
+                        *s = Some((key, Lyrics::Synced(v)));
+                    }
+                    drop(s);
+                    music::post_refresh(hwnd);
+                });
+            }
+        }
+        // `lyric_update` menghitung ulang teks dan lebar notch kecil.
+        self.lyric_idx = None;
     }
 
     /// 0..1: fade-in baris yang baru ganti.

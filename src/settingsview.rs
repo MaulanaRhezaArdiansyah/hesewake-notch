@@ -7,15 +7,15 @@ use crate::slides::SlideId;
 
 const TAB_Y: f32 = 8.0;
 const TAB_H: f32 = 24.0;
-const TABS: [(&str, f32); 4] = [("Slides", 58.0), ("Display", 62.0), ("Features", 66.0), ("Extras", 58.0)];
+const TABS: [(&str, f32); 5] = [("Slides", 50.0), ("Display", 56.0), ("Features", 62.0), ("Alerts", 50.0), ("Extras", 52.0)];
 const TAB_X0: f32 = LX + 112.0;
 const GRID_Y0: f32 = 42.0;
-const CELL_W: f32 = 178.0;
+/// Two columns of cells fill LX..RX exactly (2 x 198 + 8 = 404), like the other slides.
+const CELL_W: f32 = 198.0;
 const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
 const GRID_GAP_Y: f32 = 4.0;
 const GREY: [u8; 3] = TEXT_DIM;
-const BLUE: [u8; 3] = [90, 170, 255];
 const MAX_ROWS: usize = 16;
 
 pub(crate) struct SettingsUi {
@@ -30,14 +30,22 @@ pub(crate) struct SettingsUi {
     swap: Option<(usize, usize, Instant)>,
     /// Status autostart di-cache (registry dibaca saat tab Features dibuka, bukan tiap frame).
     autostart: bool,
+    /// Tombol Delete kamus romaji ditekan sekali: tekan lagi dalam `CONFIRM_SECS` untuk benar-benar menghapus.
+    dict_confirm: Option<Instant>,
 }
 
 impl SettingsUi {
     pub(crate) fn new() -> SettingsUi {
         let old = Instant::now() - Duration::from_secs(10);
-        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false }
+        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false, dict_confirm: None }
+    }
+
+    fn dict_confirming(&self) -> bool {
+        self.dict_confirm.map_or(false, |t| t.elapsed().as_secs_f32() < CONFIRM_SECS)
     }
 }
+
+const CONFIRM_SECS: f32 = 3.0;
 
 fn ss(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
@@ -63,12 +71,34 @@ pub(crate) enum RowKind {
     Toggle(bool),
     /// Teks nilai + tombol - dan +.
     Stepper(String),
+    /// Tombol pil berlabel di kanan sel (mis. unduh kamus romaji).
+    Button(String),
 }
 
 pub(crate) struct Row {
     pub(crate) label: &'static str,
     pub(crate) sub: &'static str,
     pub(crate) kind: RowKind,
+}
+
+/// Max width of a cell's label and sub-label: stop before the control on the right so they never overlap it.
+pub(crate) fn text_w(kind: &RowKind) -> f32 {
+    match kind {
+        // the toggle starts at CELL_W - 44
+        RowKind::Toggle(_) => CELL_W - 44.0 - 12.0 - 8.0,
+        // the - button starts at CELL_W - 91
+        RowKind::Stepper(_) => CELL_W - 91.0 - 12.0 - 4.0,
+        // the button is 50 px wide, 10 px from the right edge
+        RowKind::Button(_) => CELL_W - 60.0 - 12.0 - 4.0,
+    }
+}
+
+/// Text that fits in `maxw`; anything longer is cut with an ellipsis (a safety net for new strings).
+fn fit(g: &mut Gfx, s: &str, size: f32, bold: bool, maxw: f32) -> String {
+    if g.width_ex(s, size, bold) <= maxw {
+        return s.to_string();
+    }
+    g.text.as_mut().map_or_else(|| s.to_string(), |t| t.ellipsize(s, size, bold, maxw))
 }
 
 impl App {
@@ -121,24 +151,47 @@ impl App {
             1 => vec![
                 Row { label: "Minimal notch", sub: "Thin line while idle", kind: RowKind::Toggle(self.minimal) },
                 Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
-                Row { label: "Monitor", sub: "Follow = under cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
+                Row { label: "Monitor", sub: "Follow = cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
                 Row { label: "Notch size", sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
-                Row { label: "Idle display", sub: "Cycle = clock + eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
+                Row { label: "Idle display", sub: "Cycle: clock/eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
                 Row { label: "Contact photos", sub: "In notifications", kind: RowKind::Toggle(self.cfg.notif_avatar) },
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
-                Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
-                Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { label: "Slide hotkeys", sub: "Ctrl+Alt + slide no.", kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
             ],
             3 => vec![
                 Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
                 Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
-                Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
-                Row { label: "City", sub: "For the weather", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
+                Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
+                Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
             ],
+            4 => vec![
+                Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
+                Row { label: "City", sub: "Location", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
+                Row { label: "Prayer times", sub: "Countdown + toast", kind: RowKind::Toggle(self.cfg.prayer_on) },
+                Row { label: "Accent", sub: "Highlight color", kind: RowKind::Stepper(accent::get(self.cfg.accent).name.to_string()) },
+                if romaji::available() {
+                    Row { label: "Romaji lyrics", sub: "Japanese to romaji", kind: RowKind::Toggle(self.cfg.romaji_lyrics) }
+                } else {
+                    // Kamus belum ada: tombol unduh (lihat dict.rs); setelah selesai baris ini jadi toggle.
+                    match dict::state() {
+                        dict::Dl::Running(p) => Row { label: "Romaji lyrics", sub: "Downloading dictionary", kind: RowKind::Button(format!("{p}%")) },
+                        dict::Dl::Failed => Row { label: "Romaji lyrics", sub: "Download failed", kind: RowKind::Button("Retry".into()) },
+                        dict::Dl::Idle => Row { label: "Romaji lyrics", sub: "Needs 10 MB dictionary", kind: RowKind::Button("Get".into()) },
+                    }
+                },
+            ]
+            .into_iter()
+            // Kamus yang dipakai bisa dihapus (tekan dua kali).
+            .chain(dict::removable().map(|_| Row {
+                label: "Romaji dictionary",
+                sub: "47 MB on disk",
+                kind: RowKind::Button(if self.sui.dict_confirming() { "Sure?" } else { "Delete" }.into()),
+            }))
+            .collect(),
             _ => Vec::new(),
         }
     }
@@ -223,6 +276,8 @@ impl App {
             || self.sui.swap.is_some()
             || self.sui.tab_t0.elapsed().as_secs_f32() < 0.3
             || self.sui.enter_t.elapsed().as_secs_f32() < 0.5
+            // label "Sure?" kembali ke "Delete" tepat waktu
+            || self.sui.dict_confirm.map_or(false, |t| t.elapsed().as_secs_f32() < CONFIRM_SECS + 0.1)
     }
 
     // ------------------------------------------------------------ klik
@@ -336,25 +391,62 @@ impl App {
                     self.sui.autostart = sys::autostart_enabled();
                 }
                 (2, 3) => {
-                    self.cfg.lock_toast = !self.cfg.lock_toast;
-                    keys::set_enabled(self.hwnd, self.cfg.lock_toast);
-                }
-                (2, 4) => {
-                    self.cfg.privacy_dot = !self.cfg.privacy_dot;
-                    privacy::set_enabled(self.cfg.privacy_dot);
-                    self.priv_t = Instant::now();
+                    self.cfg.slide_hotkeys = !self.cfg.slide_hotkeys;
+                    hotkeys::set_slide_hotkeys(self.hwnd, self.cfg.slide_hotkeys);
                 }
                 (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
                 (3, 1) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
                 (3, 2) => {
+                    self.cfg.lock_toast = !self.cfg.lock_toast;
+                    keys::set_enabled(self.hwnd, self.cfg.lock_toast);
+                }
+                (3, 3) => {
+                    self.cfg.privacy_dot = !self.cfg.privacy_dot;
+                    privacy::set_enabled(self.cfg.privacy_dot);
+                    self.priv_t = Instant::now();
+                }
+                (4, 0) => {
                     self.cfg.weather_on = !self.cfg.weather_on;
                     self.weather_apply();
                 }
-                (3, 3) => {
+                (4, 1) => {
                     if right {
                         let n = weather::CITIES.len();
                         self.cfg.weather_city = if plus { (self.cfg.weather_city + 1) % n } else { (self.cfg.weather_city + n - 1) % n };
                         self.weather_apply();
+                        self.prayer_refresh();
+                    }
+                }
+                (4, 2) => {
+                    self.cfg.prayer_on = !self.cfg.prayer_on;
+                    self.prayer_refresh();
+                }
+                (4, 3) => {
+                    if right {
+                        self.cfg.accent = accent::step(self.cfg.accent, plus);
+                    }
+                }
+                (4, 4) => {
+                    if romaji::available() {
+                        self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
+                        romaji::set_enabled(self.cfg.romaji_lyrics);
+                        self.romaji_refresh();
+                    } else if right {
+                        dict::start(self.hwnd);
+                    }
+                }
+                (4, 5) => {
+                    if right {
+                        if !self.sui.dict_confirming() {
+                            self.sui.dict_confirm = Some(Instant::now());
+                        } else {
+                            self.sui.dict_confirm = None;
+                            if dict::remove() {
+                                self.cfg.romaji_lyrics = false;
+                                romaji::set_enabled(false);
+                                self.romaji_refresh();
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -406,7 +498,16 @@ impl App {
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
             let lab = if on { [255, 255, 255] } else { [160, 164, 176] };
-            g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0);
+            // with hotkeys on, a small keycap under the name shows the slide's Ctrl+Alt number
+            match hotkeys::number(&self.cfg.slides, i).filter(|_| self.cfg.slide_hotkeys) {
+                Some(k) => {
+                    g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, 48.0);
+                    let (kx, ky, kw, kh) = (x + 9.0, y + 19.0, 13.0, 11.0);
+                    g.fill(&rrect(kx, ky, kw, kh, 3.0), &paint(255, 255, 255, 0.14 * a));
+                    g.txt_c(&k.to_string(), kx + kw / 2.0, ky + ty(kh, 9.0), 9.0, GREY, a, kw, true);
+                }
+                None => g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0),
+            }
             let dim = |ok: bool| paint(220, 220, 228, if ok { 0.9 } else { 0.25 } * a);
             // chevron naik / turun
             let (ux, dx, cy) = (x + SC_W - 58.0, x + SC_W - 42.0, y + CELL_H / 2.0);
@@ -426,8 +527,10 @@ impl App {
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             Self::draw_cell_bg(g, x, y, a);
-            g.txtb(r.label, x + 12.0, y + 4.0, 12.0, [255, 255, 255], a, CELL_W - 62.0);
-            g.txt(r.sub, x + 12.0, y + 19.0, 11.0, GREY, a, CELL_W - 62.0);
+            let tw = text_w(&r.kind);
+            let (label, sub) = (fit(g, r.label, 12.0, true, tw), fit(g, r.sub, 11.0, false, tw));
+            g.txtb(&label, x + 12.0, y + 4.0, 12.0, [255, 255, 255], a, tw + 2.0);
+            g.txt(&sub, x + 12.0, y + 19.0, 11.0, GREY, a, tw + 2.0);
             match &r.kind {
                 RowKind::Toggle(_) => g.toggle(x + CELL_W - 44.0, y + (CELL_H - 20.0) / 2.0, 34.0, 20.0, self.sui.knob[i], 0.0, a),
                 RowKind::Stepper(v) => {
@@ -439,7 +542,13 @@ impl App {
                     g.line(mx - 3.5, cy, mx + 3.5, cy, 1.6, &w);
                     g.line(px - 3.5, cy, px + 3.5, cy, 1.6, &w);
                     g.line(px, cy - 3.5, px, cy + 3.5, 1.6, &w);
-                    g.txt_c(v, (mx + px) / 2.0, cy - 6.0, 11.0, [BLUE[0], BLUE[1], BLUE[2]], a, 50.0, true);
+                    g.txt_c(v, (mx + px) / 2.0, cy - 6.0, 11.0, g.acc.bright, a, 50.0, true);
+                }
+                RowKind::Button(v) => {
+                    let (bw, cy) = (50.0, y + CELL_H / 2.0);
+                    let bx = x + CELL_W - 10.0 - bw;
+                    g.fill(&rrect(bx, cy - 10.0, bw, 20.0, 10.0), &paint(g.acc.bright[0], g.acc.bright[1], g.acc.bright[2], 0.25 * a));
+                    g.txt_c(v, bx + bw / 2.0, cy - 6.0, 11.0, [190, 225, 255], a, bw, true);
                 }
             }
         }

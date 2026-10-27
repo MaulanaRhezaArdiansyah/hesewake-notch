@@ -51,6 +51,7 @@ use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, ShellExecuteW, HDROP
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 // ---------------------------------------------------------------- modul (satu file per fitur)
+mod accent;
 mod anim;
 mod audio;
 mod bt;
@@ -59,9 +60,11 @@ mod cjk;
 mod clock;
 mod config;
 mod data;
+mod dict;
 mod dragdrop;
 mod eye;
 mod gfx;
+mod hotkeys;
 mod icon;
 mod icons;
 mod input;
@@ -78,13 +81,17 @@ mod notifview;
 mod note;
 mod pace;
 mod perf;
+mod prayer;
 mod privacy;
 mod render;
+mod romaji;
 mod scale;
 mod settings;
 mod settingsview;
 mod shelf;
 mod slides;
+#[cfg(test)]
+mod snapshot;
 mod sys;
 mod sysview;
 mod weather;
@@ -94,13 +101,14 @@ mod toast;
 mod water;
 mod window;
 
+use accent::Accent;
 use anim::{schedule, target, tick};
 use busy::{is_busy};
 use clock::{CLOCK_FADE_IN, DAYS_S, MONTHS, now_tm, today};
-use config::{ACCENT, SLIDE_ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
+use config::{ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
 use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
-use gfx::{Box4, Gfx, acc, sacc, dummy_path, ellipsize, in_rect, notch_path, notch_path_w, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
+use gfx::{Box4, Gfx, acc, dummy_path, ellipsize, in_rect, notch_path, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
 use icon::{load_icon};
 use input::{click, context_menu};
 use music::{ArtData, Cmd, MARQUEE_GAP, MARQUEE_PAUSE, MARQUEE_SPEED, MCX, MCY, MW, MX, Media, media_thread};
@@ -148,6 +156,9 @@ struct App {
     tick_n: u32,
     last_sec: u16,
     last_min: u16,
+    /// Today's prayer times: (date+city key, minutes for Subuh..Isya), and the last prayer that already got a toast.
+    prayer: Option<(u32, [u16; 5])>,
+    prayer_fired: Option<(u32, usize)>,
     hover: bool,
     busy: bool,
     /// Mode "Minimal notch": garis tipis saat tidak ada musik, buka dengan hover.
@@ -294,11 +305,12 @@ fn demo_priv(dev: &str) -> Vec<String> {
     if on == Some(true) { vec!["Demo".to_string()] } else { Vec::new() }
 }
 
-/// `--demo-timer=count|stop`: mulai hitung mundur / stopwatch sejak start (uji tampilan chip di notch idle).
+/// `--demo-timer=count|stop|pomo`: start a countdown / stopwatch / Pomodoro at launch (visual check of the idle-notch chip).
 fn demo_timer(mut t: timer::TimerState) -> timer::TimerState {
     match std::env::args().find_map(|a| a.strip_prefix("--demo-timer=").map(str::to_string)).as_deref() {
         Some("stop") => t.set_mode(timer::TMode::Stopwatch),
         Some("count") => t.set_mode(timer::TMode::Countdown),
+        Some("pomo") => t.set_mode(timer::TMode::Pomodoro),
         _ => return t,
     }
     t.start(Instant::now());
@@ -314,13 +326,15 @@ fn demo_toast() -> Option<ToastKind> {
         "bt" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: Some(70), connected: true },
         "notif" => ToastKind::Notification { id: DEMO_NOTIF_ID },
         "caps" => ToastKind::Hud { kind: HudKind::Caps, on: true },
+        "prayer" => ToastKind::Prayer { idx: 2, at: 14 * 60 + 52 },
         "caps-off" => ToastKind::Hud { kind: HudKind::Caps, on: false },
         "num" => ToastKind::Hud { kind: HudKind::Num, on: true },
         "volume" => ToastKind::Hud { kind: HudKind::Volume(46, false), on: true },
         "brightness" => ToastKind::Hud { kind: HudKind::Brightness(72), on: true },
         "mute" => ToastKind::Hud { kind: HudKind::Volume(0, true), on: true },
         "water" => ToastKind::Water,
-        "timer" => ToastKind::Timer { label: "5 min timer".into() },
+        "timer" => ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() },
+        "pomo" => ToastKind::Timer { title: "Focus #1 done".into(), label: "Short break \u{b7} 5 min".into() },
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
@@ -395,6 +409,7 @@ fn main() -> Result<()> {
         if RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32).is_err() {
             perf::note("hotkey: Ctrl+Alt+H sudah dipakai aplikasi lain (mis. instance lain), tombol pintas jam/mata nonaktif");
         }
+        hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
         sys::register_display_notifications(hwnd);
         sys::tray_add(hwnd);
 
@@ -429,6 +444,7 @@ fn main() -> Result<()> {
         let cfg = cfg0;
         let notif_on = cfg.notifications;
         notif::set_avatar(cfg.notif_avatar);
+        romaji::set_enabled(cfg.romaji_lyrics);
         keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
@@ -471,6 +487,8 @@ fn main() -> Result<()> {
             tick_n: 0,
             last_sec: st.wSecond,
             last_min: st.wMinute,
+            prayer: None,
+            prayer_fired: None,
             hover: false,
             busy: is_busy(hwnd, cfg.busy_on_maximized, &mon),
             minimal: cfg.minimal,
@@ -562,6 +580,7 @@ fn main() -> Result<()> {
             weather_idx: 0,
             cfg,
         };
+        app.prayer_refresh();
         let (tw, th) = target(&app);
         app.w = tw;
         app.h = th;

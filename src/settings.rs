@@ -17,12 +17,16 @@ pub(crate) struct Settings {
     pub(crate) busy_on_maximized: bool,
     /// Baris lirik ditampilkan sekian ms lebih awal dari timestamp (negatif = lebih lambat).
     pub(crate) lyric_lead_ms: i32,
+    /// Lirik Jepang (kana/kanji) ditampilkan dalam romaji (butuh kamus `dict\ipadic`, lihat romaji.rs).
+    pub(crate) romaji_lyrics: bool,
     /// Foto profil kontak (mis. WhatsApp) pada notifikasi bila tersedia.
     pub(crate) notif_avatar: bool,
     /// Toast saat Caps/Num/Scroll Lock ditekan.
     pub(crate) lock_toast: bool,
     /// Titik + toast saat aplikasi memakai mikrofon/kamera.
     pub(crate) privacy_dot: bool,
+    /// Ctrl+Alt+1..8 open the Nth enabled slide (hotkeys.rs).
+    pub(crate) slide_hotkeys: bool,
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
@@ -32,10 +36,14 @@ pub(crate) struct Settings {
     pub(crate) monitor: usize,
     /// Indeks di `weather::CITIES`.
     pub(crate) weather_city: usize,
+    /// Prayer times: 15-minute countdown + a toast when the prayer starts (city = weather city).
+    pub(crate) prayer_on: bool,
     /// Indeks di `scale::SIZES`: 0 = Auto (ikut scaling Windows), selebihnya ukuran tetap.
     pub(crate) notch_size: usize,
     /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
     pub(crate) idle_display: usize,
+    /// Index into `accent::ACCENTS` (0 = default blue).
+    pub(crate) accent: usize,
     pub(crate) slides: SlideCfg,
 }
 
@@ -50,16 +58,20 @@ impl Default for Settings {
             notifications: true,
             busy_on_maximized: false,
             lyric_lead_ms: 150,
+            romaji_lyrics: false,
             notif_avatar: true,
             lock_toast: true,
             privacy_dot: true,
+            slide_hotkeys: true,
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
             monitor: 0,
             weather_city: 0,
+            prayer_on: true,
             notch_size: 0,
             idle_display: 0,
+            accent: 0,
             slides: slides::default_cfg(),
         }
     }
@@ -77,12 +89,15 @@ impl Settings {
                 "minimal" => s.minimal = flag,
                 "notifications" => s.notifications = flag,
                 "busy_on_maximized" => s.busy_on_maximized = flag,
+                "romaji_lyrics" => s.romaji_lyrics = flag,
                 "notif_avatar" => s.notif_avatar = flag,
                 "lock_toast" => s.lock_toast = flag,
                 "privacy_dot" => s.privacy_dot = flag,
+                "slide_hotkeys" => s.slide_hotkeys = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
+                "prayer" => s.prayer_on = flag,
                 "monitor" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.monitor = n.min(32);
@@ -96,6 +111,11 @@ impl Settings {
                 "idle_display" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.idle_display = n.min(IDLE_DISPLAY_LABELS.len() - 1);
+                    }
+                }
+                "accent" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.accent = n.min(crate::accent::ACCENTS.len() - 1);
                     }
                 }
                 "notch_size" => {
@@ -120,21 +140,25 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nmonitor={}\nnotch_size={}\nidle_display={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
             self.lyric_lead_ms,
+            self.romaji_lyrics as u8,
             self.notif_avatar as u8,
             self.lock_toast as u8,
             self.privacy_dot as u8,
+            self.slide_hotkeys as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
             self.weather_on as u8,
             self.weather_city,
+            self.prayer_on as u8,
             self.monitor,
             self.notch_size,
             self.idle_display,
+            self.accent,
             slides::format_slides(&self.slides),
         )
     }
@@ -163,6 +187,7 @@ mod tests {
         assert!(!s.notifications);
         assert!(!s.busy_on_maximized);
         assert_eq!(s.lyric_lead_ms, 150);
+        assert!(!s.romaji_lyrics);
         assert_eq!(s.slides.len(), SlideId::USER.len());
     }
 
@@ -172,12 +197,22 @@ mod tests {
         s.minimal = true;
         s.busy_on_maximized = true;
         s.lyric_lead_ms = -200;
+        s.romaji_lyrics = true;
         s.slides = slides::parse_slides("scrap,!music,water,todo,ledge,notifs");
         assert_eq!(Settings::parse(&s.serialize()), s);
         assert_eq!(Settings::parse("lyric_lead_ms=99999").lyric_lead_ms, LEAD_MAX);
         assert_eq!(Settings::parse("lyric_lead_ms=-99999").lyric_lead_ms, LEAD_MIN);
         assert_eq!(Settings::parse("lyric_lead_ms=abc").lyric_lead_ms, 150);
         assert_eq!(s.slides[1], (SlideId::Music, false));
+    }
+
+    #[test]
+    fn prayer_toggle_roundtrip_and_default_on() {
+        assert!(Settings::parse("minimal=1
+").prayer_on, "berkas lama = nyala");
+        let mut s = Settings::default();
+        s.prayer_on = false;
+        assert!(!Settings::parse(&s.serialize()).prayer_on);
     }
 
     #[test]
@@ -189,6 +224,24 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).notch_size, 3);
         assert_eq!(Settings::parse("notch_size=99").notch_size, scale::SIZES.len() - 1);
         assert_eq!(Settings::parse("notch_size=x").notch_size, 0);
+    }
+
+    #[test]
+    fn accent_roundtrip_and_default() {
+        assert_eq!(Settings::parse("minimal=1\n").accent, 0, "old file = blue");
+        let mut s = Settings::default();
+        s.accent = 3;
+        assert_eq!(Settings::parse(&s.serialize()).accent, 3);
+        assert_eq!(Settings::parse("accent=99").accent, crate::accent::ACCENTS.len() - 1);
+        assert_eq!(Settings::parse("accent=x").accent, 0);
+    }
+
+    #[test]
+    fn slide_hotkeys_roundtrip_and_default() {
+        assert!(Settings::parse("minimal=1\n").slide_hotkeys, "old file = on");
+        let mut s = Settings::default();
+        s.slide_hotkeys = false;
+        assert!(!Settings::parse(&s.serialize()).slide_hotkeys);
     }
 
     #[test]

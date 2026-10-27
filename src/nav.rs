@@ -74,7 +74,7 @@ impl App {
             let r = 2.3 + 1.2 * near;
             let a = (0.28 + 0.72 * near) * p;
             if near > 0.5 {
-                g.circle(dot_x(i, n), EXP_H - 11.0, r, &sacc(a));
+                g.circle(dot_x(i, n), EXP_H - 11.0, r, &g.sacc(a));
             } else {
                 g.circle(dot_x(i, n), EXP_H - 11.0, r, &paint(255, 255, 255, a));
             }

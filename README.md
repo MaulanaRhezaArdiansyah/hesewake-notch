@@ -56,6 +56,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 |  <img src="https://api.iconify.design/lucide/keyboard.svg?color=%23ff453a" width="22">  | Hotkey         | `Ctrl` + `Alt` + `H` toggles between the clock and the eye.                                                         |
 |   <img src="https://api.iconify.design/lucide/waves.svg?color=%23ff453a" width="22">    | Drop animation | Dropping a file onto the notch makes its bottom edge ripple like water.                                             |
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
+| <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romaji lyrics  | Optional (Settings > Extras): Japanese  lyrics shown in romaji, using Lindera (IPADIC) and WanaKana.                 |
 
 ---
 
@@ -77,7 +78,7 @@ cd hesewake-notch
 cargo build --release
 ```
 
-The executable is created at `target\release\hesewake-notch.exe`. To make a setup installer, open `hesewake-notch.iss` in Inno Setup and compile it.
+The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics need the Lindera IPADIC dictionary: press **Get** in Settings > Extras (it goes to `%APPDATA%\hesewake-notch\dict\ipadic`), or for development run `scripts\fetch-dict.ps1` to put it in the repo's `dict\ipadic`. To make a setup installer, open `hesewake-notch.iss` in Inno Setup and compile it.
 
 ---
 

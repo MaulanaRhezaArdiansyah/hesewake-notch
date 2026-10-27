@@ -1,6 +1,9 @@
 # Hasil build Rust
 /target/
 
+# Kamus IPADIC Lindera (diunduh oleh scripts\fetch-dict.ps1)
+/dict/
+
 # Hasil installer (file .exe besar, lebih baik dipublikasikan lewat GitHub Releases)
 /installer_output/
 

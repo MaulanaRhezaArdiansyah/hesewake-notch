@@ -28,6 +28,12 @@ impl Gfx {
         }
     }
 
+    /// Crescent: a bright circle minus a black one (the notch background is always black), like the night weather icon.
+    pub(crate) fn icon_crescent(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
+        self.circle(cx, cy, s * 0.42, p);
+        self.circle(cx + s * 0.22, cy - s * 0.12, s * 0.36, &paint(0, 0, 0, 1.0));
+    }
+
     /// Rune Bluetooth (garis).
     pub(crate) fn icon_bluetooth(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
         let pts = [(-0.5, -0.5), (0.5, 0.42), (0.0, 0.95), (0.0, -0.95), (0.5, -0.42), (-0.5, 0.5)];
@@ -229,13 +235,14 @@ impl Gfx {
     pub(crate) fn toggle(&mut self, x: f32, y: f32, w: f32, h: f32, knob: f32, swing: f32, al: f32) {
         let k = knob.clamp(0.0, 1.0);
         let lerp = |a: f32, b: f32| a + (b - a) * k;
-        let track = paint(lerp(62.0, 40.0) as u8, lerp(62.0, 132.0) as u8, lerp(68.0, 245.0) as u8, al);
+        let on = self.acc.deep.map(f32::from);
+        let track = paint(lerp(62.0, on[0]) as u8, lerp(62.0, on[1]) as u8, lerp(68.0, on[2]) as u8, al);
         self.fill(&rrect(x, y, w, h, h / 2.0), &track);
         let r = h / 2.0 - 3.0;
         let kx = x + h / 2.0 + (w - h) * knob;
         self.circle(kx, y + h / 2.0, r, &paint(255, 255, 255, al));
         if k > 0.3 {
-            self.icon_bell(kx, y + h / 2.0 - 0.5, r * 1.15, swing, &paint(40, 132, 245, al * ((k - 0.3) / 0.7).clamp(0.0, 1.0)));
+            self.icon_bell(kx, y + h / 2.0 - 0.5, r * 1.15, swing, &paint(on[0] as u8, on[1] as u8, on[2] as u8, al * ((k - 0.3) / 0.7).clamp(0.0, 1.0)));
         }
     }
 
@@ -248,8 +255,9 @@ impl Gfx {
     /// Chip pilihan di Settings.
     pub(crate) fn chip(&mut self, x: f32, y: f32, w: f32, h: f32, label: &str, on: bool, al: f32) {
         if on {
-            self.fill(&rrect(x, y, w, h, h / 2.0), &paint(80, 170, 255, 0.28 * al));
-            self.txt_c(label, x + w / 2.0, y + ty(h, 12.0), 12.0, [190, 225, 255], al, w, true);
+            let (fill, text) = (self.acc.bright, self.acc.pale);
+            self.fill(&rrect(x, y, w, h, h / 2.0), &paint(fill[0], fill[1], fill[2], 0.28 * al));
+            self.txt_c(label, x + w / 2.0, y + ty(h, 12.0), 12.0, text, al, w, true);
         } else {
             self.fill(&rrect(x, y, w, h, h / 2.0), &paint(255, 255, 255, 0.08 * al));
             self.txt_c(label, x + w / 2.0, y + ty(h, 12.0), 12.0, [170, 170, 176], al, w, false);

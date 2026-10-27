@@ -226,6 +226,8 @@ pub(crate) struct Gfx {
     /// Skala DPI dan transform-nya: semua gambar memakai koordinat logis (lihat scale.rs).
     pub(crate) s: f32,
     pub(crate) ts: Transform,
+    /// The user's accent color; refreshed from Settings at the start of every frame (render::draw).
+    pub(crate) acc: Accent,
 }
 
 impl Gfx {
@@ -244,7 +246,20 @@ impl Gfx {
             dirty: full,
             s,
             ts: Transform::from_scale(s, s),
+            acc: accent::get(0),
         }
+    }
+
+    /// Paint in the main accent color with alpha `a`.
+    pub(crate) fn sacc(&self, a: f32) -> Paint<'static> {
+        let c = self.acc.main;
+        paint(c[0], c[1], c[2], a)
+    }
+
+    /// Paint in the bright accent color (thin lines and small text) with alpha `a`.
+    pub(crate) fn bright(&self, a: f32) -> Paint<'static> {
+        let c = self.acc.bright;
+        paint(c[0], c[1], c[2], a)
     }
 
     pub(crate) fn clear_box(&mut self, b: Box4) {
@@ -268,8 +283,11 @@ impl Gfx {
         self.pm.stroke_path(path, p, &st, self.ts, None);
     }
     pub(crate) fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, p: &Paint) {
+        // Fill through a path, not `Pixmap::fill_rect`: tiny-skia 0.11's anti-aliased fill_rect (only used at 100%
+        // scale) hits a debug_assert for a 1-2 px wide rect that covers no pixel fully, e.g. the "+" icon in
+        // To-do. That panics in debug builds.
         if let Some(r) = Rect::from_xywh(x, y, w, h) {
-            self.pm.fill_rect(r, p, self.ts, None);
+            self.fill(&PathBuilder::from_rect(r), p);
         }
     }
     pub(crate) fn circle(&mut self, x: f32, y: f32, r: f32, p: &Paint) {
@@ -414,10 +432,6 @@ pub(crate) fn paint(r: u8, g: u8, b: u8, a: f32) -> Paint<'static> {
 
 pub(crate) fn acc(a: f32) -> Paint<'static> {
     paint(ACCENT[0], ACCENT[1], ACCENT[2], a)
-}
-
-pub(crate) fn sacc(a: f32) -> Paint<'static> {
-    paint(SLIDE_ACCENT[0], SLIDE_ACCENT[1], SLIDE_ACCENT[2], a)
 }
 
 pub(crate) fn in_rect(x: f32, y: f32, rx: f32, ry: f32, rw: f32, rh: f32) -> bool {
@@ -569,6 +583,15 @@ mod tests {
         g.txt("Almost Easy · 15:19", 60.0, 90.0, 13.0, [255, 255, 255], 1.0, 400.0);
         g.txtb("Avenged Sevenfold", 60.0, 110.0, 17.0, [200, 220, 255], 0.9, 400.0);
         g.txt_clip("I'm not insane, I'm not insane", 50.0, 135.0, 12.0, [255, 255, 255], 1.0, 70.0, 220.0, 6.0);
+    }
+
+    #[test]
+    fn thin_rect_straddling_two_pixels_does_not_panic() {
+        // 10.6..11.9: touches two pixels without fully covering either (used to panic in debug builds)
+        let mut g = gfx_100();
+        g.rect(10.6, 4.0, 1.3, 7.0, &paint(255, 255, 255, 1.0));
+        g.rect(4.0, 10.6, 7.0, 1.3, &paint(255, 255, 255, 1.0));
+        assert!(alpha_at(&g, 10, 6) > 0 && alpha_at(&g, 11, 6) > 0);
     }
 
     #[test]

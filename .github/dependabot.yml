@@ -1,0 +1,7 @@
+# Bump the pinned action SHAs in .github/workflows every week.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

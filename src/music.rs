@@ -186,7 +186,7 @@ fn now_filetime() -> i64 {
     (d.as_nanos() / 100) as i64 + 116_444_736_000_000_000
 }
 
-fn post_refresh(hwnd: isize) {
+pub(crate) fn post_refresh(hwnd: isize) {
     unsafe {
         let _ = PostMessageW(HWND(hwnd as *mut c_void), WM_APP, WPARAM(0), LPARAM(0));
     }
@@ -311,7 +311,10 @@ pub(crate) fn media_thread(
                     unsafe {
                         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
                     }
-                    let l = lyrics::fetch(&t, &ar, d);
+                    let mut l = lyrics::fetch(&t, &ar, d);
+                    if let lyrics::Lyrics::Synced(lines) = &mut l {
+                        romaji::annotate(lines);
+                    }
                     *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some((k, l));
                     post_refresh(hwnd);
                 });
@@ -786,7 +789,7 @@ impl App {
         g.fill(&rrect(bx, by, bw, 6.0, 3.0), &paint(255, 255, 255, 0.18 * a));
         let fw = (bw * pct as f32 / 100.0).max(if pct > 0 { 6.0 } else { 0.0 });
         if fw > 0.0 {
-            let c = if muted { TEXT_DIM } else { SLIDE_ACCENT };
+            let c = if muted { TEXT_DIM } else { g.acc.main };
             g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(c[0], c[1], c[2], a));
         }
         let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
@@ -831,7 +834,7 @@ impl App {
         if self.media.dur > 0 {
             let fr = (self.media.pos as f32 / self.media.dur as f32).clamp(0.0, 1.0);
             g.fill(&rrect(MX + ox, 96.0, MW, 4.0, 2.0), &paint(255, 255, 255, 0.18 * al));
-            g.fill(&rrect(MX + ox, 96.0, (MW * fr).max(4.0), 4.0, 2.0), &sacc(al));
+            g.fill(&rrect(MX + ox, 96.0, (MW * fr).max(4.0), 4.0, 2.0), &g.sacc(al));
             g.txt(&fmt_time(self.media.pos), MX + ox, 104.0, 11.0, TEXT_DIM, al, 60.0);
             let ds = fmt_time(self.media.dur);
             let dw = g.width(&ds, 11.0);

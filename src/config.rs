@@ -19,8 +19,6 @@ pub(crate) const PLAYING: (f32, f32) = (236.0, 32.0);
 pub(crate) const LYRIC_SIZE: f32 = 13.0;
 
 pub(crate) const ACCENT: [u8; 3] = [255, 69, 58];
-/// Aksen biru untuk slide To-do, Ledge, Scrap, dan Notifications (selaras dengan glow navy).
-pub(crate) const SLIDE_ACCENT: [u8; 3] = [90, 150, 255];
 
 // Animasi gelombang saat item di-drop ke Ledge: seluruh tepi bawah notch melorot,
 // lalu riak merambat dari tengah ke kiri-kanan sambil meredam.

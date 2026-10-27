@@ -2,6 +2,26 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-10-27
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #2, #3, #4, #5, #6, #8, #9) dan @gewall (PR #7).
+
+### Added
+- **Waktu sholat** (Settings > Extras > "Prayer times", default nyala): hitung mundur 15 menit sebelum tiap waktu sholat dan toast saat waktunya masuk. Di notch idle, slot kiri jam bergantian suhu, ikon cuaca, lalu label seperti "Ashar 12m"; saat musik diputar, label ada di kanan judul/lirik. Dihitung lokal tanpa internet (rumus posisi matahari dengan parameter Kemenag RI, dicocokkan dengan jadwal resmi), mengikuti kota yang dipilih di Settings dan zona waktu Windows (kontribusi @MaulanaRhezaArdiansyah, PR #2).
+- **Mode Pomodoro** di slide Timer (kontribusi @MaulanaRhezaArdiansyah, PR #4): siklus otomatis fokus 25 menit lalu istirahat 5 menit, dengan istirahat panjang 15 menit setiap 4 sesi. Toast di tiap pergantian fase, titik progres siklus, penghitung sesi selesai, dan tombol **Skip**. Pil di notch idle merah saat fokus dan hijau saat istirahat. Flag uji `--demo-timer=pomo` dan `--demo-toast=pomo`.
+- **Warna aksen** (Settings > Extras > "Accent": Blue, Purple, Pink, Orange, Green, Teal) yang dipakai toggle, chip, judul slide, tombol, titik navigasi, progress musik, HUD, ring dan pil Timer, grafik System, dan cahaya bawah slide. Warna bermakna (peringatan merah, hijau "selesai", biru Water dan Bluetooth, glow Music dari sampul album) tidak berubah (kontribusi @MaulanaRhezaArdiansyah, PR #8).
+- **Hotkey slide**: `Ctrl+Alt+1..8` membuka notch langsung di slide ke-N yang aktif (urutan mengikuti Settings > Slides). Menekan angka yang sama lagi menutup notch; angka tanpa slide diabaikan. Nomornya tampil sebagai keycap kecil di Settings > Slides, dan bisa dimatikan di Settings > Features > "Slide hotkeys" (di keyboard dengan AltGr, mis. Jerman, Ctrl+Alt+angka mengetik karakter) (kontribusi @MaulanaRhezaArdiansyah, PR #9).
+- **Lirik Jepang dalam romaji** (Settings > Extras > "Romaji lyrics", default mati): kanji dan kana di lirik sinkron diubah ke romaji di notch kecil, slide Music, dan mode lirik. Bacaan per kata dari [Lindera](https://github.com/lindera/lindera) (kamus IPADIC), lalu katakana ke romaji lewat [WanaKana](https://docs.rs/wana_kana); partikel memakai pelafalan (は = wa, へ = e). Konversi dikerjakan sekali per lagu di thread lirik, hanya bila lirik berisi kana (lirik Mandarin tidak disentuh), dan kamus dilepas lagi setelahnya (kontribusi @gewall, PR #7).
+- Kamus IPADIC (±47 MB, tidak ditanam di exe dan tidak ikut installer) diunduh lewat tombol **Get** di baris "Romaji lyrics" (unduhan 10 MB dengan persen kemajuan, tombol Retry bila gagal) ke `%APPDATA%\hesewake-notch\dict\ipadic`. Arsip dicek ukuran dan SHA-256-nya, diekstrak ke folder sementara lalu dipindah; setelah selesai romaji langsung aktif untuk lagu yang sedang main. Kamus hasil unduhan bisa dihapus lagi lewat baris "Romaji dictionary" (tombol **Delete**, tekan dua kali untuk konfirmasi); romaji ikut dimatikan.
+- **Tab "Alerts"** di Settings: Volume HUD, Brightness HUD, Lock keys, dan Mic / camera dot dipindah ke sini supaya setiap tab muat di grid 2 x 3 setelah ada pengaturan baru.
+- **CI dan rilis di GitHub** (kontribusi @MaulanaRhezaArdiansyah, PR #3, #5): workflow build + tes tiap push dan PR (peringatan kompilator dianggap error), workflow rilis yang membuat draft GitHub Release dari tag `v*`, dan tes snapshot UI (PNG tiap slide diunggah dari CI).
+
+### Fixed
+- **Label Settings tidak lagi menimpa toggle dan stepper**: lebar sel 178 jadi 198 px, lebar teks mengikuti kontrolnya dan dipotong dengan "..." bila terlalu panjang, serta dua sub-label dipendekkan (kontribusi @MaulanaRhezaArdiansyah, PR #6).
+- **Pil timer tidak lagi hilang saat cuaca disembunyikan** (kontribusi @MaulanaRhezaArdiansyah, PR #4).
+- Panik `Gfx::rect` di build debug (assert tiny-skia) dan tiga peringatan kompilator (kode mati) diperbaiki (kontribusi @MaulanaRhezaArdiansyah, PR #3, #5).
+- **Bacaan romaji yang sering salah** dikoreksi setelah diuji dengan lirik asli: 二人 = "futari", 角 = "kado", 体中 = "karadajuu", 君 yang berdiri sendiri = "kimi", あなたがた = "anatagata", serta kata kerja yang kini menyatu ("kusunda", "waratteru", "wakachiau").
+
 ## [0.4.1] - 2026-10-27
 
 ### Added

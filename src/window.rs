@@ -70,6 +70,13 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 if let Some(d) = art {
                     a.set_art(&d.rgba);
                 }
+                // Kamus romaji baru selesai diunduh (tombol Get di Settings): nyalakan fitur dan konversi lagu sekarang.
+                if dict::take_ready() {
+                    a.cfg.romaji_lyrics = true;
+                    romaji::set_enabled(true);
+                    a.save_settings();
+                    a.romaji_refresh();
+                }
                 if a.media.playing && !was && !a.expanded() {
                     a.show_id(SlideId::Music);
                 }
@@ -509,8 +516,17 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_HOTKEY => {
-            if wp.0 as i32 == HOTKEY_ID {
+            let id = wp.0 as i32;
+            if id == HOTKEY_ID {
                 with_app(|a| toggle_idle_phase(a));
+            } else if let Some(n) = hotkeys::slide_of(id) {
+                with_app(|a| {
+                    if a.slide_hotkey(n) {
+                        a.last = Instant::now();
+                        present(a);
+                        schedule(a);
+                    }
+                });
             }
             LRESULT(0)
         }

@@ -61,10 +61,12 @@ pub(crate) enum ToastKind {
     Hud { kind: HudKind, on: bool },
     /// Aplikasi mulai memakai mikrofon (`cam: false`) atau kamera (`cam: true`).
     Privacy { cam: bool, app: String },
+    /// A prayer time started: index into `prayer::NAMES` and its time (minutes since 00:00).
+    Prayer { idx: u8, at: u16 },
     /// Pengingat minum; teksnya dibaca dari `App.water`, tombol Snooze/Drank bisa diklik (lihat `toast_click`).
     Water,
-    /// Hitung mundur habis; `label` mis. "5 min timer".
-    Timer { label: String },
+    /// A countdown ended; `title` e.g. "Time's up" / "Break over", `label` e.g. "5 min timer".
+    Timer { title: String, label: String },
 }
 
 pub(crate) struct Toast {
@@ -124,6 +126,7 @@ impl App {
             ToastKind::Notification { .. } => 4.5,
             ToastKind::Hud { .. } => 1.9,
             ToastKind::Privacy { .. } => 2.6,
+            ToastKind::Prayer { .. } => 6.0,
             ToastKind::Water => 12.0,
             ToastKind::Timer { .. } => 6.0,
             _ => 3.4,
@@ -218,7 +221,7 @@ impl App {
             ToastKind::Charging { pct } => (GREEN, "Charging".to_string(), "Charger connected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::Unplugged { pct } => ([235, 235, 240], "On battery".to_string(), "Charger disconnected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::LowBattery { pct } => (ACCENT, "Battery low".to_string(), "Plug in your charger".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
-            ToastKind::Timer { label } => ([255, 170, 60], "Time's up".to_string(), label.clone(), 1.0, None),
+            ToastKind::Timer { title, label } => ([255, 170, 60], title.clone(), label.clone(), 1.0, None),
             ToastKind::Bluetooth { name, pct, connected } => {
                 let s = match (connected, pct) {
                     (true, Some(p)) => format!("Connected \u{b7} {}%", p),
@@ -226,6 +229,9 @@ impl App {
                     (false, _) => "Disconnected".to_string(),
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
+            }
+            ToastKind::Prayer { idx, at } => {
+                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), "Prayer time".to_string(), 1.0, Some(prayer::hhmm(*at)))
             }
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => unreachable!(),
         };
@@ -250,6 +256,7 @@ impl App {
             ToastKind::Unplugged { pct } => g.icon_battery(rcx, cy, 16.0 * sc, *pct as f32 / 100.0, &ic),
             ToastKind::LowBattery { .. } => g.icon_battery(rcx, cy, 16.0 * sc, 0.12, &ic),
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
+            ToastKind::Prayer { .. } => g.icon_crescent(rcx, cy, 18.0 * sc, &ic),
             ToastKind::Timer { .. } => g.icon_bell(rcx, cy, 17.0 * sc, (t * 22.0).sin() * (1.0 - t / 1.5).max(0.0), &ic),
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => {}
         }
@@ -319,7 +326,7 @@ impl App {
             _ => None,
         };
         if let Some((pct, muted, sun)) = bar {
-            let col = if muted { GREY } else { SLIDE_ACCENT };
+            let col = if muted { GREY } else { g.acc.main };
             let sc = 0.7 + 0.3 * pop(t).clamp(0.0, 1.2);
             let level = if muted || pct == 0 { 0 } else if pct < 34 { 1 } else if pct < 67 { 2 } else { 3 };
             if sun {
@@ -340,7 +347,7 @@ impl App {
             g.txtb(&txt, x0 + w - 20.0 - tw, cy - 9.0, 14.0, [255, 255, 255], al * k, 60.0);
             return;
         }
-        let col = if on { SLIDE_ACCENT } else { GREY };
+        let col = if on { g.acc.main } else { GREY };
         let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
         let (rcx, r) = (x0 + 28.0, 14.0 * sc);
         // ring terisi penuh saat On, redup saat Off (sapuan singkat saat muncul)

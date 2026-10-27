@@ -100,7 +100,7 @@ impl App {
         let (lo, hi) = (r.saturating_sub(4), (r + 5).min(n - 1));
         let mut boxes: Vec<LineBox> = (lo..=hi)
             .map(|i| {
-                let t = lines[i].text.as_str();
+                let t = lines[i].shown(self.cfg.romaji_lyrics);
                 let t = if t.is_empty() { "\u{b7} \u{b7} \u{b7}" } else { t };
                 let wrapped = wrap_lines_ex(g, t, SIZE, PW, true);
                 let h = wrapped.len() as f32 * LH;
