@@ -88,6 +88,8 @@ pub(crate) fn text_w(kind: &RowKind) -> f32 {
         RowKind::Toggle(_) => CELL_W - 44.0 - 12.0 - 8.0,
         // the - button starts at CELL_W - 91
         RowKind::Stepper(_) => CELL_W - 91.0 - 12.0 - 4.0,
+        // the button is 50 px wide, 10 px from the right edge
+        RowKind::Button(_) => CELL_W - 60.0 - 12.0 - 4.0,
     }
 }
 
@@ -543,7 +545,7 @@ impl App {
                 RowKind::Button(v) => {
                     let (bw, cy) = (50.0, y + CELL_H / 2.0);
                     let bx = x + CELL_W - 10.0 - bw;
-                    g.fill(&rrect(bx, cy - 10.0, bw, 20.0, 10.0), &paint(BLUE[0], BLUE[1], BLUE[2], 0.25 * a));
+                    g.fill(&rrect(bx, cy - 10.0, bw, 20.0, 10.0), &paint(g.acc.bright[0], g.acc.bright[1], g.acc.bright[2], 0.25 * a));
                     g.txt_c(v, bx + bw / 2.0, cy - 6.0, 11.0, [190, 225, 255], a, bw, true);
                 }
             }

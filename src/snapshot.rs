@@ -68,6 +68,8 @@ fn test_app(s: f32) -> App {
         menu_open: false,
         peek_until: None,
         reminding: false,
+        prayer: None,
+        prayer_fired: None,
         splash: None,
         // the idle clock has finished fading in (clock phase, see `idle_phase`)
         idle_base: 5.0,
@@ -212,7 +214,7 @@ fn snap_timer_chip_idle() {
 
 #[test]
 fn snap_timer_toast() {
-    shot("toast-timer", 1.0, |a| show_toast(a, ToastKind::Timer { label: "5 min timer".into() }));
+    shot("toast-timer", 1.0, |a| show_toast(a, ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() }));
 }
 
 #[test]

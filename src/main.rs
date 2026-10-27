@@ -108,7 +108,7 @@ use clock::{CLOCK_FADE_IN, DAYS_S, MONTHS, now_tm, today};
 use config::{ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
 use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
-use gfx::{Box4, Gfx, acc, sacc, dummy_path, ellipsize, in_rect, notch_path, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
+use gfx::{Box4, Gfx, acc, dummy_path, ellipsize, in_rect, notch_path, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
 use icon::{load_icon};
 use input::{click, context_menu};
 use music::{ArtData, Cmd, MARQUEE_GAP, MARQUEE_PAUSE, MARQUEE_SPEED, MCX, MCY, MW, MX, Media, media_thread};
