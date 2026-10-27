@@ -9,7 +9,6 @@ use windows::Win32::System::Threading::GetSystemTimes;
 
 const HIST: usize = 36;
 const GREY: [u8; 3] = TEXT_DIM;
-const BLUE: [u8; 3] = [90, 170, 255];
 const GREEN: [u8; 3] = [60, 200, 110];
 const SAMPLE_SECS: f32 = 1.0;
 const CARD_W: f32 = 178.0;
@@ -216,6 +215,7 @@ impl App {
     }
 
     pub(crate) fn slide_system(&self, g: &mut Gfx, ox: f32, al: f32) {
+        let blue = g.acc.bright;
         g.txtb("System", LX + ox, 10.0, 15.0, [255, 255, 255], al, 120.0);
         let u = &self.sys_ui;
         let el = u.enter_t.elapsed().as_secs_f32();
@@ -232,7 +232,7 @@ impl App {
         g.txt("CPU", x + 12.0, y + 7.0, 11.0, GREY, a, 60.0);
         let cpu_txt = if u.cpu_known { format!("{:.0}%", u.shown[0].clamp(0.0, 100.0)) } else { "...".to_string() };
         g.txtb(&cpu_txt, x + 12.0, y + 20.0, 22.0, [255, 255, 255], a, 70.0);
-        self.spark(g, &u.hist_cpu, 100.0, frac, x + 84.0, y + 10.0, 82.0, 34.0, BLUE, a);
+        self.spark(g, &u.hist_cpu, 100.0, frac, x + 84.0, y + 10.0, 82.0, 34.0, blue, a);
 
         // Memori
         let (x, y, a) = card(1);
@@ -240,7 +240,7 @@ impl App {
         g.txt("MEMORY", x + 12.0, y + 7.0, 11.0, GREY, a, 70.0);
         g.txtb(&format!("{:.1} GB", u.ram.0), x + 12.0, y + 20.0, 20.0, [255, 255, 255], a, 90.0);
         g.txt(&format!("of {:.1} GB", u.ram.1), x + 12.0, y + 40.0, 11.0, GREY, a, 90.0);
-        let rc = if u.shown[1] > 85.0 { ACCENT } else { BLUE };
+        let rc = if u.shown[1] > 85.0 { ACCENT } else { blue };
         g.ring(x + CARD_W - 28.0, y + CARD_H / 2.0, 14.0, (u.shown[1] / 100.0).clamp(0.0, 1.0), 3.5, &paint(255, 255, 255, 0.14 * a), &paint(rc[0], rc[1], rc[2], a));
         g.txt_c(&format!("{:.0}", u.shown[1].clamp(0.0, 100.0)), x + CARD_W - 28.0, y + CARD_H / 2.0 - 6.0, 10.5, [235, 235, 240], a, 30.0, true);
 
@@ -255,12 +255,12 @@ impl App {
             g.line(ax - 2.5, ay + 1.0 * d, ax, ay + 3.5 * d, 1.5, &p);
             g.line(ax + 2.5, ay + 1.0 * d, ax, ay + 3.5 * d, 1.5, &p);
         };
-        arrow(g, x + 16.0, y + 28.0, true, BLUE);
+        arrow(g, x + 16.0, y + 28.0, true, blue);
         g.txtb(&fmt_rate(u.down), x + 26.0, y + 22.0, 12.0, [255, 255, 255], a, 80.0);
         arrow(g, x + 16.0, y + 42.0, false, GREEN);
         g.txt(&fmt_rate(u.up), x + 26.0, y + 36.0, 11.0, [200, 200, 208], a, 80.0);
         let peak = u.hist_net.iter().cloned().fold(256.0 * 1024.0, f32::max);
-        self.spark(g, &u.hist_net, peak, frac, x + 100.0, y + 10.0, 68.0, 34.0, BLUE, a);
+        self.spark(g, &u.hist_net, peak, frac, x + 100.0, y + 10.0, 68.0, 34.0, blue, a);
 
         // Baterai
         let (x, y, a) = card(3);

@@ -786,7 +786,7 @@ impl App {
         g.fill(&rrect(bx, by, bw, 6.0, 3.0), &paint(255, 255, 255, 0.18 * a));
         let fw = (bw * pct as f32 / 100.0).max(if pct > 0 { 6.0 } else { 0.0 });
         if fw > 0.0 {
-            let c = if muted { TEXT_DIM } else { SLIDE_ACCENT };
+            let c = if muted { TEXT_DIM } else { g.acc.main };
             g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(c[0], c[1], c[2], a));
         }
         let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
@@ -831,7 +831,7 @@ impl App {
         if self.media.dur > 0 {
             let fr = (self.media.pos as f32 / self.media.dur as f32).clamp(0.0, 1.0);
             g.fill(&rrect(MX + ox, 96.0, MW, 4.0, 2.0), &paint(255, 255, 255, 0.18 * al));
-            g.fill(&rrect(MX + ox, 96.0, (MW * fr).max(4.0), 4.0, 2.0), &sacc(al));
+            g.fill(&rrect(MX + ox, 96.0, (MW * fr).max(4.0), 4.0, 2.0), &g.sacc(al));
             g.txt(&fmt_time(self.media.pos), MX + ox, 104.0, 11.0, TEXT_DIM, al, 60.0);
             let ds = fmt_time(self.media.dur);
             let dw = g.width(&ds, 11.0);

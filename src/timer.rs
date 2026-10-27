@@ -3,7 +3,6 @@
 
 use super::*;
 
-const BLUE: [u8; 3] = [90, 170, 255];
 const GREEN: [u8; 3] = [60, 200, 110];
 const GREY: [u8; 3] = TEXT_DIM;
 
@@ -484,7 +483,7 @@ impl App {
                 }
                 THit::Toggle => {
                     let label = if running { "Pause" } else if tm.elapsed(now) > Duration::ZERO && !tm.finished(now) { "Resume" } else { "Start" };
-                    g.pill(r.0 + ox, r.1, r.2, r.3, if running { [255, 255, 255] } else { [30, 90, 170] }, if running { 0.14 } else { 0.85 } * al, 1.0);
+                    g.pill(r.0 + ox, r.1, r.2, r.3, if running { [255, 255, 255] } else { g.acc.dark }, if running { 0.14 } else { 0.85 } * al, 1.0);
                     g.txt_c(label, r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 14.0), 14.0, [225, 238, 255], al, r.2, true);
                 }
                 THit::Reset => {
@@ -552,7 +551,7 @@ impl App {
         if !count {
             let (cx, cy) = (PX + 94.0 + ox, 90.0);
             let frac = (tm.elapsed(now).as_secs_f32() % 60.0) / 60.0;
-            g.ring(cx, cy, 36.0, frac, 5.0, &paint(255, 255, 255, 0.10 * al), &paint(BLUE[0], BLUE[1], BLUE[2], al));
+            g.ring(cx, cy, 36.0, frac, 5.0, &paint(255, 255, 255, 0.10 * al), &g.bright(al));
             g.txt_c(&format!("{:02}", tm.elapsed(now).as_secs() % 60), cx, cy - 10.0, 20.0, [235, 238, 245], al, 60.0, true);
         }
     }
@@ -577,7 +576,7 @@ impl App {
             None => CX + EYE_GAP,
         };
         // Pomodoro: tomato red while focusing, green on a break; other modes blue.
-        let (fg, bg) = if self.tm.mode == TMode::Pomodoro { (self.tm.phase.color(), self.tm.phase.color()) } else { (BLUE, [40, 90, 170]) };
+        let (fg, bg) = if self.tm.mode == TMode::Pomodoro { (self.tm.phase.color(), self.tm.phase.color()) } else { (g.acc.bright, g.acc.dark) };
         let (pw, ph) = (24.0 + tw + 8.0, 20.0);
         g.fill(&rrect(x, h / 2.0 - ph / 2.0, pw, ph, ph / 2.0), &paint(bg[0], bg[1], bg[2], 0.22 * ca));
         g.ring(x + 12.0, h / 2.0, 5.5, frac.clamp(0.0, 1.0), 2.0, &paint(255, 255, 255, 0.18 * ca), &paint(fg[0], fg[1], fg[2], ca));

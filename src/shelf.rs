@@ -155,7 +155,7 @@ impl App {
             format!("{}/{}", self.shelf.len(), SHELF_MAX)
         };
         let lw = g.width_ex(&label, 13.0, true);
-        g.txtb(&label, RX + ox - lw, 14.0, 13.0, SLIDE_ACCENT, al, 160.0);
+        g.txtb(&label, RX + ox - lw, 14.0, 13.0, g.acc.main, al, 160.0);
 
         // Drop zone: satu outline putih transparan, tanpa kartu per-item.
         g.stroke(&rrect(x, SH_Y, CW, SH_H, 14.0), &paint(255, 255, 255, 0.16 * al), 1.2);
