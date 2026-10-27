@@ -36,7 +36,7 @@ pub(crate) struct Settings {
     pub(crate) notch_size: usize,
     /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
     pub(crate) idle_display: usize,
-    /// Indeks di `accent::ACCENTS` (0 = biru bawaan).
+    /// Index into `accent::ACCENTS` (0 = default blue).
     pub(crate) accent: usize,
     pub(crate) slides: SlideCfg,
 }
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn accent_roundtrip_and_default() {
-        assert_eq!(Settings::parse("minimal=1\n").accent, 0, "berkas lama = biru");
+        assert_eq!(Settings::parse("minimal=1\n").accent, 0, "old file = blue");
         let mut s = Settings::default();
         s.accent = 3;
         assert_eq!(Settings::parse(&s.serialize()).accent, 3);

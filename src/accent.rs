@@ -1,22 +1,22 @@
-//! Warna aksen yang bisa dipilih di Settings > Extras. Merah peringatan, hijau "selesai", biru air/Bluetooth,
-//! dan tomat Pomodoro tidak ikut berubah karena warnanya punya arti sendiri.
+//! Accent colors selectable in Settings > Extras. Warning red, "done" green, water/Bluetooth blue and the
+//! Pomodoro tomato stay as they are, because those colors carry their own meaning.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Accent {
     pub(crate) name: &'static str,
-    /// Warna utama: judul slide, isi bar, tombol, titik navigasi.
+    /// Main color: slide titles, bar fills, buttons, nav dots.
     pub(crate) main: [u8; 3],
-    /// Sedikit lebih terang untuk teks kecil dan garis tipis (angka stepper, grafik, timer).
+    /// A little brighter, for small text and thin lines (stepper values, graphs, timer).
     pub(crate) bright: [u8; 3],
-    /// Glow bawah slide (lebih redup dari `main`).
+    /// Glow at the bottom of slides (dimmer than `main`).
     pub(crate) glow: [u8; 3],
-    /// Track toggle yang menyala dan ikon bel di knob-nya.
+    /// Track of a toggle that is on, and the bell icon on its knob.
     pub(crate) deep: [u8; 3],
-    /// Teks chip yang terpilih (pucat).
+    /// Text of a selected chip (pale).
     pub(crate) pale: [u8; 3],
 }
 
-/// Indeks 0 = biru bawaan (sama dengan warna sebelum ada pilihan aksen).
+/// Index 0 = the default blue (the same colors as before accents were selectable).
 pub(crate) const ACCENTS: [Accent; 6] = [
     Accent { name: "Blue", main: [90, 150, 255], bright: [90, 170, 255], glow: [90, 120, 200], deep: [40, 132, 245], pale: [190, 225, 255] },
     Accent { name: "Purple", main: [165, 120, 255], bright: [180, 145, 255], glow: [125, 95, 205], deep: [130, 80, 240], pale: [225, 210, 255] },
@@ -26,12 +26,12 @@ pub(crate) const ACCENTS: [Accent; 6] = [
     Accent { name: "Teal", main: [50, 200, 210], bright: [85, 215, 225], glow: [40, 145, 170], deep: [20, 165, 180], pale: [190, 240, 245] },
 ];
 
-/// Aksen ke-`i`; indeks di luar daftar jatuh ke biru bawaan.
+/// Accent `i`; an out-of-range index falls back to the default blue.
 pub(crate) fn get(i: usize) -> Accent {
     ACCENTS.get(i).copied().unwrap_or(ACCENTS[0])
 }
 
-/// Indeks berikutnya/sebelumnya, berputar.
+/// Next/previous index, wrapping around.
 pub(crate) fn step(i: usize, forward: bool) -> usize {
     let n = ACCENTS.len();
     if forward { (i + 1) % n } else { (i % n + n - 1) % n }
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn accent_text_stays_readable_on_black() {
-        // Kontras WCAG terhadap latar notch (hitam) minimal 4.5:1 untuk warna yang dipakai sebagai teks.
+        // WCAG contrast against the (black) notch background is at least 4.5:1 for colors used as text.
         fn lum(c: [u8; 3]) -> f64 {
             let ch = |v: u8| {
                 let s = v as f64 / 255.0;
@@ -72,7 +72,7 @@ mod tests {
         for a in ACCENTS {
             for c in [a.main, a.bright, a.pale] {
                 let ratio = (lum(c) + 0.05) / 0.05;
-                assert!(ratio >= 4.5, "{} {:?} kontras {:.2}", a.name, c, ratio);
+                assert!(ratio >= 4.5, "{} {:?} contrast {:.2}", a.name, c, ratio);
             }
         }
         let names: std::collections::HashSet<_> = ACCENTS.iter().map(|a| a.name).collect();

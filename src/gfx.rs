@@ -226,7 +226,7 @@ pub(crate) struct Gfx {
     /// Skala DPI dan transform-nya: semua gambar memakai koordinat logis (lihat scale.rs).
     pub(crate) s: f32,
     pub(crate) ts: Transform,
-    /// Warna aksen pilihan pengguna; diisi ulang dari Settings di awal setiap frame (render::draw).
+    /// The user's accent color; refreshed from Settings at the start of every frame (render::draw).
     pub(crate) acc: Accent,
 }
 
@@ -250,13 +250,13 @@ impl Gfx {
         }
     }
 
-    /// Cat warna aksen utama dengan alpha `a`.
+    /// Paint in the main accent color with alpha `a`.
     pub(crate) fn sacc(&self, a: f32) -> Paint<'static> {
         let c = self.acc.main;
         paint(c[0], c[1], c[2], a)
     }
 
-    /// Cat warna aksen versi terang (garis tipis dan teks kecil) dengan alpha `a`.
+    /// Paint in the bright accent color (thin lines and small text) with alpha `a`.
     pub(crate) fn bright(&self, a: f32) -> Paint<'static> {
         let c = self.acc.bright;
         paint(c[0], c[1], c[2], a)

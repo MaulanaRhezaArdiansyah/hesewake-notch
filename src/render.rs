@@ -153,7 +153,7 @@ pub(crate) fn draw(a: &mut App) {
             match a.order[i] {
                 SlideId::Music => a.music_glow(&mut g, &shape, w, h, al),
                 SlideId::Water => glow(&mut g, &shape, h, (30, 110, 235), 0.40 * al),
-                // Slide lain: satu warna glow (turunan warna aksen) supaya slide terasa seragam.
+                // Other slides: one glow color (derived from the accent) so the slides feel consistent.
                 _ => {
                     let c = g.acc.glow;
                     glow(&mut g, &shape, h, (c[0], c[1], c[2]), 0.40 * al)
