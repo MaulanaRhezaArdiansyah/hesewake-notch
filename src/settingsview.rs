@@ -132,6 +132,7 @@ impl App {
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
                 Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
                 Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { label: "Slide hotkeys", sub: "Ctrl+Alt+1 to 8", kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
             ],
             3 => vec![
                 Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
@@ -344,6 +345,10 @@ impl App {
                     privacy::set_enabled(self.cfg.privacy_dot);
                     self.priv_t = Instant::now();
                 }
+                (2, 5) => {
+                    self.cfg.slide_hotkeys = !self.cfg.slide_hotkeys;
+                    hotkeys::set_slide_hotkeys(self.hwnd, self.cfg.slide_hotkeys);
+                }
                 (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
                 (3, 1) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
                 (3, 2) => {
@@ -406,7 +411,14 @@ impl App {
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
             let lab = if on { [255, 255, 255] } else { [160, 164, 176] };
-            g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0);
+            // with hotkeys on, the slide's shortcut sits under its name
+            match hotkeys::hint(&self.cfg.slides, i).filter(|_| self.cfg.slide_hotkeys) {
+                Some(h) => {
+                    g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, 48.0);
+                    g.txt(&h, x + 9.0, y + 18.0, 10.0, GREY, a, 48.0);
+                }
+                None => g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0),
+            }
             let dim = |ok: bool| paint(220, 220, 228, if ok { 0.9 } else { 0.25 } * a);
             // chevron naik / turun
             let (ux, dx, cy) = (x + SC_W - 58.0, x + SC_W - 42.0, y + CELL_H / 2.0);
