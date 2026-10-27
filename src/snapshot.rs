@@ -174,7 +174,14 @@ fn snap_idle_clock() {
 
 #[test]
 fn snap_idle_eye() {
-    shot("idle-eye", 1.0, |a| a.cfg.idle_display = 2);
+    shot("idle-eye", 1.0, |a| {
+        a.cfg.idle_display = 2;
+        // jalankan animasi 3 detik: mata sudah selesai muncul dan terbuka
+        for _ in 0..180 {
+            a.eye.update(1.0 / 60.0);
+        }
+        a.t = 3.0;
+    });
 }
 
 #[test]
