@@ -14,16 +14,18 @@ pub(crate) struct Accent {
     pub(crate) deep: [u8; 3],
     /// Text of a selected chip (pale).
     pub(crate) pale: [u8; 3],
+    /// Dark tint behind white text or as a faint fill: the Timer Start button, the idle timer pill.
+    pub(crate) dark: [u8; 3],
 }
 
 /// Index 0 = the default blue (the same colors as before accents were selectable).
 pub(crate) const ACCENTS: [Accent; 6] = [
-    Accent { name: "Blue", main: [90, 150, 255], bright: [90, 170, 255], glow: [90, 120, 200], deep: [40, 132, 245], pale: [190, 225, 255] },
-    Accent { name: "Purple", main: [165, 120, 255], bright: [180, 145, 255], glow: [125, 95, 205], deep: [130, 80, 240], pale: [225, 210, 255] },
-    Accent { name: "Pink", main: [255, 105, 180], bright: [255, 135, 200], glow: [195, 85, 150], deep: [230, 65, 150], pale: [255, 210, 232] },
-    Accent { name: "Orange", main: [255, 150, 60], bright: [255, 172, 90], glow: [200, 120, 60], deep: [235, 120, 30], pale: [255, 225, 192] },
-    Accent { name: "Green", main: [70, 200, 120], bright: [95, 215, 140], glow: [55, 155, 100], deep: [35, 170, 95], pale: [195, 240, 210] },
-    Accent { name: "Teal", main: [50, 200, 210], bright: [85, 215, 225], glow: [40, 145, 170], deep: [20, 165, 180], pale: [190, 240, 245] },
+    Accent { name: "Blue", main: [90, 150, 255], bright: [90, 170, 255], glow: [90, 120, 200], deep: [40, 132, 245], pale: [190, 225, 255], dark: [40, 90, 170] },
+    Accent { name: "Purple", main: [165, 120, 255], bright: [180, 145, 255], glow: [125, 95, 205], deep: [130, 80, 240], pale: [225, 210, 255], dark: [100, 65, 175] },
+    Accent { name: "Pink", main: [255, 105, 180], bright: [255, 135, 200], glow: [195, 85, 150], deep: [230, 65, 150], pale: [255, 210, 232], dark: [160, 45, 110] },
+    Accent { name: "Orange", main: [255, 150, 60], bright: [255, 172, 90], glow: [200, 120, 60], deep: [235, 120, 30], pale: [255, 225, 192], dark: [165, 85, 25] },
+    Accent { name: "Green", main: [70, 200, 120], bright: [95, 215, 140], glow: [55, 155, 100], deep: [35, 170, 95], pale: [195, 240, 210], dark: [30, 120, 70] },
+    Accent { name: "Teal", main: [50, 200, 210], bright: [85, 215, 225], glow: [40, 145, 170], deep: [20, 165, 180], pale: [190, 240, 245], dark: [20, 110, 130] },
 ];
 
 /// Accent `i`; an out-of-range index falls back to the default blue.
@@ -49,6 +51,7 @@ mod tests {
         assert_eq!(b.glow, [90, 120, 200]);
         assert_eq!(b.deep, [40, 132, 245]);
         assert_eq!(b.pale, [190, 225, 255]);
+        assert_eq!(b.dark, [40, 90, 170]);
     }
 
     #[test]
