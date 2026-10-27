@@ -36,6 +36,8 @@ pub(crate) struct Settings {
     pub(crate) notch_size: usize,
     /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
     pub(crate) idle_display: usize,
+    /// Indeks di `accent::ACCENTS` (0 = biru bawaan).
+    pub(crate) accent: usize,
     pub(crate) slides: SlideCfg,
 }
 
@@ -60,6 +62,7 @@ impl Default for Settings {
             weather_city: 0,
             notch_size: 0,
             idle_display: 0,
+            accent: 0,
             slides: slides::default_cfg(),
         }
     }
@@ -98,6 +101,11 @@ impl Settings {
                         s.idle_display = n.min(IDLE_DISPLAY_LABELS.len() - 1);
                     }
                 }
+                "accent" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.accent = n.min(crate::accent::ACCENTS.len() - 1);
+                    }
+                }
                 "notch_size" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.notch_size = n.min(scale::SIZES.len() - 1);
@@ -120,7 +128,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nmonitor={}\nnotch_size={}\nidle_display={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -135,6 +143,7 @@ impl Settings {
             self.monitor,
             self.notch_size,
             self.idle_display,
+            self.accent,
             slides::format_slides(&self.slides),
         )
     }
@@ -189,6 +198,16 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).notch_size, 3);
         assert_eq!(Settings::parse("notch_size=99").notch_size, scale::SIZES.len() - 1);
         assert_eq!(Settings::parse("notch_size=x").notch_size, 0);
+    }
+
+    #[test]
+    fn accent_roundtrip_and_default() {
+        assert_eq!(Settings::parse("minimal=1\n").accent, 0, "berkas lama = biru");
+        let mut s = Settings::default();
+        s.accent = 3;
+        assert_eq!(Settings::parse(&s.serialize()).accent, 3);
+        assert_eq!(Settings::parse("accent=99").accent, crate::accent::ACCENTS.len() - 1);
+        assert_eq!(Settings::parse("accent=x").accent, 0);
     }
 
     #[test]

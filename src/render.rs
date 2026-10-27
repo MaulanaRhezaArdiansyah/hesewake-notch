@@ -97,6 +97,7 @@ pub(crate) fn draw(a: &mut App) {
         Some(g) => g,
         None => Gfx::new(a.scale),
     };
+    g.acc = accent::get(a.cfg.accent);
     let (w, h) = (a.w, a.h);
     // Toast lebih tinggi dari notch kecil, tapi bukan expand: jangan turunkan progres dari tinggi.
     let hold = a.toast_hold();
@@ -152,8 +153,11 @@ pub(crate) fn draw(a: &mut App) {
             match a.order[i] {
                 SlideId::Music => a.music_glow(&mut g, &shape, w, h, al),
                 SlideId::Water => glow(&mut g, &shape, h, (30, 110, 235), 0.40 * al),
-                // To-do, Ledge, Scrap, Notifications: satu warna glow (navy kebiruan) supaya slide terasa seragam.
-                _ => glow(&mut g, &shape, h, SLIDE_GLOW, 0.40 * al),
+                // Slide lain: satu warna glow (turunan warna aksen) supaya slide terasa seragam.
+                _ => {
+                    let c = g.acc.glow;
+                    glow(&mut g, &shape, h, (c[0], c[1], c[2]), 0.40 * al)
+                }
             }
         }
         for &(i, ox, al) in &vis {
@@ -177,9 +181,6 @@ pub(crate) fn draw(a: &mut App) {
     apply_mask(&mut g, &shape, cur);
     a.gfx = Some(g);
 }
-
-/// Warna glow bawah untuk slide To-do, Ledge, Scrap, dan Notifications.
-const SLIDE_GLOW: (u8, u8, u8) = (90, 120, 200);
 
 pub(crate) fn glow(g: &mut Gfx, shape: &Path, h: f32, rgb: (u8, u8, u8), a: f32) {
     if a <= 0.01 {
@@ -255,7 +256,7 @@ impl App {
             self.collapsed_cover(g, x0 + 14.0, (h - 20.0) / 2.0, 20.0, 5.0, ca);
             for i in 0..4 {
                 let bh = 4.0 + 12.0 * (0.5 + 0.5 * (self.t * 6.0 + i as f32 * 1.7).sin());
-                g.rect(x0 + w - 34.0 - self.priv_extra() + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &sacc(ca));
+                g.rect(x0 + w - 34.0 - self.priv_extra() + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &g.sacc(ca));
             }
             let (rl, rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra());
             let rw = rr - rl;

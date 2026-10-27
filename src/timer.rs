@@ -3,7 +3,6 @@
 
 use super::*;
 
-const BLUE: [u8; 3] = [90, 170, 255];
 const GREEN: [u8; 3] = [60, 200, 110];
 const GREY: [u8; 3] = TEXT_DIM;
 
@@ -368,7 +367,7 @@ impl App {
         if !count {
             let (cx, cy) = (PX + 94.0 + ox, 90.0);
             let frac = (tm.elapsed(now).as_secs_f32() % 60.0) / 60.0;
-            g.ring(cx, cy, 36.0, frac, 5.0, &paint(255, 255, 255, 0.10 * al), &paint(BLUE[0], BLUE[1], BLUE[2], al));
+            g.ring(cx, cy, 36.0, frac, 5.0, &paint(255, 255, 255, 0.10 * al), &g.bright(al));
             g.txt_c(&format!("{:02}", tm.elapsed(now).as_secs() % 60), cx, cy - 10.0, 20.0, [235, 238, 245], al, 60.0, true);
         }
     }
@@ -391,8 +390,8 @@ impl App {
         };
         let (pw, ph) = (24.0 + tw + 8.0, 20.0);
         g.fill(&rrect(x, h / 2.0 - ph / 2.0, pw, ph, ph / 2.0), &paint(40, 90, 170, 0.22 * ca));
-        g.ring(x + 12.0, h / 2.0, 5.5, frac.clamp(0.0, 1.0), 2.0, &paint(255, 255, 255, 0.18 * ca), &paint(BLUE[0], BLUE[1], BLUE[2], ca));
-        g.txtb(&text, x + 24.0, ty(h, 12.0), 12.0, BLUE, ca, tw + 4.0);
+        g.ring(x + 12.0, h / 2.0, 5.5, frac.clamp(0.0, 1.0), 2.0, &paint(255, 255, 255, 0.18 * ca), &g.bright(ca));
+        g.txtb(&text, x + 24.0, ty(h, 12.0), 12.0, g.acc.bright, ca, tw + 4.0);
     }
 }
 

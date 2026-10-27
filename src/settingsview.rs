@@ -15,7 +15,6 @@ const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
 const GRID_GAP_Y: f32 = 4.0;
 const GREY: [u8; 3] = TEXT_DIM;
-const BLUE: [u8; 3] = [90, 170, 255];
 const MAX_ROWS: usize = 16;
 
 pub(crate) struct SettingsUi {
@@ -138,6 +137,7 @@ impl App {
                 Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
                 Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
                 Row { label: "City", sub: "For the weather", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
+                Row { label: "Accent", sub: "Highlight color", kind: RowKind::Stepper(accent::get(self.cfg.accent).name.to_string()) },
             ],
             _ => Vec::new(),
         }
@@ -357,6 +357,11 @@ impl App {
                         self.weather_apply();
                     }
                 }
+                (3, 4) => {
+                    if right {
+                        self.cfg.accent = accent::step(self.cfg.accent, plus);
+                    }
+                }
                 _ => {}
             }
             self.save_settings();
@@ -439,7 +444,7 @@ impl App {
                     g.line(mx - 3.5, cy, mx + 3.5, cy, 1.6, &w);
                     g.line(px - 3.5, cy, px + 3.5, cy, 1.6, &w);
                     g.line(px, cy - 3.5, px, cy + 3.5, 1.6, &w);
-                    g.txt_c(v, (mx + px) / 2.0, cy - 6.0, 11.0, [BLUE[0], BLUE[1], BLUE[2]], a, 50.0, true);
+                    g.txt_c(v, (mx + px) / 2.0, cy - 6.0, 11.0, g.acc.bright, a, 50.0, true);
                 }
             }
         }

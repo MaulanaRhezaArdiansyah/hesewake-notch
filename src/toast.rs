@@ -319,7 +319,7 @@ impl App {
             _ => None,
         };
         if let Some((pct, muted, sun)) = bar {
-            let col = if muted { GREY } else { SLIDE_ACCENT };
+            let col = if muted { GREY } else { g.acc.main };
             let sc = 0.7 + 0.3 * pop(t).clamp(0.0, 1.2);
             let level = if muted || pct == 0 { 0 } else if pct < 34 { 1 } else if pct < 67 { 2 } else { 3 };
             if sun {
@@ -340,7 +340,7 @@ impl App {
             g.txtb(&txt, x0 + w - 20.0 - tw, cy - 9.0, 14.0, [255, 255, 255], al * k, 60.0);
             return;
         }
-        let col = if on { SLIDE_ACCENT } else { GREY };
+        let col = if on { g.acc.main } else { GREY };
         let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
         let (rcx, r) = (x0 + 28.0, 14.0 * sc);
         // ring terisi penuh saat On, redup saat Off (sapuan singkat saat muncul)

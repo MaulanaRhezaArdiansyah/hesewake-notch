@@ -566,9 +566,9 @@ impl App {
         let (hint, hcol) = if editing {
             ("Esc to save", TEXT_FAINT)
         } else if n > 0 {
-            ("Clear", SLIDE_ACCENT)
+            ("Clear", g.acc.main)
         } else {
-            ("", SLIDE_ACCENT)
+            ("", g.acc.main)
         };
         if !hint.is_empty() {
             let hw = g.width(hint, 12.0);
@@ -576,8 +576,8 @@ impl App {
         }
 
         // sticky-note card: deep red body, a brighter "tape" strip on top
-        g.fill(&rrect(x, NOTE_Y, CW, NOTE_H, 12.0), &sacc((if editing { 0.30 } else { 0.18 }) * al));
-        g.fill(&rrect(x + CW / 2.0 - 22.0, NOTE_Y - 3.0, 44.0, 8.0, 3.0), &sacc(0.75 * al));
+        g.fill(&rrect(x, NOTE_Y, CW, NOTE_H, 12.0), &g.sacc((if editing { 0.30 } else { 0.18 }) * al));
+        g.fill(&rrect(x + CW / 2.0 - 22.0, NOTE_Y - 3.0, 44.0, 8.0, 3.0), &g.sacc(0.75 * al));
 
         let tx = x + 14.0;
         if n == 0 {
@@ -614,7 +614,7 @@ impl App {
                         xb += 5.0;
                     }
                     if xb > xa {
-                        g.rect(tx + xa, y - 1.0, xb - xa, NOTE_LINE, &sacc(0.55 * al));
+                        g.rect(tx + xa, y - 1.0, xb - xa, NOTE_LINE, &g.sacc(0.55 * al));
                     }
                 }
             }

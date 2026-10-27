@@ -89,13 +89,13 @@ impl App {
     fn todo_row(&self, g: &mut Gfx, x: f32, y: f32, w: f32, ri: usize, al: f32) {
         let (dn, s) = (self.todos[ri].0, &self.todos[ri].1);
         if dn {
-            g.fill(&rrect(x, y, w, ROW_H, 10.0), &sacc(0.20 * al));
+            g.fill(&rrect(x, y, w, ROW_H, 10.0), &g.sacc(0.20 * al));
         } else {
             g.fill(&rrect(x, y, w, ROW_H, 10.0), &paint(255, 255, 255, 0.08 * al));
         }
         let (cx, cy) = (x + 17.0, y + ROW_H / 2.0);
         if dn {
-            g.circle(cx, cy, 8.0, &sacc(al));
+            g.circle(cx, cy, 8.0, &g.sacc(al));
             let wh = paint(255, 255, 255, al);
             g.line(cx - 3.6, cy + 0.4, cx - 1.0, cy + 3.0, 1.9, &wh);
             g.line(cx - 1.0, cy + 3.0, cx + 3.8, cy - 2.8, 1.9, &wh);
@@ -113,7 +113,7 @@ impl App {
         }
         if self.edit_mode {
             let (bx, by) = (x + w - 17.0, cy);
-            g.circle(bx, by, 8.0, &sacc(0.9 * al));
+            g.circle(bx, by, 8.0, &g.sacc(0.9 * al));
             let wh = paint(255, 255, 255, al);
             g.line(bx - 2.8, by - 2.8, bx + 2.8, by + 2.8, 1.6, &wh);
             g.line(bx - 2.8, by + 2.8, bx + 2.8, by - 2.8, 1.6, &wh);
@@ -121,7 +121,7 @@ impl App {
     }
 
     fn pill(&self, g: &mut Gfx, x: f32, y: f32, label: &str, edit_icon: bool, active: bool, al: f32) {
-        let bg = if active { sacc(0.95 * al) } else { paint(255, 255, 255, 0.11 * al) };
+        let bg = if active { g.sacc(0.95 * al) } else { paint(255, 255, 255, 0.11 * al) };
         g.fill(&rrect(x, y, 92.0, 28.0, 14.0), &bg);
         let (ix, iy) = (x + 16.0, y + 14.0);
         let wh = paint(255, 255, 255, al);
@@ -141,7 +141,7 @@ impl App {
         let x = LX + ox;
         g.txtb("Todo", x, 12.0, 15.0, [255, 255, 255], al, 80.0);
         let tw = g.width_ex("Todo", 15.0, true);
-        g.txtb("List", x + tw, 12.0, 15.0, SLIDE_ACCENT, al, 80.0);
+        g.txtb("List", x + tw, 12.0, 15.0, g.acc.main, al, 80.0);
         let st = now_tm();
         let time = format!("{:02}:{:02}", st.wHour, st.wMinute);
         let date = format!(
@@ -160,11 +160,11 @@ impl App {
         let done = self.todos.iter().filter(|t| t.0).count();
         let total = self.todos.len();
         let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 };
-        g.ring(dx - 16.0, 23.0, 8.0, frac, 3.0, &paint(255, 255, 255, 0.16 * al), &sacc(al));
+        g.ring(dx - 16.0, 23.0, 8.0, frac, 3.0, &paint(255, 255, 255, 0.16 * al), &g.sacc(al));
 
         let (rx, rw, y0, max) = rows_geom(self.editing);
         if self.editing {
-            g.fill(&rrect(LX - 1.0 + ox, 39.0, CW + 2.0, 32.0, 11.0), &sacc(0.55 * al));
+            g.fill(&rrect(LX - 1.0 + ox, 39.0, CW + 2.0, 32.0, 11.0), &g.sacc(0.55 * al));
             g.fill(&rrect(LX + ox, 40.0, CW, 30.0, 10.0), &paint(26, 26, 29, al));
             let shown: &str = if self.input.is_empty() { "Type a task, Enter to save, Esc to cancel" } else { &self.input };
             let col = if self.input.is_empty() { TEXT_FAINT } else { [255, 255, 255] };
