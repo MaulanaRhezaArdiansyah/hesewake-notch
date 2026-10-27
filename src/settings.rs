@@ -23,6 +23,8 @@ pub(crate) struct Settings {
     pub(crate) lock_toast: bool,
     /// Titik + toast saat aplikasi memakai mikrofon/kamera.
     pub(crate) privacy_dot: bool,
+    /// Ctrl+Alt+1..8 open the Nth enabled slide (hotkeys.rs).
+    pub(crate) slide_hotkeys: bool,
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
@@ -57,6 +59,7 @@ impl Default for Settings {
             notif_avatar: true,
             lock_toast: true,
             privacy_dot: true,
+            slide_hotkeys: true,
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
@@ -86,6 +89,7 @@ impl Settings {
                 "notif_avatar" => s.notif_avatar = flag,
                 "lock_toast" => s.lock_toast = flag,
                 "privacy_dot" => s.privacy_dot = flag,
+                "slide_hotkeys" => s.slide_hotkeys = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
@@ -132,7 +136,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -140,6 +144,7 @@ impl Settings {
             self.notif_avatar as u8,
             self.lock_toast as u8,
             self.privacy_dot as u8,
+            self.slide_hotkeys as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
             self.weather_on as u8,
@@ -222,6 +227,14 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).accent, 3);
         assert_eq!(Settings::parse("accent=99").accent, crate::accent::ACCENTS.len() - 1);
         assert_eq!(Settings::parse("accent=x").accent, 0);
+    }
+
+    #[test]
+    fn slide_hotkeys_roundtrip_and_default() {
+        assert!(Settings::parse("minimal=1\n").slide_hotkeys, "old file = on");
+        let mut s = Settings::default();
+        s.slide_hotkeys = false;
+        assert!(!Settings::parse(&s.serialize()).slide_hotkeys);
     }
 
     #[test]

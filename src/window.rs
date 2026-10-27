@@ -509,8 +509,17 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_HOTKEY => {
-            if wp.0 as i32 == HOTKEY_ID {
+            let id = wp.0 as i32;
+            if id == HOTKEY_ID {
                 with_app(|a| toggle_idle_phase(a));
+            } else if let Some(n) = hotkeys::slide_of(id) {
+                with_app(|a| {
+                    if a.slide_hotkey(n) {
+                        a.last = Instant::now();
+                        present(a);
+                        schedule(a);
+                    }
+                });
             }
             LRESULT(0)
         }

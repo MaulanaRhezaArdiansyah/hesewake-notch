@@ -63,6 +63,7 @@ mod data;
 mod dragdrop;
 mod eye;
 mod gfx;
+mod hotkeys;
 mod icon;
 mod icons;
 mod input;
@@ -406,6 +407,7 @@ fn main() -> Result<()> {
         if RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32).is_err() {
             perf::note("hotkey: Ctrl+Alt+H sudah dipakai aplikasi lain (mis. instance lain), tombol pintas jam/mata nonaktif");
         }
+        hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
         sys::register_display_notifications(hwnd);
         sys::tray_add(hwnd);
 
