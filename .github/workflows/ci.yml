@@ -12,7 +12,7 @@ jobs:
   test:
     runs-on: windows-latest
     env:
-      # RUSTFLAGS menggantikan rustflags di .cargo/config.toml, jadi +crt-static diulang di sini.
+      # RUSTFLAGS replaces rustflags from .cargo/config.toml, so +crt-static is repeated here.
       RUSTFLAGS: -C target-feature=+crt-static -D warnings
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -25,8 +25,8 @@ jobs:
         run: cargo build --locked
       - name: Test
         run: cargo test --locked
-      - name: Clippy (laporan saja)
-        # Masih banyak temuan lama (mis. too_many_arguments); belum dijadikan syarat lolos.
+      - name: Clippy (report only)
+        # Many existing findings remain (e.g. too_many_arguments), so it does not fail the build yet.
         env:
           RUSTFLAGS: -C target-feature=+crt-static
         run: cargo clippy --locked
