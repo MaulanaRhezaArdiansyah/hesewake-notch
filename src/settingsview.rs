@@ -124,6 +124,7 @@ impl App {
                 Row { label: "Monitor", sub: "Follow = under cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
                 Row { label: "Notch size", sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
+                Row { label: "Idle display", sub: "Cycle = clock + eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
@@ -304,6 +305,14 @@ impl App {
                         let last = scale::SIZES.len() - 1;
                         self.cfg.notch_size = if plus { (self.cfg.notch_size + 1).min(last) } else { self.cfg.notch_size.saturating_sub(1) };
                         self.place(true);
+                    }
+                }
+                (1, 5) => {
+                    if right {
+                        let last = settings::IDLE_DISPLAY_LABELS.len() - 1;
+                        self.cfg.idle_display = if plus { (self.cfg.idle_display + 1).min(last) } else { self.cfg.idle_display.saturating_sub(1) };
+                        self.cur_phase = self.idle_phase();
+                        self.eye = EyeAnim::new();
                     }
                 }
                 (2, 0) => {

@@ -4,6 +4,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 
 ## [Unreleased] - 0.4.1
 
+### Added
+- **Idle display** di Settings > Display: **Cycle** (bawaan: 10 menit jam, 15 menit mata, bergantian), **Clock** (jam saja), atau **Eyes** (mata saja). Pada Clock/Eyes, Ctrl+Alt+H dan tombol H tidak mengganti tampilan.
+
 ### Fixed
 - **Notch idle tidak lagi "tertahan" di fase mata setelah ada aktivitas.** Hitungan siklus jam/mata dulu hanya dibekukan saat notch dipakai lalu dilanjutkan, jadi setelah notch dibuka, ada toast, atau musik berhenti, mata yang tertunda bisa muncul lagi (bisa sampai 15 menit). Kini setiap aktivitas mengembalikan siklus ke awal fase jam.
 - Bila tombol pintas Ctrl+Alt+H gagal didaftarkan (sudah dipakai instance lain), kegagalannya dicatat di perf.log, tidak diam saja.

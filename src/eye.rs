@@ -335,6 +335,9 @@ pub(crate) fn splash_tick(a: &mut App) -> bool {
 /// Manual toggle: jump the idle cycle to the start of the eye phase (if showing the clock) or to the
 /// start of the clock phase (if showing the eye). The normal 10 min / 15 min loop continues from there.
 pub(crate) unsafe fn toggle_idle_phase(a: &mut App) {
+    if a.cfg.idle_display != 0 {
+        return; // tampilan dikunci di Settings (Idle display)
+    }
     a.splash = None;
     let to_eye = a.idle_phase() == IdlePhase::Clock;
     a.idle_base = if to_eye { CLOCK_PHASE_SECS } else { 0.0 };
@@ -363,6 +366,12 @@ impl App {
     }
 
     pub(crate) fn idle_phase(&self) -> IdlePhase {
+        // Pengaturan "Idle display": jam saja / mata saja menimpa siklus bergantian.
+        match self.cfg.idle_display {
+            1 => return IdlePhase::Clock,
+            2 => return IdlePhase::Eye,
+            _ => {}
+        }
         let cycle_t = self.idle_secs() % IDLE_CYCLE_SECS;
         if cycle_t < CLOCK_PHASE_SECS {
             IdlePhase::Clock
