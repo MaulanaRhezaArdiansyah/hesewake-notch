@@ -144,22 +144,6 @@ impl App {
         if e < DROP_ANIM_SECS { Some(e) } else { None }
     }
 
-    /// (Tidak dipakai lagi oleh render; dipertahankan agar kode lain tidak putus.)
-    /// Besar lendutan tepi bawah notch (px) untuk pulse droplet saat ini.
-    /// Positif = melorot ke bawah, negatif = memantul ke atas; 0 = bentuk normal.
-    pub(crate) fn drop_dip(&self) -> f32 {
-        let Some(t) = self.drop_pulse else { return 0.0; };
-        let e = t.elapsed().as_secs_f32();
-        if e >= DROP_ANIM_SECS {
-            return 0.0;
-        }
-        // Pegas teredam: jatuh cepat, memantul sedikit ke atas, lalu tenang.
-        let spring = (-4.2 * e).exp() * (std::f32::consts::TAU * 1.9 * e).sin();
-        let ph = e / DROP_ANIM_SECS; // 0..1
-        let fade = 1.0 - ((ph - 0.75) / 0.25).clamp(0.0, 1.0); // ujung animasi mulus ke 0
-        spring * fade * DROP_AMP
-    }
-
     pub(crate) fn slide_shelf(&self, g: &mut Gfx, ox: f32, al: f32) {
         let x = LX + ox;
         g.txtb(SHELF_NAME, x, 12.0, 15.0, [255, 255, 255], al, 100.0);

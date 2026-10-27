@@ -227,11 +227,6 @@ unsafe fn clip_get(hwnd: HWND) -> Option<String> {
 
 // ---------------------------------------------------------------- editing
 impl App {
-    /// True when `s` respects the character limit.
-    pub(crate) fn note_fits(&mut self, s: &str) -> bool {
-        s.chars().count() <= NOTE_MAX_CHARS
-    }
-
     /// Keep caret/anchor valid (the note can be changed from elsewhere, e.g. "Clear").
     fn clamp_nv(&mut self) {
         let n = self.note.chars().count();
