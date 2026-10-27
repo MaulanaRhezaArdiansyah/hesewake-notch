@@ -61,6 +61,8 @@ pub(crate) enum ToastKind {
     Hud { kind: HudKind, on: bool },
     /// Aplikasi mulai memakai mikrofon (`cam: false`) atau kamera (`cam: true`).
     Privacy { cam: bool, app: String },
+    /// A prayer time started: index into `prayer::NAMES` and its time (minutes since 00:00).
+    Prayer { idx: u8, at: u16 },
     /// Pengingat minum; teksnya dibaca dari `App.water`, tombol Snooze/Drank bisa diklik (lihat `toast_click`).
     Water,
     /// A countdown ended; `title` e.g. "Time's up" / "Break over", `label` e.g. "5 min timer".
@@ -124,6 +126,7 @@ impl App {
             ToastKind::Notification { .. } => 4.5,
             ToastKind::Hud { .. } => 1.9,
             ToastKind::Privacy { .. } => 2.6,
+            ToastKind::Prayer { .. } => 6.0,
             ToastKind::Water => 12.0,
             ToastKind::Timer { .. } => 6.0,
             _ => 3.4,
@@ -227,6 +230,9 @@ impl App {
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
+            ToastKind::Prayer { idx, at } => {
+                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), "Prayer time".to_string(), 1.0, Some(prayer::hhmm(*at)))
+            }
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => unreachable!(),
         };
 
@@ -250,6 +256,7 @@ impl App {
             ToastKind::Unplugged { pct } => g.icon_battery(rcx, cy, 16.0 * sc, *pct as f32 / 100.0, &ic),
             ToastKind::LowBattery { .. } => g.icon_battery(rcx, cy, 16.0 * sc, 0.12, &ic),
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
+            ToastKind::Prayer { .. } => g.icon_crescent(rcx, cy, 18.0 * sc, &ic),
             ToastKind::Timer { .. } => g.icon_bell(rcx, cy, 17.0 * sc, (t * 22.0).sin() * (1.0 - t / 1.5).max(0.0), &ic),
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => {}
         }

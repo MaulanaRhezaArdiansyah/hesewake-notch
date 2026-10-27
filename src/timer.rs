@@ -330,24 +330,33 @@ fn t_hits(mode: TMode) -> Vec<(THit, (f32, f32, f32, f32))> {
     v
 }
 
-/// Susunan murni: fase mata / jam, cuaca tampil, lonceng tampil, pil lebar (jam >= 1 j).
-fn idle_slots(eye: bool, weather: bool, bell: bool, wide: bool) -> IdleSlots {
+/// Pure layout: eye / clock phase, weather slot width (None = hidden), bell shown, wide pill (>= 1 h).
+/// The weather slot gets wider when it also shows the prayer countdown.
+fn idle_slots(eye: bool, weather: Option<f32>, bell: bool, wide: bool) -> IdleSlots {
     let pw = if wide { PILL_W_HOURS } else { PILL_W };
     let right = if bell { BELL_PAD } else { PAD };
     if eye {
         return IdleSlots { raw: 2.0 * (EYE_GAP + pw + right), clock: None };
     }
     let mut x = PAD;
-    let weather_c = if weather {
-        let c = x + WEATHER_W / 2.0;
-        x += WEATHER_W + GAP;
-        Some(c)
-    } else {
-        None
-    };
+    let weather_c = weather.map(|ww| {
+        let c = x + ww / 2.0;
+        x += ww + GAP;
+        c
+    });
     let clock_c = x + CLOCK_W / 2.0;
     x += CLOCK_W + GAP;
     IdleSlots { raw: x + pw + right, clock: Some((weather_c, clock_c, x)) }
+}
+
+/// Idle notch layout without a timer while the prayer countdown shows, using the same spacing:
+/// [margin][label][clock][margin or bell]. The (missing) pill position is set to the clock's right edge.
+fn prayer_layout(bell: bool) -> IdleSlots {
+    let right = if bell { BELL_PAD } else { PAD };
+    let label_c = PAD + prayer::LABEL_W / 2.0;
+    let clock_c = PAD + prayer::LABEL_W + GAP + CLOCK_W / 2.0;
+    let end = clock_c + CLOCK_W / 2.0;
+    IdleSlots { raw: end + right, clock: Some((Some(label_c), clock_c, end)) }
 }
 
 impl App {
@@ -371,7 +380,8 @@ impl App {
             return None;
         }
         let wide = self.tm.display_secs(Instant::now()) >= 3600;
-        Some(idle_slots(self.idle_phase() == IdlePhase::Eye, self.weather_shown(), self.bell_pos().is_some(), wide))
+        let weather = self.weather_shown().then(|| if self.prayer_countdown().is_some() { prayer::LABEL_W } else { WEATHER_W });
+        Some(idle_slots(self.idle_phase() == IdlePhase::Eye, weather, self.bell_pos().is_some(), wide))
     }
 
     /// Tambahan lebar notch idle saat timer berjalan (di atas `IDLE`; slot titik mic/kamera ditambah terpisah).
@@ -379,17 +389,28 @@ impl App {
         self.timer_slots().map_or(0.0, |s| (s.raw - IDLE.0).max(0.0))
     }
 
-    /// Pusat jam di notch idle (bergeser ke kiri saat pil timer tampil di sebelah kanannya).
+    /// Idle notch layout while the prayer countdown shows without a timer pill; None otherwise.
+    pub(crate) fn prayer_slots(&self) -> Option<IdleSlots> {
+        let on = self.timer_slots().is_none() && self.weather_shown() && self.prayer_countdown().is_some();
+        on.then(|| prayer_layout(self.bell_pos().is_some()))
+    }
+
+    /// The idle notch layout in effect: timer pill, or prayer countdown.
+    fn idle_layout(&self) -> Option<IdleSlots> {
+        self.timer_slots().or_else(|| self.prayer_slots())
+    }
+
+    /// Clock center in the idle notch (shifts when the timer pill / prayer countdown shows next to it).
     pub(crate) fn idle_clock_cx(&self, w: f32) -> f32 {
-        match self.timer_slots().and_then(|s| s.clock) {
+        match self.idle_layout().and_then(|s| s.clock) {
             Some((_, c, _)) => CX - w / 2.0 + c,
             None => CX,
         }
     }
 
-    /// Pusat ikon/suhu cuaca di notch idle.
+    /// Center of the weather icon/temperature (and prayer countdown) in the idle notch.
     pub(crate) fn idle_weather_cx(&self, w: f32) -> f32 {
-        match self.timer_slots().and_then(|s| s.clock).and_then(|(wc, _, _)| wc) {
+        match self.idle_layout().and_then(|s| s.clock).and_then(|(wc, _, _)| wc) {
             Some(c) => CX - w / 2.0 + c,
             None => CX - w / 2.0 + 32.0,
         }
@@ -726,7 +747,7 @@ mod tests {
     #[test]
     fn idle_slots_are_evenly_spaced() {
         // cuaca + jam + pil: margin kiri = margin kanan, jarak antar elemen sama
-        let s = idle_slots(false, true, false, false);
+        let s = idle_slots(false, Some(WEATHER_W), false, false);
         let (wc, cc, px) = s.clock.unwrap();
         let wc = wc.unwrap();
         assert!((wc - WEATHER_W / 2.0 - PAD).abs() < 0.01, "margin kiri");
@@ -734,14 +755,30 @@ mod tests {
         assert!((px - (cc + CLOCK_W / 2.0) - GAP).abs() < 0.01, "jarak jam-pil");
         assert!((s.raw - (px + PILL_W) - PAD).abs() < 0.01, "margin kanan");
         // tanpa cuaca: jam menempel di margin kiri
-        let n = idle_slots(false, false, false, false);
+        let n = idle_slots(false, None, false, false);
         let (w0, c0, _) = n.clock.unwrap();
         assert!(w0.is_none() && (c0 - CLOCK_W / 2.0 - PAD).abs() < 0.01);
         // lonceng menambah ruang kanan; pil jam lebih lebar
-        assert!(idle_slots(false, true, true, false).raw > s.raw);
-        assert!(idle_slots(false, true, false, true).raw > s.raw);
+        assert!(idle_slots(false, Some(WEATHER_W), true, false).raw > s.raw);
+        assert!(idle_slots(false, Some(WEATHER_W), false, true).raw > s.raw);
+        // weather slot that also shows the prayer countdown: wider, same spacing
+        let p = idle_slots(false, Some(72.0), false, false);
+        let (pwc, pcc, ppx) = p.clock.unwrap();
+        let pwc = pwc.unwrap();
+        assert!((pwc - 36.0 - PAD).abs() < 0.01, "left margin of the wide slot");
+        assert!(((pcc - CLOCK_W / 2.0) - (pwc + 36.0) - GAP).abs() < 0.01, "slot-clock gap");
+        assert!((p.raw - (ppx + PILL_W) - PAD).abs() < 0.01, "right margin");
+        assert!((p.raw - s.raw - (72.0 - WEATHER_W)).abs() < 0.01);
         // fase mata simetris terhadap tengah
-        let e = idle_slots(true, false, false, false);
+        // prayer countdown without a timer: label + clock, left margin = right margin, same gap
+        let q = prayer_layout(false);
+        let (qlc, qcc, qend) = q.clock.unwrap();
+        let qlc = qlc.unwrap();
+        assert!((qlc - prayer::LABEL_W / 2.0 - PAD).abs() < 0.01, "left margin");
+        assert!(((qcc - CLOCK_W / 2.0) - (qlc + prayer::LABEL_W / 2.0) - GAP).abs() < 0.01, "label-clock gap");
+        assert!((q.raw - qend - PAD).abs() < 0.01, "right margin");
+        assert!((prayer_layout(true).raw - q.raw - (BELL_PAD - PAD)).abs() < 0.01, "the bell adds room on the right");
+        let e = idle_slots(true, None, false, false);
         assert!(e.clock.is_none() && (e.raw / 2.0 - (EYE_GAP + PILL_W + PAD)).abs() < 0.01);
     }
 }

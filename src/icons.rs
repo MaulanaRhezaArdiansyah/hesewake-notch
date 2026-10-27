@@ -28,6 +28,12 @@ impl Gfx {
         }
     }
 
+    /// Crescent: a bright circle minus a black one (the notch background is always black), like the night weather icon.
+    pub(crate) fn icon_crescent(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
+        self.circle(cx, cy, s * 0.42, p);
+        self.circle(cx + s * 0.22, cy - s * 0.12, s * 0.36, &paint(0, 0, 0, 1.0));
+    }
+
     /// Rune Bluetooth (garis).
     pub(crate) fn icon_bluetooth(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
         let pts = [(-0.5, -0.5), (0.5, 0.42), (0.0, 0.95), (0.0, -0.95), (0.5, -0.42), (-0.5, 0.5)];

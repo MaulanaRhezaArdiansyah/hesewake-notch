@@ -32,6 +32,8 @@ pub(crate) struct Settings {
     pub(crate) monitor: usize,
     /// Indeks di `weather::CITIES`.
     pub(crate) weather_city: usize,
+    /// Prayer times: 15-minute countdown + a toast when the prayer starts (city = weather city).
+    pub(crate) prayer_on: bool,
     /// Indeks di `scale::SIZES`: 0 = Auto (ikut scaling Windows), selebihnya ukuran tetap.
     pub(crate) notch_size: usize,
     /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
@@ -58,6 +60,7 @@ impl Default for Settings {
             weather_on: true,
             monitor: 0,
             weather_city: 0,
+            prayer_on: true,
             notch_size: 0,
             idle_display: 0,
             slides: slides::default_cfg(),
@@ -83,6 +86,7 @@ impl Settings {
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
+                "prayer" => s.prayer_on = flag,
                 "monitor" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.monitor = n.min(32);
@@ -120,7 +124,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nmonitor={}\nnotch_size={}\nidle_display={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -132,6 +136,7 @@ impl Settings {
             self.hud_brightness as u8,
             self.weather_on as u8,
             self.weather_city,
+            self.prayer_on as u8,
             self.monitor,
             self.notch_size,
             self.idle_display,
@@ -178,6 +183,15 @@ mod tests {
         assert_eq!(Settings::parse("lyric_lead_ms=-99999").lyric_lead_ms, LEAD_MIN);
         assert_eq!(Settings::parse("lyric_lead_ms=abc").lyric_lead_ms, 150);
         assert_eq!(s.slides[1], (SlideId::Music, false));
+    }
+
+    #[test]
+    fn prayer_toggle_roundtrip_and_default_on() {
+        assert!(Settings::parse("minimal=1
+").prayer_on, "berkas lama = nyala");
+        let mut s = Settings::default();
+        s.prayer_on = false;
+        assert!(!Settings::parse(&s.serialize()).prayer_on);
     }
 
     #[test]
