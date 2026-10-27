@@ -63,8 +63,8 @@ pub(crate) enum ToastKind {
     Privacy { cam: bool, app: String },
     /// Pengingat minum; teksnya dibaca dari `App.water`, tombol Snooze/Drank bisa diklik (lihat `toast_click`).
     Water,
-    /// Hitung mundur habis; `label` mis. "5 min timer".
-    Timer { label: String },
+    /// A countdown ended; `title` e.g. "Time's up" / "Break over", `label` e.g. "5 min timer".
+    Timer { title: String, label: String },
 }
 
 pub(crate) struct Toast {
@@ -218,7 +218,7 @@ impl App {
             ToastKind::Charging { pct } => (GREEN, "Charging".to_string(), "Charger connected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::Unplugged { pct } => ([235, 235, 240], "On battery".to_string(), "Charger disconnected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::LowBattery { pct } => (ACCENT, "Battery low".to_string(), "Plug in your charger".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
-            ToastKind::Timer { label } => ([255, 170, 60], "Time's up".to_string(), label.clone(), 1.0, None),
+            ToastKind::Timer { title, label } => ([255, 170, 60], title.clone(), label.clone(), 1.0, None),
             ToastKind::Bluetooth { name, pct, connected } => {
                 let s = match (connected, pct) {
                     (true, Some(p)) => format!("Connected \u{b7} {}%", p),
