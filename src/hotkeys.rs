@@ -49,13 +49,13 @@ fn action(order: &[SlideId], n: usize, expanded: bool, cur: usize) -> Action {
     }
 }
 
-/// Text under a slide's name in Settings > Slides: its hotkey, if it has one.
-pub(crate) fn hint(cfg: &[(SlideId, bool)], i: usize) -> Option<String> {
+/// Hotkey number (1..=8) of entry `i` in the slide config, shown in Settings > Slides; None if it has none.
+pub(crate) fn number(cfg: &[(SlideId, bool)], i: usize) -> Option<usize> {
     if !cfg.get(i)?.1 {
         return None;
     }
     let pos = cfg[..i].iter().filter(|(_, on)| *on).count();
-    (pos < SLIDE_KEYS).then(|| format!("Ctrl+Alt+{}", pos + 1))
+    (pos < SLIDE_KEYS).then_some(pos + 1)
 }
 
 impl App {
@@ -102,15 +102,15 @@ mod tests {
     }
 
     #[test]
-    fn hints_count_only_enabled_slides() {
+    fn numbers_count_only_enabled_slides() {
         let cfg = vec![(Music, true), (Water, false), (Todo, true), (Ledge, true)];
-        assert_eq!(hint(&cfg, 0).as_deref(), Some("Ctrl+Alt+1"));
-        assert_eq!(hint(&cfg, 1), None, "disabled slide");
-        assert_eq!(hint(&cfg, 2).as_deref(), Some("Ctrl+Alt+2"));
-        assert_eq!(hint(&cfg, 3).as_deref(), Some("Ctrl+Alt+3"));
-        assert_eq!(hint(&cfg, 9), None);
+        assert_eq!(number(&cfg, 0), Some(1));
+        assert_eq!(number(&cfg, 1), None, "disabled slide");
+        assert_eq!(number(&cfg, 2), Some(2));
+        assert_eq!(number(&cfg, 3), Some(3));
+        assert_eq!(number(&cfg, 9), None);
         let many: Vec<_> = SlideId::USER.iter().map(|&s| (s, true)).chain([(Music, true)]).collect();
-        assert_eq!(hint(&many, 7).as_deref(), Some("Ctrl+Alt+8"));
-        assert_eq!(hint(&many, 8), None, "only 8 hotkeys");
+        assert_eq!(number(&many, 7), Some(8));
+        assert_eq!(number(&many, 8), None, "only 8 hotkeys");
     }
 }

@@ -132,7 +132,7 @@ impl App {
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
                 Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
                 Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
-                Row { label: "Slide hotkeys", sub: "Ctrl+Alt+1 to 8", kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
+                Row { label: "Slide hotkeys", sub: "Ctrl+Alt + slide no.", kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
             ],
             3 => vec![
                 Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
@@ -411,11 +411,13 @@ impl App {
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
             let lab = if on { [255, 255, 255] } else { [160, 164, 176] };
-            // with hotkeys on, the slide's shortcut sits under its name
-            match hotkeys::hint(&self.cfg.slides, i).filter(|_| self.cfg.slide_hotkeys) {
-                Some(h) => {
+            // with hotkeys on, a small keycap under the name shows the slide's Ctrl+Alt number
+            match hotkeys::number(&self.cfg.slides, i).filter(|_| self.cfg.slide_hotkeys) {
+                Some(k) => {
                     g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, 48.0);
-                    g.txt(&h, x + 9.0, y + 18.0, 10.0, GREY, a, 48.0);
+                    let (kx, ky, kw, kh) = (x + 9.0, y + 19.0, 13.0, 11.0);
+                    g.fill(&rrect(kx, ky, kw, kh, 3.0), &paint(255, 255, 255, 0.14 * a));
+                    g.txt_c(&k.to_string(), kx + kw / 2.0, ky + ty(kh, 9.0), 9.0, GREY, a, kw, true);
                 }
                 None => g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0),
             }
