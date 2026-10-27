@@ -7,7 +7,7 @@ use crate::slides::SlideId;
 
 const TAB_Y: f32 = 8.0;
 const TAB_H: f32 = 24.0;
-const TABS: [(&str, f32); 4] = [("Slides", 58.0), ("Display", 62.0), ("Features", 66.0), ("Extras", 58.0)];
+const TABS: [(&str, f32); 5] = [("Slides", 50.0), ("Display", 56.0), ("Features", 62.0), ("Alerts", 50.0), ("Extras", 52.0)];
 const TAB_X0: f32 = LX + 112.0;
 const GRID_Y0: f32 = 42.0;
 /// Two columns of cells fill LX..RX exactly (2 x 198 + 8 = 404), like the other slides.
@@ -160,13 +160,15 @@ impl App {
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
                 Row { label: "Contact photos", sub: "In notifications", kind: RowKind::Toggle(self.cfg.notif_avatar) },
                 Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
-                Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
-                Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
                 Row { label: "Slide hotkeys", sub: "Ctrl+Alt + slide no.", kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
             ],
             3 => vec![
                 Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
                 Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
+                Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
+                Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
+            ],
+            4 => vec![
                 Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
                 Row { label: "City", sub: "Location", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
                 Row { label: "Prayer times", sub: "Countdown + toast", kind: RowKind::Toggle(self.cfg.prayer_on) },
@@ -389,25 +391,25 @@ impl App {
                     self.sui.autostart = sys::autostart_enabled();
                 }
                 (2, 3) => {
-                    self.cfg.lock_toast = !self.cfg.lock_toast;
-                    keys::set_enabled(self.hwnd, self.cfg.lock_toast);
-                }
-                (2, 4) => {
-                    self.cfg.privacy_dot = !self.cfg.privacy_dot;
-                    privacy::set_enabled(self.cfg.privacy_dot);
-                    self.priv_t = Instant::now();
-                }
-                (2, 5) => {
                     self.cfg.slide_hotkeys = !self.cfg.slide_hotkeys;
                     hotkeys::set_slide_hotkeys(self.hwnd, self.cfg.slide_hotkeys);
                 }
                 (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
                 (3, 1) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
                 (3, 2) => {
+                    self.cfg.lock_toast = !self.cfg.lock_toast;
+                    keys::set_enabled(self.hwnd, self.cfg.lock_toast);
+                }
+                (3, 3) => {
+                    self.cfg.privacy_dot = !self.cfg.privacy_dot;
+                    privacy::set_enabled(self.cfg.privacy_dot);
+                    self.priv_t = Instant::now();
+                }
+                (4, 0) => {
                     self.cfg.weather_on = !self.cfg.weather_on;
                     self.weather_apply();
                 }
-                (3, 3) => {
+                (4, 1) => {
                     if right {
                         let n = weather::CITIES.len();
                         self.cfg.weather_city = if plus { (self.cfg.weather_city + 1) % n } else { (self.cfg.weather_city + n - 1) % n };
@@ -415,16 +417,16 @@ impl App {
                         self.prayer_refresh();
                     }
                 }
-                (3, 4) => {
+                (4, 2) => {
                     self.cfg.prayer_on = !self.cfg.prayer_on;
                     self.prayer_refresh();
                 }
-                (3, 5) => {
+                (4, 3) => {
                     if right {
                         self.cfg.accent = accent::step(self.cfg.accent, plus);
                     }
                 }
-                (3, 6) => {
+                (4, 4) => {
                     if romaji::available() {
                         self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
                         romaji::set_enabled(self.cfg.romaji_lyrics);
@@ -433,7 +435,7 @@ impl App {
                         dict::start(self.hwnd);
                     }
                 }
-                (3, 7) => {
+                (4, 5) => {
                     if right {
                         if !self.sui.dict_confirming() {
                             self.sui.dict_confirm = Some(Instant::now());

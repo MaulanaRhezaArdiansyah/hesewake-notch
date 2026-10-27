@@ -248,7 +248,7 @@ fn open_settings_tab(a: &mut App, tab: u8) {
 
 #[test]
 fn snap_settings() {
-    for tab in 0..4u8 {
+    for tab in 0..5u8 {
         shot(&format!("settings-tab{tab}"), 1.0, |a| open_settings_tab(a, tab));
     }
 }
