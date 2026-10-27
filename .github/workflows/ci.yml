@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      # RUSTFLAGS menggantikan rustflags di .cargo/config.toml, jadi +crt-static diulang di sini.
+      RUSTFLAGS: -C target-feature=+crt-static -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (warning = error)
+        run: cargo build --locked
+      - name: Test
+        run: cargo test --locked
+      - name: Clippy (laporan saja)
+        # Masih banyak temuan lama (mis. too_many_arguments); belum dijadikan syarat lolos.
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo clippy --locked
