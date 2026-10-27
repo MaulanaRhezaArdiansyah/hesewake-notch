@@ -253,12 +253,81 @@ fn snap_settings() {
     }
 }
 
+/// Settings › Extras with a long city name: the stepper grows to the left instead of cutting the name.
+#[test]
+fn snap_settings_long_city() {
+    for (name, city) in [("settings-city-short", "Jakarta"), ("settings-city-long", "Balikpapan"), ("settings-city-longest", "Bandar Lampung")] {
+        let i = weather::CITIES.iter().position(|c| c.0 == city).unwrap();
+        shot(name, 1.0, |a| {
+            a.cfg.weather_city = i;
+            open_settings_tab(a, 3);
+        });
+    }
+}
+
+/// Every stepper value is shown in full (no ellipsis) and never runs into its row's label: all cities, the
+/// lyric timing extremes, every notch size and idle display.
+#[test]
+fn stepper_values_fit_without_cutting() {
+    let mut a = test_app(1.0);
+    let mut g = Gfx::new(1.0);
+    let mut check = |a: &App, tab: u8| {
+        for r in a.settings_rows(tab) {
+            let settingsview::RowKind::Stepper(v) = &r.kind else { continue };
+            let f = settingsview::stepper_fit(&mut g, &r, v);
+            assert_eq!(&f.value, v, "{:?}: value was cut", r.label);
+            let label_end = 12.0 + g.width_ex(r.label, 12.0, true).max(g.width(r.sub, 11.0));
+            assert!(f.minus_x - 9.0 >= label_end + 4.0 - 0.01, "{:?} = {v:?}: the - button overlaps the label", r.label);
+            assert!(f.size >= 9.0, "{:?} = {v:?}: text too small", r.label);
+        }
+    };
+    for i in 0..weather::CITIES.len() {
+        a.cfg.weather_city = i;
+        check(&a, 4);
+    }
+    for lead in [settings::LEAD_MIN, settings::LEAD_MAX] {
+        a.cfg.lyric_lead_ms = lead;
+        check(&a, 1);
+    }
+    for n in 0..scale::SIZES.len() {
+        a.cfg.notch_size = n;
+        a.cfg.idle_display = n % settings::IDLE_DISPLAY_LABELS.len();
+        check(&a, 1);
+    }
+}
+
+/// Short values keep the old stepper; "Bandar Lampung" moves the "-" button left and clicking it still steps back.
+#[test]
+fn moved_minus_button_is_still_clickable() {
+    let mut a = test_app(1.0);
+    let row = |a: &App| a.settings_rows(4).into_iter().position(|r| r.label == "City").unwrap();
+    let i = row(&a);
+    let minus_x = |a: &mut App| {
+        let r = a.settings_rows(4).swap_remove(i);
+        let settingsview::RowKind::Stepper(v) = &r.kind else { unreachable!() };
+        settingsview::stepper_fit(a.gfx.as_mut().unwrap(), &r, v).minus_x
+    };
+    a.cfg.weather_city = 0; // Jakarta
+    assert_eq!(minus_x(&mut a), settingsview::STEP_PLUS_X - settingsview::STEP_MIN_SPAN);
+
+    let long = weather::CITIES.iter().position(|c| c.0 == "Bandar Lampung").unwrap();
+    a.cfg.weather_city = long;
+    let mx = minus_x(&mut a);
+    assert!(mx < settingsview::STEP_PLUS_X - settingsview::STEP_MIN_SPAN, "the - button should move left");
+    let (cx, cy) = settingsview::cell_pos(i);
+    a.settings_click_rows(4, cx + mx, cy + 17.0);
+    assert_eq!(a.cfg.weather_city, long - 1, "clicking the moved - button steps back");
+    a.cfg.weather_city = long;
+    a.settings_click_rows(4, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    assert_eq!(a.cfg.weather_city, (long + 1) % weather::CITIES.len(), "+ still steps forward");
+}
+
 /// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
 #[test]
 fn settings_text_fits_cells() {
     let a = test_app(1.0);
     let mut g = Gfx::new(1.0);
-    for tab in 1..=3u8 {
+    for tab in 1..=4u8 {
         for r in a.settings_rows(tab) {
             let w = settingsview::text_w(&r.kind);
             let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));

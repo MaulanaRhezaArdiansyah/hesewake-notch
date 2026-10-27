@@ -61,7 +61,7 @@ fn slide_cell_pos(i: usize) -> (f32, f32) {
     (LX + col as f32 * (SC_W + SC_GAP), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
 }
 
-fn cell_pos(i: usize) -> (f32, f32) {
+pub(crate) fn cell_pos(i: usize) -> (f32, f32) {
     let (col, row) = (i / 3, i % 3);
     (LX + col as f32 * (CELL_W + GRID_GAP_X), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
 }
@@ -99,6 +99,41 @@ fn fit(g: &mut Gfx, s: &str, size: f32, bold: bool, maxw: f32) -> String {
         return s.to_string();
     }
     g.text.as_mut().map_or_else(|| s.to_string(), |t| t.ellipsize(s, size, bold, maxw))
+}
+
+/// Centre of a stepper's "+" button, from the cell's left edge.
+pub(crate) const STEP_PLUS_X: f32 = CELL_W - 18.0;
+/// Narrowest stepper, centre of "-" to centre of "+" (the old fixed size; enough for short values like "Auto").
+pub(crate) const STEP_MIN_SPAN: f32 = 64.0;
+/// From a button's centre to the value text: the button radius (9 px) plus a 3 px gap. With this, the default
+/// city ("Jakarta") still fits the old fixed stepper, so the default look does not change.
+const STEP_SIDE: f32 = 12.0;
+/// Value text sizes, tried largest first.
+const STEP_SIZES: [f32; 3] = [11.0, 10.0, 9.0];
+
+/// Where a stepper's "-" button goes and how its value is drawn.
+pub(crate) struct StepperFit {
+    /// Centre of the "-" button, from the cell's left edge.
+    pub(crate) minus_x: f32,
+    pub(crate) size: f32,
+    pub(crate) value: String,
+}
+
+/// Lay out a stepper so long values (e.g. "Bandar Lampung") are not cut off. The "-" button moves left, but never
+/// into the row's own label and sub-label; if that is not enough the value shrinks to 10 / 9 px, and only then is it
+/// cut with an ellipsis.
+pub(crate) fn stepper_fit(g: &mut Gfx, r: &Row, value: &str) -> StepperFit {
+    let label_w = g.width_ex(r.label, 12.0, true).max(g.width(r.sub, 11.0));
+    // the "-" button's left edge stays 4 px right of the longer label
+    let max_span = (STEP_PLUS_X - (12.0 + label_w + 4.0 + 9.0)).max(STEP_MIN_SPAN);
+    for size in STEP_SIZES {
+        let span = (g.width_ex(value, size, true) + 2.0 * STEP_SIDE).max(STEP_MIN_SPAN);
+        if span <= max_span {
+            return StepperFit { minus_x: STEP_PLUS_X - span, size, value: value.to_string() };
+        }
+    }
+    let size = STEP_SIZES[STEP_SIZES.len() - 1];
+    StepperFit { minus_x: STEP_PLUS_X - max_span, size, value: fit(g, value, size, true, max_span - 2.0 * STEP_SIDE) }
 }
 
 impl App {
@@ -330,16 +365,22 @@ impl App {
         self.save_settings();
     }
 
-    fn settings_click_rows(&mut self, tab: u8, x: f32, y: f32) {
-        let n = self.settings_rows(tab).len();
-        for i in 0..n {
+    pub(crate) fn settings_click_rows(&mut self, tab: u8, x: f32, y: f32) {
+        let rows = self.settings_rows(tab);
+        for (i, r) in rows.iter().enumerate() {
             let (cx, cy) = cell_pos(i);
             if !in_rect(x, y, cx, cy, CELL_W, CELL_H) {
                 continue;
             }
-            // bagian kanan sel: toggle (44 px) atau stepper (- di kiri, + di kanan)
-            let right = x > cx + CELL_W - 92.0;
-            let plus = x > cx + CELL_W - 46.0;
+            // right part of the cell: the toggle (44 px), or the stepper ("-" on the left, "+" on the right). A long
+            // value moves the "-" button left, so use the same layout as the drawing.
+            let (right, plus) = match &r.kind {
+                RowKind::Stepper(v) => {
+                    let mx = self.gfx.as_mut().map_or(STEP_PLUS_X - STEP_MIN_SPAN, |g| stepper_fit(g, r, v).minus_x);
+                    (x > cx + mx - 10.0, x > cx + (mx + STEP_PLUS_X) / 2.0)
+                }
+                RowKind::Toggle(_) | RowKind::Button(_) => (x > cx + CELL_W - 92.0, x > cx + CELL_W - 46.0),
+            };
             match (tab, i) {
                 (1, 0) => self.minimal = !self.minimal,
                 (1, 1) => self.cfg.busy_on_maximized = !self.cfg.busy_on_maximized,
@@ -534,15 +575,17 @@ impl App {
             match &r.kind {
                 RowKind::Toggle(_) => g.toggle(x + CELL_W - 44.0, y + (CELL_H - 20.0) / 2.0, 34.0, 20.0, self.sui.knob[i], 0.0, a),
                 RowKind::Stepper(v) => {
+                    let f = stepper_fit(g, r, v);
                     let cy = y + CELL_H / 2.0;
-                    let (mx, px) = (x + CELL_W - 82.0, x + CELL_W - 18.0);
+                    let (mx, px) = (x + f.minus_x, x + STEP_PLUS_X);
                     g.fill(&rrect(mx - 9.0, cy - 9.0, 18.0, 18.0, 9.0), &paint(255, 255, 255, 0.12 * a));
                     g.fill(&rrect(px - 9.0, cy - 9.0, 18.0, 18.0, 9.0), &paint(255, 255, 255, 0.12 * a));
                     let w = paint(235, 235, 240, a);
                     g.line(mx - 3.5, cy, mx + 3.5, cy, 1.6, &w);
                     g.line(px - 3.5, cy, px + 3.5, cy, 1.6, &w);
                     g.line(px, cy - 3.5, px, cy + 3.5, 1.6, &w);
-                    g.txt_c(v, (mx + px) / 2.0, cy - 6.0, 11.0, g.acc.bright, a, 50.0, true);
+                    let (vy, vw) = (cy - f.size * 6.0 / 11.0, px - mx - 18.0);
+                    g.txt_c(&f.value, (mx + px) / 2.0, vy, f.size, g.acc.bright, a, vw, true);
                 }
                 RowKind::Button(v) => {
                     let (bw, cy) = (50.0, y + CELL_H / 2.0);
