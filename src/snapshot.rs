@@ -235,10 +235,18 @@ fn snap_slide_music_empty() {
     shot("slide-music-empty", 1.0, |a| open_slide(a, SlideId::Music));
 }
 
+/// Buka Settings pada tab `tab`. Knob toggle disetel ke keadaan sebenarnya selagi slide belum terlihat,
+/// sama seperti saat aplikasi membuka Settings.
+fn open_settings_tab(a: &mut App, tab: u8) {
+    a.open_settings();
+    a.sui.tab = tab;
+    a.settings_ui_step(0.0);
+    a.hover = true;
+}
+
 #[test]
 fn snap_settings() {
-    shot("slide-settings", 1.0, |a| {
-        a.open_settings();
-        a.hover = true;
-    });
+    for tab in 0..4u8 {
+        shot(&format!("settings-tab{tab}"), 1.0, |a| open_settings_tab(a, tab));
+    }
 }
