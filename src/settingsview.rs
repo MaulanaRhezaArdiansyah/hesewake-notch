@@ -10,7 +10,8 @@ const TAB_H: f32 = 24.0;
 const TABS: [(&str, f32); 4] = [("Slides", 58.0), ("Display", 62.0), ("Features", 66.0), ("Extras", 58.0)];
 const TAB_X0: f32 = LX + 112.0;
 const GRID_Y0: f32 = 42.0;
-const CELL_W: f32 = 178.0;
+/// Dua kolom sel mengisi penuh LX..RX (2 x 198 + 8 = 404), sama seperti slide lain.
+const CELL_W: f32 = 198.0;
 const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
 const GRID_GAP_Y: f32 = 4.0;
@@ -71,6 +72,24 @@ pub(crate) struct Row {
     pub(crate) kind: RowKind,
 }
 
+/// Lebar maksimum label dan sub-label sebuah sel: berhenti sebelum kontrol di kanan supaya tidak menabrak.
+pub(crate) fn text_w(kind: &RowKind) -> f32 {
+    match kind {
+        // toggle mulai di CELL_W - 44
+        RowKind::Toggle(_) => CELL_W - 44.0 - 12.0 - 8.0,
+        // tombol - mulai di CELL_W - 91
+        RowKind::Stepper(_) => CELL_W - 91.0 - 12.0 - 4.0,
+    }
+}
+
+/// Teks yang muat di `maxw`; bila terlalu panjang dipotong dengan elipsis (jaring pengaman untuk teks baru).
+fn fit(g: &mut Gfx, s: &str, size: f32, bold: bool, maxw: f32) -> String {
+    if g.width_ex(s, size, bold) <= maxw {
+        return s.to_string();
+    }
+    g.text.as_mut().map_or_else(|| s.to_string(), |t| t.ellipsize(s, size, bold, maxw))
+}
+
 impl App {
     /// Buka slide Settings (dari item menu): ditambahkan ke carousel lalu langsung ditampilkan.
     pub(crate) fn open_settings(&mut self) {
@@ -121,10 +140,10 @@ impl App {
             1 => vec![
                 Row { label: "Minimal notch", sub: "Thin line while idle", kind: RowKind::Toggle(self.minimal) },
                 Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
-                Row { label: "Monitor", sub: "Follow = under cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
+                Row { label: "Monitor", sub: "Follow = cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
                 Row { label: "Notch size", sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
-                Row { label: "Idle display", sub: "Cycle = clock + eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
+                Row { label: "Idle display", sub: "Cycle: clock/eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
@@ -426,8 +445,10 @@ impl App {
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             Self::draw_cell_bg(g, x, y, a);
-            g.txtb(r.label, x + 12.0, y + 4.0, 12.0, [255, 255, 255], a, CELL_W - 62.0);
-            g.txt(r.sub, x + 12.0, y + 19.0, 11.0, GREY, a, CELL_W - 62.0);
+            let tw = text_w(&r.kind);
+            let (label, sub) = (fit(g, r.label, 12.0, true, tw), fit(g, r.sub, 11.0, false, tw));
+            g.txtb(&label, x + 12.0, y + 4.0, 12.0, [255, 255, 255], a, tw + 2.0);
+            g.txt(&sub, x + 12.0, y + 19.0, 11.0, GREY, a, tw + 2.0);
             match &r.kind {
                 RowKind::Toggle(_) => g.toggle(x + CELL_W - 44.0, y + (CELL_H - 20.0) / 2.0, 34.0, 20.0, self.sui.knob[i], 0.0, a),
                 RowKind::Stepper(v) => {

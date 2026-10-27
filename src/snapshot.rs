@@ -250,3 +250,18 @@ fn snap_settings() {
         shot(&format!("settings-tab{tab}"), 1.0, |a| open_settings_tab(a, tab));
     }
 }
+
+/// Label dan sub-label setiap baris Settings muat di sebelah kiri kontrolnya (tanpa elipsis).
+#[test]
+fn settings_text_fits_cells() {
+    let a = test_app(1.0);
+    let mut g = Gfx::new(1.0);
+    for tab in 1..=3u8 {
+        for r in a.settings_rows(tab) {
+            let w = settingsview::text_w(&r.kind);
+            let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));
+            assert!(lw <= w, "tab {tab}: label {:?} {lw:.1} px > {w} px", r.label);
+            assert!(sw <= w, "tab {tab}: sub {:?} {sw:.1} px > {w} px", r.sub);
+        }
+    }
+}
