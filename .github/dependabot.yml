@@ -1,0 +1,7 @@
+# Perbarui SHA action yang di-pin di .github/workflows setiap minggu.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
