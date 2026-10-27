@@ -97,22 +97,73 @@ pub(crate) fn annotate(lines: &mut [LyricLine]) {
 }
 
 fn line(seg: &Segmenter, text: &str) -> String {
-    let Ok(mut tokens) = seg.segment(Cow::Borrowed(text)) else { return String::new() };
-    let pieces: Vec<Piece> = tokens
+    // IPADIC memecah あなたがた jadi あなた+が+たと (kata kerja); 方 membacanya "gata".
+    let text = text.replace("あなたがた", "あなた方");
+    let Ok(mut tokens) = seg.segment(Cow::Borrowed(&text)) else { return String::new() };
+    let toks: Vec<Tok> = tokens
         .iter_mut()
         .map(|t| {
             let surface = t.surface.to_string();
             let dict = t.dictionary;
-            let d = t.details();
+            let mut d = t.details();
             if d.get(1) == Some(&"固有名詞") && d.get(2) == Some(&"人名") && surface.chars().all(is_kanji) {
                 if let Some(alt) = common_reading(dict, &surface) {
-                    return piece(&surface, &alt);
+                    d = alt;
                 }
             }
-            piece(&surface, &d)
+            (surface, d.iter().map(|x| x.to_string()).collect())
         })
         .collect();
-    join(&pieces)
+    join(&pieces(&toks))
+}
+
+/// Token: permukaan dan detail IPADIC (sudah melewati koreksi nama).
+type Tok = (String, Vec<String>);
+
+/// Bacaan yang salah di IPADIC untuk kata umum di lirik, dikoreksi dari konteks token sekitarnya.
+/// Mengembalikan (bacaan kana, jumlah token yang dipakai, ditempel ke token sebelumnya).
+fn fix_reading(toks: &[Tok], i: usize) -> Option<(&'static str, usize, bool)> {
+    let (surface, d) = (toks[i].0.as_str(), &toks[i].1);
+    let prev = i.checked_sub(1).map(|j| &toks[j]);
+    let prev_name = prev.map_or(false, |t| t.1.get(1).map(String::as_str) == Some("固有名詞"));
+    let next = toks.get(i + 1);
+    let next_surface = next.map(|t| t.0.as_str());
+    let next_pos = next.and_then(|t| t.1.first()).map(String::as_str);
+    match (surface, next_surface) {
+        // 二 + 人: IPADIC membaca "ninin"; 人 setelah angka 2 selalu "ふたり".
+        ("二", Some("人")) => Some(("フタリ", 2, false)),
+        ("体", Some("中")) => Some(("カラダジュウ", 2, false)),
+        // 角 sebelum partikel: "かど" (sudut jalan), bukan "かく".
+        ("角", _) if next_pos == Some("助詞") => Some(("カド", 1, false)),
+        // 君 yang berdiri sendiri (bukan akhiran nama, mis. 田中君): "きみ", bukan "くん".
+        ("君", _) if d.get(1).map(String::as_str) == Some("接尾") && !prev_name => Some(("キミ", 1, false)),
+        // あなた + 方: "あなたがた" (jamak), bukan "かた".
+        ("方", _) if prev.map(|t| t.0.as_str()) == Some("あなた") && d.get(1).map(String::as_str) == Some("接尾") => Some(("ガタ", 1, true)),
+        _ => None,
+    }
+}
+
+/// Token -> potongan, dengan koreksi bacaan (`fix_reading`).
+fn pieces(toks: &[Tok]) -> Vec<Piece> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        if let Some((kana, used, glue)) = fix_reading(toks, i) {
+            out.push(Piece { text: kana.to_string(), glue });
+            i += used;
+            continue;
+        }
+        let d: Vec<&str> = toks[i].1.iter().map(String::as_str).collect();
+        let mut pc = piece(&toks[i].0, &d);
+        // Kata kerja majemuk: 連用形 + 合う/合える (分かち合う, 伝え合える) ditulis menyatu.
+        let after_stem = i > 0 && toks[i - 1].1.first().map(String::as_str) == Some("動詞") && toks[i - 1].1.get(5).map(String::as_str) == Some("連用形");
+        if after_stem && d.first() == Some(&"動詞") && d.get(6).map_or(false, |b| b.starts_with('合')) {
+            pc.glue = true;
+        }
+        out.push(pc);
+        i += 1;
+    }
+    out
 }
 
 /// Lirik jarang berisi nama orang dalam kanji, tapi IPADIC kadang memilih entri nama (次の章 -> "akira", bukan
@@ -151,10 +202,12 @@ fn piece(surface: &str, d: &[&str]) -> Piece {
     if !surface.chars().any(char::is_alphanumeric) {
         return Piece { text: punct(surface), glue: true };
     }
-    // Ditempel: kata kerja bantu (ます, た, ない; bukan です/だ), akhiran (さん, れる), dan て/で/ば penghubung.
-    let glue = (pos == "助動詞" && !matches!(at(6), "です" | "だ"))
+    // Ditempel: kata kerja bantu (ます, た, ない; bukan です/だ kopula, tetapi だ bentuk lampau: 読んだ),
+    // akhiran (さん, れる), て/で/ば penghubung, dan singkatan ている (てる/でる).
+    let glue = (pos == "助動詞" && (!matches!(at(6), "です" | "だ") || at(4) == "特殊・タ"))
         || sub == "接尾"
-        || (sub == "接続助詞" && matches!(surface, "て" | "で" | "ば"));
+        || (sub == "接続助詞" && matches!(surface, "て" | "で" | "ば"))
+        || (pos == "動詞" && sub == "非自立" && matches!(at(6), "てる" | "でる"));
     let text = if at(7) != "*" {
         // Partikel memakai pelafalan: は -> ワ, へ -> エ, を -> オ.
         (if pos == "助詞" && at(8) != "*" { at(8) } else { at(7) }).to_string()
@@ -282,5 +335,67 @@ mod tests {
         annotate(&mut v);
         assert!(v[0].roma.is_empty());
         assert_eq!(v[1].roma, "kimi no na wa");
+    }
+
+    fn t(surface: &str, d: &str) -> Tok {
+        (surface.to_string(), d.split(',').map(str::to_string).collect())
+    }
+
+    #[test]
+    fn past_da_and_contracted_teiru_glue() {
+        let s = join(&pieces(&[
+            t("くすん", "動詞,自立,*,*,五段・マ行,連用タ接続,くすむ,クスン,クスン"),
+            t("だ", "助動詞,*,*,*,特殊・タ,基本形,だ,ダ,ダ"),
+        ]));
+        assert_eq!(s, "kusunda");
+        let s = join(&pieces(&[
+            t("笑っ", "動詞,自立,*,*,五段・ワ行促音便,連用タ接続,笑う,ワラッ,ワラッ"),
+            t("てる", "動詞,非自立,*,*,一段,基本形,てる,テル,テル"),
+        ]));
+        assert_eq!(s, "waratteru");
+        let s = join(&pieces(&[
+            t("分かち", "動詞,自立,*,*,五段・タ行,連用形,分かつ,ワカチ,ワカチ"),
+            t("合う", "動詞,非自立,*,*,五段・ワ行促音便,基本形,合う,アウ,アウ"),
+        ]));
+        assert_eq!(s, "wakachiau");
+        // だ kopula (特殊・ダ) tetap terpisah
+        let s = join(&pieces(&[
+            t("雨", "名詞,一般,*,*,*,*,雨,アメ,アメ"),
+            t("だ", "助動詞,*,*,*,特殊・ダ,基本形,だ,ダ,ダ"),
+        ]));
+        assert_eq!(s, "ame da");
+    }
+
+    #[test]
+    fn known_misreadings_are_corrected() {
+        let nara = t("なら", "助動詞,*,*,*,特殊・ダ,仮定形,だ,ナラ,ナラ");
+        let s = join(&pieces(&[t("二", "名詞,数,*,*,*,*,二,ニ,ニ"), t("人", "名詞,接尾,助数詞,*,*,*,人,ニン,ニン"), nara]));
+        assert_eq!(s, "futari nara");
+        let s = join(&pieces(&[
+            t("耳", "名詞,一般,*,*,*,*,耳,ミミ,ミミ"),
+            t("を", "助詞,格助詞,一般,*,*,*,を,ヲ,ヲ"),
+            t("伝い", "動詞,自立,*,*,五段・ワ行促音便,連用形,伝う,ツタイ,ツタイ"),
+            t("体", "名詞,接尾,一般,*,*,*,体,タイ,タイ"),
+            t("中", "名詞,接尾,副詞可能,*,*,*,中,チュウ,チュー"),
+        ]));
+        assert_eq!(s, "mimi wo tsutai karadajuu");
+        let s = join(&pieces(&[
+            t("角", "名詞,一般,*,*,*,*,角,カク,カク"),
+            t("を", "助詞,格助詞,一般,*,*,*,を,ヲ,ヲ"),
+            t("曲がれ", "動詞,自立,*,*,五段・ラ行,仮定形,曲がる,マガレ,マガレ"),
+        ]));
+        assert_eq!(s, "kado wo magare");
+        // 角 sebagai kata biasa (tanpa partikel) tidak diubah
+        assert_eq!(join(&pieces(&[t("角", "名詞,一般,*,*,*,*,角,カク,カク")])), "kaku");
+    }
+
+    #[test]
+    fn kun_is_kimi_unless_after_a_name() {
+        let kun = t("君", "名詞,接尾,人名,*,*,*,君,クン,クン");
+        let ni = t("に", "助詞,格助詞,一般,*,*,*,に,ニ,ニ");
+        let ichido = t("いちど", "名詞,一般,*,*,*,*,いちど,イチド,イチド");
+        assert_eq!(join(&pieces(&[ichido, kun.clone(), ni])), "ichido kimi ni");
+        let tanaka = t("田中", "名詞,固有名詞,人名,姓,*,*,田中,タナカ,タナカ");
+        assert_eq!(join(&pieces(&[tanaka, kun])), "tanakakun");
     }
 }
