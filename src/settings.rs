@@ -32,7 +32,7 @@ pub(crate) struct Settings {
     pub(crate) monitor: usize,
     /// Indeks di `weather::CITIES`.
     pub(crate) weather_city: usize,
-    /// Jadwal sholat: hitung mundur 15 menit sebelum waktu + toast saat masuk waktu (kota = kota cuaca).
+    /// Prayer times: 15-minute countdown + a toast when the prayer starts (city = weather city).
     pub(crate) prayer_on: bool,
     /// Indeks di `scale::SIZES`: 0 = Auto (ikut scaling Windows), selebihnya ukuran tetap.
     pub(crate) notch_size: usize,

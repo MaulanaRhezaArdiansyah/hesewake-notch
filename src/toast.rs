@@ -61,7 +61,7 @@ pub(crate) enum ToastKind {
     Hud { kind: HudKind, on: bool },
     /// Aplikasi mulai memakai mikrofon (`cam: false`) atau kamera (`cam: true`).
     Privacy { cam: bool, app: String },
-    /// Masuk waktu sholat: indeks di `prayer::NAMES` dan jamnya (menit sejak 00:00).
+    /// A prayer time started: index into `prayer::NAMES` and its time (minutes since 00:00).
     Prayer { idx: u8, at: u16 },
     /// Pengingat minum; teksnya dibaca dari `App.water`, tombol Snooze/Drank bisa diklik (lihat `toast_click`).
     Water,

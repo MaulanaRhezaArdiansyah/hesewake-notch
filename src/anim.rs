@@ -277,7 +277,7 @@ unsafe fn poll(a: &mut App) {
     if !expanded && !a.thin() && !a.media.playing && cur_phase == IdlePhase::Clock && st.wMinute != a.last_min {
         redraw = true;
     }
-    // Pergantian menit: jadwal sholat (toast saat masuk waktu, hitung mundur berkurang).
+    // Minute change: prayer schedule (toast when a prayer time starts, countdown ticks down).
     if st.wMinute != a.last_min {
         a.prayer_minute();
         if a.prayer_countdown().is_some() || a.toast.is_some() {

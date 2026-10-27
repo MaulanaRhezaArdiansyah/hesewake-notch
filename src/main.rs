@@ -149,7 +149,7 @@ struct App {
     tick_n: u32,
     last_sec: u16,
     last_min: u16,
-    /// Jadwal sholat hari ini: (kunci tanggal+kota, menit Subuh..Isya), dan waktu terakhir yang sudah di-toast.
+    /// Today's prayer times: (date+city key, minutes for Subuh..Isya), and the last prayer that already got a toast.
     prayer: Option<(u32, [u16; 5])>,
     prayer_fired: Option<(u32, usize)>,
     hover: bool,

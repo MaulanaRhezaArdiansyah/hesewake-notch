@@ -1,19 +1,19 @@
-//! Jadwal sholat: dihitung lokal (tanpa internet) dengan parameter Kemenag RI untuk kota yang dipilih di Settings
-//! (kota yang sama dengan cuaca). Hitung mundur 15 menit sebelum waktu sholat di notch kecil, dan toast saat masuk waktu.
+//! Prayer times: computed locally (no internet) with the Kemenag RI parameters for the city picked in Settings
+//! (the same city as the weather). A 15-minute countdown in the small notch, and a toast when a prayer time starts.
 
 use super::*;
 use std::sync::OnceLock;
 use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
 
-/// Nama lima waktu, urut dari pagi.
+/// The five prayers, in order from dawn.
 pub(crate) const NAMES: [&str; 5] = ["Subuh", "Dzuhur", "Ashar", "Maghrib", "Isya"];
-/// Hitung mundur mulai tampil sekian menit sebelum waktu sholat.
+/// The countdown appears this many minutes before a prayer time.
 pub(crate) const WINDOW_MIN: u16 = 15;
 
-/// Waktu sholat tanggal `y-m-d` untuk lokasi (lat, lon), dalam menit sejak 00:00 waktu lokal (`tz` jam dari UTC).
+/// Prayer times on `y-m-d` at (lat, lon), in minutes since local midnight (`tz` = hours from UTC).
 pub(crate) fn times(y: i32, m: u32, d: u32, lat: f64, lon: f64, tz: f64) -> [u16; 5] {
     let jd = julian(y, m, d) - lon / (15.0 * 24.0);
-    // Perkiraan awal (jam), lalu dua iterasi dengan posisi matahari pada jam tersebut (cara PrayTimes).
+    // Initial guess (hours), then two passes using the sun's position at that time (the PrayTimes method).
     let mut h = [5.0, 12.0, 13.0, 18.0, 18.0];
     for _ in 0..2 {
         let at = |i: usize| jd + h[i] / 24.0;
@@ -34,10 +34,10 @@ pub(crate) fn times(y: i32, m: u32, d: u32, lat: f64, lon: f64, tz: f64) -> [u16
     out
 }
 
-// Parameter Kemenag RI. Ihtiyat per waktu dipilih agar cocok dengan jadwal resmi Bimas Islam (lihat tes).
+// Kemenag RI parameters. The per-prayer ihtiyat (safety margin) is tuned to match the official Bimas Islam schedule (see tests).
 const FAJR_DEG: f64 = 20.0;
 const ISHA_DEG: f64 = 18.0;
-/// Matahari terbenam: piringan atas menyentuh ufuk + refraksi.
+/// Sunset: the upper limb touches the horizon, plus refraction.
 const SUNSET_DEG: f64 = 0.833;
 const IHTIYAT_MIN: [f64; 5] = [2.0, 3.0, 2.0, 3.0, 2.0];
 
@@ -52,7 +52,7 @@ fn julian(y: i32, m: u32, d: u32) -> f64 {
     (365.25 * (y + 4716.0)).floor() + (30.6001 * (m + 1.0)).floor() + d as f64 + b - 1524.5
 }
 
-/// Deklinasi matahari (derajat) dan equation of time (jam) pada hari Julian `jd`.
+/// Sun declination (degrees) and equation of time (hours) on Julian day `jd`.
 fn sun(jd: f64) -> (f64, f64) {
     let dd = jd - 2451545.0;
     let g = (357.529 + 0.98560028 * dd).rem_euclid(360.0).to_radians();
@@ -64,12 +64,12 @@ fn sun(jd: f64) -> (f64, f64) {
     ((e.sin() * l.sin()).asin().to_degrees(), eqt)
 }
 
-/// Tengah hari (jam, waktu matahari rata-rata di bujur 0).
+/// Solar noon (hours, mean solar time at longitude 0).
 fn midday(jd: f64) -> f64 {
     (12.0 - sun(jd).1).rem_euclid(24.0)
 }
 
-/// Jam saat matahari `deg` derajat di bawah ufuk, sebelum (`ccw`) atau sesudah tengah hari.
+/// Time when the sun is `deg` degrees below the horizon, before (`ccw`) or after noon.
 fn angle_time(deg: f64, jd: f64, lat: f64, ccw: bool) -> f64 {
     let decl = sun(jd).0.to_radians();
     let lat = lat.to_radians();
@@ -78,14 +78,14 @@ fn angle_time(deg: f64, jd: f64, lat: f64, ccw: bool) -> f64 {
     midday(jd) + if ccw { -t } else { t }
 }
 
-/// Ashar mazhab Syafi'i: panjang bayangan = panjang benda + bayangan saat tengah hari.
+/// Ashar (Shafi'i): shadow length = object length + the shadow at noon.
 fn asr_time(jd: f64, lat: f64) -> f64 {
     let decl = sun(jd).0;
     let deg = -(1.0 / (1.0 + (lat - decl).abs().to_radians().tan())).atan().to_degrees();
     angle_time(deg, jd, lat, false)
 }
 
-/// Sholat berikutnya yang tinggal `1..=WINDOW_MIN` menit lagi: (indeks, sisa menit).
+/// The next prayer if it is `1..=WINDOW_MIN` minutes away: (index, minutes left).
 pub(crate) fn countdown(now_min: u16, t: &[u16; 5]) -> Option<(usize, u16)> {
     t.iter().enumerate().find_map(|(i, &at)| {
         let left = at.checked_sub(now_min)?;
@@ -93,17 +93,17 @@ pub(crate) fn countdown(now_min: u16, t: &[u16; 5]) -> Option<(usize, u16)> {
     })
 }
 
-/// Sholat yang waktunya tepat `now_min` (untuk toast).
+/// The prayer that starts exactly at `now_min` (for the toast).
 pub(crate) fn starting(now_min: u16, t: &[u16; 5]) -> Option<usize> {
     t.iter().position(|&at| at == now_min)
 }
 
-/// Selisih zona waktu (jam dari UTC) dari bias Windows (menit, UTC = lokal + bias).
+/// UTC offset in hours from the Windows bias (minutes, UTC = local + bias).
 pub(crate) fn utc_offset_hours(bias: i32, daylight_bias: i32, daylight: bool) -> f64 {
     -((bias + if daylight { daylight_bias } else { 0 }) as f64) / 60.0
 }
 
-/// Zona waktu Windows saat ini, jadi jadwal mengikuti jam laptop (WIB/WITA/WIT otomatis).
+/// The current Windows time zone, so the schedule follows the laptop clock (WIB/WITA/WIT automatically).
 fn local_utc_offset() -> f64 {
     let mut tz = TIME_ZONE_INFORMATION::default();
     // 2 = TIME_ZONE_ID_DAYLIGHT
@@ -111,13 +111,13 @@ fn local_utc_offset() -> f64 {
     utc_offset_hours(tz.Bias, tz.DaylightBias, state == 2)
 }
 
-/// Lebar tampilan teks hitung mundur terpanjang ("Maghrib 15m", 12 px).
+/// Display width of the longest countdown text ("Maghrib 15m", 12 px).
 pub(crate) const LABEL_W: f32 = 72.0;
-/// Notch saat lagu main: ruang label di kanan judul/lirik.
+/// Notch while music plays: room for the label right of the title/lyrics.
 pub(crate) const PLAY_EXTRA: f32 = LABEL_W + 10.0;
 pub(crate) const GOLD: [u8; 3] = [255, 204, 102];
 
-/// `--demo-prayer=N`: paksa hitung mundur "Ashar Nm" (uji visual).
+/// `--demo-prayer=N`: force an "Ashar Nm" countdown (visual check).
 fn demo() -> Option<u16> {
     static D: OnceLock<Option<u16>> = OnceLock::new();
     *D.get_or_init(|| std::env::args().find_map(|a| a.strip_prefix("--demo-prayer=").and_then(|v| v.parse().ok())))
@@ -129,7 +129,7 @@ fn now_min() -> u16 {
 }
 
 impl App {
-    /// Jadwal hari ini untuk kota terpilih; dihitung ulang bila tanggal atau kota berubah.
+    /// Today's schedule for the selected city; recomputed when the date or city changes.
     pub(crate) fn prayer_refresh(&mut self) {
         let st = now_tm();
         let key = ((st.wYear as u32 * 100 + st.wMonth as u32) * 100 + st.wDay as u32) * 100 + self.cfg.weather_city as u32;
@@ -140,7 +140,7 @@ impl App {
         }
     }
 
-    /// Hitung mundur aktif: (indeks waktu, sisa menit).
+    /// Active countdown: (prayer index, minutes left).
     pub(crate) fn prayer_countdown(&self) -> Option<(usize, u16)> {
         if !self.cfg.prayer_on || self.thin() {
             return None;
@@ -155,8 +155,8 @@ impl App {
         self.prayer_countdown().map(|(i, m)| format!("{} {}m", NAMES[i], m))
     }
 
-    /// Lebar tambahan notch idle saat hitung mundur tampil tanpa pil timer (susunan di `prayer_slots`). Saat pil
-    /// timer tampil, lebarnya sudah dihitung `timer_extra` (slot kiri jam dilebarkan di sana).
+    /// Extra idle-notch width while the countdown shows without a timer pill (layout in `prayer_slots`). When the
+    /// timer pill shows, `timer_extra` already accounts for it (the slot left of the clock is widened there).
     pub(crate) fn prayer_idle_extra(&self) -> f32 {
         self.prayer_slots().map_or(0.0, |s| (s.raw - IDLE.0).max(0.0))
     }
@@ -165,7 +165,7 @@ impl App {
         if self.prayer_countdown().is_some() { PLAY_EXTRA } else { 0.0 }
     }
 
-    /// Dipanggil tiap pergantian menit: toast sekali saat masuk waktu sholat. True bila toast dimulai.
+    /// Called on every minute change: one toast when a prayer time starts. True if a toast was started.
     pub(crate) fn prayer_minute(&mut self) -> bool {
         if !self.cfg.prayer_on {
             return false;
@@ -190,7 +190,7 @@ pub(crate) fn hhmm(min: u16) -> String {
 mod tests {
     use super::*;
 
-    /// Jadwal resmi Kemenag (api.myquran.com, data Bimas Islam): kota, zona (jam), tanggal, Subuh..Isya.
+    /// Official Kemenag schedule (api.myquran.com, Bimas Islam data): city, zone (hours), date, Subuh..Isya.
     const KEMENAG: &str = "\
 Jakarta 7 2026-01-01 04:19 12:00 15:26 18:14 19:29
 Jakarta 7 2026-06-21 04:40 11:58 15:19 17:51 19:05
@@ -219,7 +219,7 @@ Kupang 8 2026-10-26 03:59 11:33 14:40 17:45 18:57";
 
     fn city(name: &str) -> (f64, f64) {
         let name = name.replace('_', " ");
-        let (_, lat, lon) = crate::weather::CITIES.iter().find(|c| c.0 == name).expect("kota ada di daftar cuaca");
+        let (_, lat, lon) = crate::weather::CITIES.iter().find(|c| c.0 == name).expect("city is in the weather list");
         (*lat as f64, *lon as f64)
     }
 
@@ -239,7 +239,7 @@ Kupang 8 2026-10-26 03:59 11:33 14:40 17:45 18:57";
             for i in 0..5 {
                 let want = mins(p[3 + i]);
                 let diff = got[i] as i32 - want as i32;
-                assert!(diff.abs() <= 1, "{} {} {}: dapat {} harus {}", p[0], p[2], NAMES[i], hhmm(got[i]), p[3 + i]);
+                assert!(diff.abs() <= 1, "{} {} {}: got {} expected {}", p[0], p[2], NAMES[i], hhmm(got[i]), p[3 + i]);
             }
         }
     }
@@ -251,7 +251,7 @@ Kupang 8 2026-10-26 03:59 11:33 14:40 17:45 18:57";
         assert_eq!(countdown(892 - 16, &T), None);
         assert_eq!(countdown(892 - 15, &T), Some((2, 15)));
         assert_eq!(countdown(892 - 1, &T), Some((2, 1)));
-        assert_eq!(countdown(892, &T), None, "tepat waktunya: toast, bukan hitung mundur");
+        assert_eq!(countdown(892, &T), None, "at the exact time: toast, not countdown");
         assert_eq!(countdown(251 - 5, &T), Some((0, 5)));
         assert_eq!(countdown(23 * 60, &T), None);
     }
@@ -265,11 +265,11 @@ Kupang 8 2026-10-26 03:59 11:33 14:40 17:45 18:57";
 
     #[test]
     fn utc_offset_from_windows_bias() {
-        // Bias Windows = UTC - lokal (menit). WIB = -420, WITA = -480, WIT = -540.
+        // Windows bias = UTC - local (minutes). WIB = -420, WITA = -480, WIT = -540.
         assert_eq!(utc_offset_hours(-420, 0, false), 7.0);
         assert_eq!(utc_offset_hours(-480, 0, false), 8.0);
         assert_eq!(utc_offset_hours(-540, 0, false), 9.0);
-        // zona dengan musim panas: bias tambahan ikut dihitung
+        // zones with daylight saving: the extra bias is included
         assert_eq!(utc_offset_hours(-60, -60, true), 2.0);
         assert_eq!(utc_offset_hours(-60, -60, false), 1.0);
     }

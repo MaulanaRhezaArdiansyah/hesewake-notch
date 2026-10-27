@@ -258,7 +258,7 @@ impl App {
                 g.rect(x0 + w - 34.0 - self.priv_extra() + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &sacc(ca));
             }
             let (rl, mut rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra());
-            // Hitung mundur sholat: rata kanan sebelum lonceng/equalizer; judul/lirik memberi ruang.
+            // Prayer countdown: right-aligned before the bell/equalizer; the title/lyrics make room.
             if let Some(lbl) = self.prayer_label() {
                 let tw = g.width(&lbl, 12.0);
                 g.txt(&lbl, rr - tw, ty(h, 12.0), 12.0, prayer::GOLD, ca, tw + 2.0);

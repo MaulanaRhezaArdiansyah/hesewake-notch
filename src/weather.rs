@@ -262,7 +262,7 @@ pub(crate) fn stage_at(secs: f32) -> (u64, u8, f32) {
     (idx, st as u8, prog)
 }
 
-/// Sama dengan `stage_at` untuk `n` tahap. Satu tahap: diam, tanpa transisi.
+/// Like `stage_at` for `n` stages. A single stage stays still, with no transition.
 pub(crate) fn stage_of(secs: f32, n: usize) -> (u64, usize, f32) {
     let idx = (secs / STAGE_SECS) as u64;
     if n <= 1 {
@@ -272,7 +272,7 @@ pub(crate) fn stage_of(secs: f32, n: usize) -> (u64, usize, f32) {
     (idx, (idx % n as u64) as usize, (since / TRANS_SECS).clamp(0.0, 1.0))
 }
 
-/// Isi slot kiri jam: suhu, ikon cuaca, dan (15 menit sebelum waktu sholat) hitung mundur.
+/// Contents of the slot left of the clock: temperature, weather icon, and (15 minutes before a prayer) the countdown.
 #[derive(Clone, Copy, PartialEq)]
 enum Slot {
     Temp,
@@ -286,7 +286,7 @@ fn ss(e0: f32, e1: f32, x: f32) -> f32 {
 }
 
 impl App {
-    /// Tahap yang bergantian di slot kiri jam.
+    /// Stages that alternate in the slot left of the clock.
     fn slots(&self) -> ([Slot; 3], usize) {
         let mut v = [Slot::Temp; 3];
         let mut n = 0;
@@ -302,7 +302,7 @@ impl App {
         (v, n)
     }
 
-    /// Slot kiri jam sedang tampil: idle, fase jam, tanpa lagu/toast, dan ada isinya (cuaca / hitung mundur).
+    /// The slot left of the clock is showing: idle, clock phase, no music/toast, and it has content (weather / countdown).
     pub(crate) fn weather_shown(&self) -> bool {
         !self.expanded()
             && !self.media.playing
@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(stage_of(4.5, 3).1, 1);
         assert_eq!(stage_of(8.5, 3).1, 2);
         assert_eq!(stage_of(12.5, 3).1, 0);
-        // satu tahap saja: diam, tanpa transisi
+        // a single stage: still, no transition
         assert_eq!(stage_of(4.1, 1), (1, 0, 1.0));
         let (i, s, p) = stage_of(5.0, 2);
         assert_eq!((i, s as u8, p), stage_at(5.0));
