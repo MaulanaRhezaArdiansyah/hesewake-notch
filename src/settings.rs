@@ -17,6 +17,8 @@ pub(crate) struct Settings {
     pub(crate) busy_on_maximized: bool,
     /// Baris lirik ditampilkan sekian ms lebih awal dari timestamp (negatif = lebih lambat).
     pub(crate) lyric_lead_ms: i32,
+    /// Lirik Jepang (kana/kanji) ditampilkan dalam romaji (butuh kamus `dict\ipadic`, lihat romaji.rs).
+    pub(crate) romaji_lyrics: bool,
     /// Foto profil kontak (mis. WhatsApp) pada notifikasi bila tersedia.
     pub(crate) notif_avatar: bool,
     /// Toast saat Caps/Num/Scroll Lock ditekan.
@@ -56,6 +58,7 @@ impl Default for Settings {
             notifications: true,
             busy_on_maximized: false,
             lyric_lead_ms: 150,
+            romaji_lyrics: false,
             notif_avatar: true,
             lock_toast: true,
             privacy_dot: true,
@@ -86,6 +89,7 @@ impl Settings {
                 "minimal" => s.minimal = flag,
                 "notifications" => s.notifications = flag,
                 "busy_on_maximized" => s.busy_on_maximized = flag,
+                "romaji_lyrics" => s.romaji_lyrics = flag,
                 "notif_avatar" => s.notif_avatar = flag,
                 "lock_toast" => s.lock_toast = flag,
                 "privacy_dot" => s.privacy_dot = flag,
@@ -136,11 +140,12 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
             self.lyric_lead_ms,
+            self.romaji_lyrics as u8,
             self.notif_avatar as u8,
             self.lock_toast as u8,
             self.privacy_dot as u8,
@@ -182,6 +187,7 @@ mod tests {
         assert!(!s.notifications);
         assert!(!s.busy_on_maximized);
         assert_eq!(s.lyric_lead_ms, 150);
+        assert!(!s.romaji_lyrics);
         assert_eq!(s.slides.len(), SlideId::USER.len());
     }
 
@@ -191,6 +197,7 @@ mod tests {
         s.minimal = true;
         s.busy_on_maximized = true;
         s.lyric_lead_ms = -200;
+        s.romaji_lyrics = true;
         s.slides = slides::parse_slides("scrap,!music,water,todo,ledge,notifs");
         assert_eq!(Settings::parse(&s.serialize()), s);
         assert_eq!(Settings::parse("lyric_lead_ms=99999").lyric_lead_ms, LEAD_MAX);

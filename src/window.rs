@@ -70,6 +70,13 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 if let Some(d) = art {
                     a.set_art(&d.rgba);
                 }
+                // Kamus romaji baru selesai diunduh (tombol Get di Settings): nyalakan fitur dan konversi lagu sekarang.
+                if dict::take_ready() {
+                    a.cfg.romaji_lyrics = true;
+                    romaji::set_enabled(true);
+                    a.save_settings();
+                    a.romaji_refresh();
+                }
                 if a.media.playing && !was && !a.expanded() {
                     a.show_id(SlideId::Music);
                 }

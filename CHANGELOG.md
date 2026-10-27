@@ -2,6 +2,12 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Lirik Jepang dalam romaji** (Settings > Extras > "Romaji lyrics", default mati): kanji dan kana di lirik sinkron diubah ke romaji di notch kecil, slide Music, dan mode lirik. Bacaan per kata dari [Lindera](https://github.com/lindera/lindera) (kamus IPADIC), lalu katakana ke romaji lewat [WanaKana](https://docs.rs/wana_kana); partikel memakai pelafalan (は = wa, へ = e, を = o). Konversi dikerjakan sekali per lagu di thread lirik, hanya bila lirik berisi kana (lirik Mandarin tidak disentuh), dan kamus dilepas lagi setelahnya.
+- Kamus IPADIC (±47 MB, tidak ditanam di exe dan tidak ikut installer) diunduh lewat tombol **Get** di baris "Romaji lyrics" (unduhan 10 MB dengan persen kemajuan, tombol Retry bila gagal) ke `%APPDATA%\hesewake-notch\dict\ipadic`. Arsip dicek ukuran dan SHA-256-nya, diekstrak ke folder sementara lalu dipindah; setelah selesai romaji langsung aktif untuk lagu yang sedang main. Kamus hasil unduhan bisa dihapus lagi lewat baris "Romaji dictionary" (tombol **Delete**, tekan dua kali untuk konfirmasi); romaji ikut dimatikan.
+
 ## [0.4.1] - 2026-10-27
 
 ### Added

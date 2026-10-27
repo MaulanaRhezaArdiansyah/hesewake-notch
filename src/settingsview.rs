@@ -30,14 +30,22 @@ pub(crate) struct SettingsUi {
     swap: Option<(usize, usize, Instant)>,
     /// Status autostart di-cache (registry dibaca saat tab Features dibuka, bukan tiap frame).
     autostart: bool,
+    /// Tombol Delete kamus romaji ditekan sekali: tekan lagi dalam `CONFIRM_SECS` untuk benar-benar menghapus.
+    dict_confirm: Option<Instant>,
 }
 
 impl SettingsUi {
     pub(crate) fn new() -> SettingsUi {
         let old = Instant::now() - Duration::from_secs(10);
-        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false }
+        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false, dict_confirm: None }
+    }
+
+    fn dict_confirming(&self) -> bool {
+        self.dict_confirm.map_or(false, |t| t.elapsed().as_secs_f32() < CONFIRM_SECS)
     }
 }
+
+const CONFIRM_SECS: f32 = 3.0;
 
 fn ss(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
@@ -63,6 +71,8 @@ pub(crate) enum RowKind {
     Toggle(bool),
     /// Teks nilai + tombol - dan +.
     Stepper(String),
+    /// Tombol pil berlabel di kanan sel (mis. unduh kamus romaji).
+    Button(String),
 }
 
 pub(crate) struct Row {
@@ -159,7 +169,25 @@ impl App {
                 Row { label: "City", sub: "Location", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
                 Row { label: "Prayer times", sub: "Countdown + toast", kind: RowKind::Toggle(self.cfg.prayer_on) },
                 Row { label: "Accent", sub: "Highlight color", kind: RowKind::Stepper(accent::get(self.cfg.accent).name.to_string()) },
-            ],
+                if romaji::available() {
+                    Row { label: "Romaji lyrics", sub: "Japanese to romaji", kind: RowKind::Toggle(self.cfg.romaji_lyrics) }
+                } else {
+                    // Kamus belum ada: tombol unduh (lihat dict.rs); setelah selesai baris ini jadi toggle.
+                    match dict::state() {
+                        dict::Dl::Running(p) => Row { label: "Romaji lyrics", sub: "Downloading dictionary", kind: RowKind::Button(format!("{p}%")) },
+                        dict::Dl::Failed => Row { label: "Romaji lyrics", sub: "Download failed", kind: RowKind::Button("Retry".into()) },
+                        dict::Dl::Idle => Row { label: "Romaji lyrics", sub: "Needs 10 MB dictionary", kind: RowKind::Button("Get".into()) },
+                    }
+                },
+            ]
+            .into_iter()
+            // Kamus yang dipakai bisa dihapus (tekan dua kali).
+            .chain(dict::removable().map(|_| Row {
+                label: "Romaji dictionary",
+                sub: "47 MB on disk",
+                kind: RowKind::Button(if self.sui.dict_confirming() { "Sure?" } else { "Delete" }.into()),
+            }))
+            .collect(),
             _ => Vec::new(),
         }
     }
@@ -244,6 +272,8 @@ impl App {
             || self.sui.swap.is_some()
             || self.sui.tab_t0.elapsed().as_secs_f32() < 0.3
             || self.sui.enter_t.elapsed().as_secs_f32() < 0.5
+            // label "Sure?" kembali ke "Delete" tepat waktu
+            || self.sui.dict_confirm.map_or(false, |t| t.elapsed().as_secs_f32() < CONFIRM_SECS + 0.1)
     }
 
     // ------------------------------------------------------------ klik
@@ -392,6 +422,29 @@ impl App {
                         self.cfg.accent = accent::step(self.cfg.accent, plus);
                     }
                 }
+                (3, 6) => {
+                    if romaji::available() {
+                        self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
+                        romaji::set_enabled(self.cfg.romaji_lyrics);
+                        self.romaji_refresh();
+                    } else if right {
+                        dict::start(self.hwnd);
+                    }
+                }
+                (3, 7) => {
+                    if right {
+                        if !self.sui.dict_confirming() {
+                            self.sui.dict_confirm = Some(Instant::now());
+                        } else {
+                            self.sui.dict_confirm = None;
+                            if dict::remove() {
+                                self.cfg.romaji_lyrics = false;
+                                romaji::set_enabled(false);
+                                self.romaji_refresh();
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
             self.save_settings();
@@ -486,6 +539,12 @@ impl App {
                     g.line(px - 3.5, cy, px + 3.5, cy, 1.6, &w);
                     g.line(px, cy - 3.5, px, cy + 3.5, 1.6, &w);
                     g.txt_c(v, (mx + px) / 2.0, cy - 6.0, 11.0, g.acc.bright, a, 50.0, true);
+                }
+                RowKind::Button(v) => {
+                    let (bw, cy) = (50.0, y + CELL_H / 2.0);
+                    let bx = x + CELL_W - 10.0 - bw;
+                    g.fill(&rrect(bx, cy - 10.0, bw, 20.0, 10.0), &paint(BLUE[0], BLUE[1], BLUE[2], 0.25 * a));
+                    g.txt_c(v, bx + bw / 2.0, cy - 6.0, 11.0, [190, 225, 255], a, bw, true);
                 }
             }
         }
