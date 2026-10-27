@@ -268,8 +268,11 @@ impl Gfx {
         self.pm.stroke_path(path, p, &st, self.ts, None);
     }
     pub(crate) fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, p: &Paint) {
+        // Lewat path, bukan `Pixmap::fill_rect`: fill_rect anti-alias tiny-skia 0.11 (hanya dipakai pada skala 100%)
+        // memicu debug_assert untuk persegi selebar 1-2 px yang tidak menutupi satu piksel penuh, mis. ikon "+"
+        // di To-do. Di build debug itu panic.
         if let Some(r) = Rect::from_xywh(x, y, w, h) {
-            self.pm.fill_rect(r, p, self.ts, None);
+            self.fill(&PathBuilder::from_rect(r), p);
         }
     }
     pub(crate) fn circle(&mut self, x: f32, y: f32, r: f32, p: &Paint) {
@@ -569,6 +572,15 @@ mod tests {
         g.txt("Almost Easy · 15:19", 60.0, 90.0, 13.0, [255, 255, 255], 1.0, 400.0);
         g.txtb("Avenged Sevenfold", 60.0, 110.0, 17.0, [200, 220, 255], 0.9, 400.0);
         g.txt_clip("I'm not insane, I'm not insane", 50.0, 135.0, 12.0, [255, 255, 255], 1.0, 70.0, 220.0, 6.0);
+    }
+
+    #[test]
+    fn thin_rect_straddling_two_pixels_does_not_panic() {
+        // 10.6..11.9: menyentuh dua piksel tanpa menutupi satu pun penuh (dulu panic di build debug)
+        let mut g = gfx_100();
+        g.rect(10.6, 4.0, 1.3, 7.0, &paint(255, 255, 255, 1.0));
+        g.rect(4.0, 10.6, 7.0, 1.3, &paint(255, 255, 255, 1.0));
+        assert!(alpha_at(&g, 10, 6) > 0 && alpha_at(&g, 11, 6) > 0);
     }
 
     #[test]
