@@ -186,7 +186,7 @@ fn now_filetime() -> i64 {
     (d.as_nanos() / 100) as i64 + 116_444_736_000_000_000
 }
 
-fn post_refresh(hwnd: isize) {
+pub(crate) fn post_refresh(hwnd: isize) {
     unsafe {
         let _ = PostMessageW(HWND(hwnd as *mut c_void), WM_APP, WPARAM(0), LPARAM(0));
     }
@@ -311,7 +311,10 @@ pub(crate) fn media_thread(
                     unsafe {
                         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
                     }
-                    let l = lyrics::fetch(&t, &ar, d);
+                    let mut l = lyrics::fetch(&t, &ar, d);
+                    if let lyrics::Lyrics::Synced(lines) = &mut l {
+                        romaji::annotate(lines);
+                    }
                     *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some((k, l));
                     post_refresh(hwnd);
                 });
