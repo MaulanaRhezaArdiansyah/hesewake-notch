@@ -10,7 +10,7 @@ const TAB_H: f32 = 24.0;
 const TABS: [(&str, f32); 4] = [("Slides", 58.0), ("Display", 62.0), ("Features", 66.0), ("Extras", 58.0)];
 const TAB_X0: f32 = LX + 112.0;
 const GRID_Y0: f32 = 42.0;
-/// Dua kolom sel mengisi penuh LX..RX (2 x 198 + 8 = 404), sama seperti slide lain.
+/// Two columns of cells fill LX..RX exactly (2 x 198 + 8 = 404), like the other slides.
 const CELL_W: f32 = 198.0;
 const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
@@ -72,17 +72,17 @@ pub(crate) struct Row {
     pub(crate) kind: RowKind,
 }
 
-/// Lebar maksimum label dan sub-label sebuah sel: berhenti sebelum kontrol di kanan supaya tidak menabrak.
+/// Max width of a cell's label and sub-label: stop before the control on the right so they never overlap it.
 pub(crate) fn text_w(kind: &RowKind) -> f32 {
     match kind {
-        // toggle mulai di CELL_W - 44
+        // the toggle starts at CELL_W - 44
         RowKind::Toggle(_) => CELL_W - 44.0 - 12.0 - 8.0,
-        // tombol - mulai di CELL_W - 91
+        // the - button starts at CELL_W - 91
         RowKind::Stepper(_) => CELL_W - 91.0 - 12.0 - 4.0,
     }
 }
 
-/// Teks yang muat di `maxw`; bila terlalu panjang dipotong dengan elipsis (jaring pengaman untuk teks baru).
+/// Text that fits in `maxw`; anything longer is cut with an ellipsis (a safety net for new strings).
 fn fit(g: &mut Gfx, s: &str, size: f32, bold: bool, maxw: f32) -> String {
     if g.width_ex(s, size, bold) <= maxw {
         return s.to_string();

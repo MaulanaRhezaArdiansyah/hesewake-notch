@@ -251,7 +251,7 @@ fn snap_settings() {
     }
 }
 
-/// Label dan sub-label setiap baris Settings muat di sebelah kiri kontrolnya (tanpa elipsis).
+/// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
 #[test]
 fn settings_text_fits_cells() {
     let a = test_app(1.0);
