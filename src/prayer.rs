@@ -113,8 +113,6 @@ fn local_utc_offset() -> f64 {
 
 /// Lebar tampilan teks hitung mundur terpanjang ("Maghrib 15m", 12 px).
 pub(crate) const LABEL_W: f32 = 72.0;
-/// Notch idle: slot kiri jam harus muat label (slot = lebar/2 - 36, lihat weather.rs).
-pub(crate) const IDLE_EXTRA: f32 = 2.0 * (LABEL_W + 4.0) - IDLE.0 + 72.0;
 /// Notch saat lagu main: ruang label di kanan judul/lirik.
 pub(crate) const PLAY_EXTRA: f32 = LABEL_W + 10.0;
 pub(crate) const GOLD: [u8; 3] = [255, 204, 102];
@@ -157,14 +155,10 @@ impl App {
         self.prayer_countdown().map(|(i, m)| format!("{} {}m", NAMES[i], m))
     }
 
-    /// Lebar tambahan notch idle: hanya saat slot kiri jam benar-benar tampil. Saat pil timer tampil, lebar
-    /// sudah dihitung `timer_extra` (slot cuaca dilebarkan di sana).
+    /// Lebar tambahan notch idle saat hitung mundur tampil tanpa pil timer (susunan di `prayer_slots`). Saat pil
+    /// timer tampil, lebarnya sudah dihitung `timer_extra` (slot kiri jam dilebarkan di sana).
     pub(crate) fn prayer_idle_extra(&self) -> f32 {
-        if self.prayer_countdown().is_some() && self.splash_t().is_none() && self.idle_phase() == IdlePhase::Clock && self.timer_slots().is_none() {
-            IDLE_EXTRA
-        } else {
-            0.0
-        }
+        self.prayer_slots().map_or(0.0, |s| (s.raw - IDLE.0).max(0.0))
     }
 
     pub(crate) fn prayer_play_extra(&self) -> f32 {

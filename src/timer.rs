@@ -230,6 +230,16 @@ fn idle_slots(eye: bool, weather: Option<f32>, bell: bool, wide: bool) -> IdleSl
     IdleSlots { raw: x + pw + right, clock: Some((weather_c, clock_c, x)) }
 }
 
+/// Susunan notch idle tanpa timer saat hitung mundur sholat tampil, dengan pola jarak yang sama:
+/// [margin][label][jam][margin atau lonceng]. Posisi pil (tidak ada) diisi tepi kanan jam.
+fn prayer_layout(bell: bool) -> IdleSlots {
+    let right = if bell { BELL_PAD } else { PAD };
+    let label_c = PAD + prayer::LABEL_W / 2.0;
+    let clock_c = PAD + prayer::LABEL_W + GAP + CLOCK_W / 2.0;
+    let end = clock_c + CLOCK_W / 2.0;
+    IdleSlots { raw: end + right, clock: Some((Some(label_c), clock_c, end)) }
+}
+
 impl App {
     fn timer_visible(&self) -> bool {
         self.expanded() && self.is_slide(SlideId::Timer) && self.h > 100.0
@@ -260,9 +270,20 @@ impl App {
         self.timer_slots().map_or(0.0, |s| (s.raw - IDLE.0).max(0.0))
     }
 
-    /// Pusat jam di notch idle (bergeser ke kiri saat pil timer tampil di sebelah kanannya).
+    /// Susunan notch idle saat hitung mundur sholat tampil tanpa pil timer; None bila tidak berlaku.
+    pub(crate) fn prayer_slots(&self) -> Option<IdleSlots> {
+        let on = self.timer_slots().is_none() && self.weather_shown() && self.prayer_countdown().is_some();
+        on.then(|| prayer_layout(self.bell_pos().is_some()))
+    }
+
+    /// Susunan notch idle yang berlaku: pil timer, atau hitung mundur sholat.
+    fn idle_layout(&self) -> Option<IdleSlots> {
+        self.timer_slots().or_else(|| self.prayer_slots())
+    }
+
+    /// Pusat jam di notch idle (bergeser saat pil timer / hitung mundur sholat tampil di sebelahnya).
     pub(crate) fn idle_clock_cx(&self, w: f32) -> f32 {
-        match self.timer_slots().and_then(|s| s.clock) {
+        match self.idle_layout().and_then(|s| s.clock) {
             Some((_, c, _)) => CX - w / 2.0 + c,
             None => CX,
         }
@@ -270,10 +291,8 @@ impl App {
 
     /// Pusat ikon/suhu cuaca (dan hitung mundur sholat) di notch idle.
     pub(crate) fn idle_weather_cx(&self, w: f32) -> f32 {
-        match self.timer_slots().and_then(|s| s.clock).and_then(|(wc, _, _)| wc) {
+        match self.idle_layout().and_then(|s| s.clock).and_then(|(wc, _, _)| wc) {
             Some(c) => CX - w / 2.0 + c,
-            // Tanpa timer, hitung mundur sholat melebarkan notch: slot di tengah antara tepi kiri dan jam.
-            None if self.prayer_idle_extra() > 0.0 => (CX - w / 2.0 + 12.0 + CX - 24.0) / 2.0,
             None => CX - w / 2.0 + 32.0,
         }
     }
@@ -529,6 +548,14 @@ mod tests {
         assert!((p.raw - (ppx + PILL_W) - PAD).abs() < 0.01, "margin kanan");
         assert!((p.raw - s.raw - (72.0 - WEATHER_W)).abs() < 0.01);
         // fase mata simetris terhadap tengah
+        // hitung mundur sholat tanpa timer: label + jam dengan margin kiri = kanan dan jarak yang sama
+        let q = prayer_layout(false);
+        let (qlc, qcc, qend) = q.clock.unwrap();
+        let qlc = qlc.unwrap();
+        assert!((qlc - prayer::LABEL_W / 2.0 - PAD).abs() < 0.01, "margin kiri");
+        assert!(((qcc - CLOCK_W / 2.0) - (qlc + prayer::LABEL_W / 2.0) - GAP).abs() < 0.01, "jarak label-jam");
+        assert!((q.raw - qend - PAD).abs() < 0.01, "margin kanan");
+        assert!((prayer_layout(true).raw - q.raw - (BELL_PAD - PAD)).abs() < 0.01, "lonceng menambah ruang kanan");
         let e = idle_slots(true, None, false, false);
         assert!(e.clock.is_none() && (e.raw / 2.0 - (EYE_GAP + PILL_W + PAD)).abs() < 0.01);
     }
