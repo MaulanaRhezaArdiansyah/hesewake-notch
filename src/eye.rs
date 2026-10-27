@@ -245,6 +245,9 @@ pub(crate) fn build_eye_paths() -> Vec<Path> {
     vec![eye_path(EYE_L_START, &EYE_L), eye_path(EYE_R_START, &EYE_R)]
 }
 
+/// Kolom maksimum kanvas (lebar notch pada skala terbesar).
+const GLOW_COLS: usize = W as usize * scale::MAX as usize + 2;
+
 /// Running gradient behind the eye: a palette (shades of blue) flows along X while the
 /// alpha fades to transparent towards the top. Written straight into the pixmap, limited to the notch
 /// rectangle (about 150x32 px), no allocations, no shaders -> negligible CPU.
@@ -253,19 +256,21 @@ fn eye_glow(g: &mut Gfx, w: f32, h: f32, t: f32, strength: f32) {
     if strength <= 0.01 {
         return;
     }
+    // Loop ini bekerja per piksel fisik; rumus warnanya tetap memakai koordinat logis (dibagi skala).
+    let k = g.s;
     let pw = g.pm.width() as usize;
     let ph = g.pm.height() as usize;
-    let x0 = (CX - w / 2.0).floor().max(0.0) as usize;
-    let x1 = ((CX + w / 2.0).ceil().max(0.0) as usize).min(pw);
-    let y1 = (h.ceil().max(0.0) as usize).min(ph);
+    let x0 = ((CX - w / 2.0) * k).floor().max(0.0) as usize;
+    let x1 = (((CX + w / 2.0) * k).ceil().max(0.0) as usize).min(pw).min(GLOW_COLS);
+    let y1 = ((h * k).ceil().max(0.0) as usize).min(ph);
     if x1 <= x0 || y1 == 0 {
         return;
     }
     // Per-column colour and horizontal intensity (computed once, reused for every row).
-    let mut cols = [[0.0f32; 4]; W as usize];
+    let mut cols = [[0.0f32; 4]; GLOW_COLS];
     let np = EYE_PAL.len();
     for x in x0..x1 {
-        let xf = x as f32 + 0.5;
+        let xf = (x as f32 + 0.5) / k;
         let pos = (xf - CX) * 0.0042 - t * GLOW_FLOW;
         let f = pos.rem_euclid(1.0) * np as f32;
         let i = (f.floor() as usize) % np;
@@ -282,7 +287,7 @@ fn eye_glow(g: &mut Gfx, w: f32, h: f32, t: f32, strength: f32) {
     }
     let data = g.pm.data_mut();
     for y in 0..y1 {
-        let d = (h - (y as f32 + 0.5)).max(0.0) / (h * GLOW_REACH);
+        let d = (h - (y as f32 + 0.5) / k).max(0.0) / (h * GLOW_REACH);
         if d >= 1.0 {
             continue;
         }
@@ -318,9 +323,11 @@ pub(crate) fn splash_tick(a: &mut App) -> bool {
         return false;
     }
     a.splash = None;
-    a.idle_base = CLOCK_FADE_IN;
+    // `--demo-eye`: langsung ke fase mata (uji tata letak notch idle tanpa menunggu 10 menit)
+    let demo_eye = std::env::args().any(|x| x == "--demo-eye");
+    a.idle_base = if demo_eye { CLOCK_PHASE_SECS + 1.0 } else { CLOCK_FADE_IN };
     a.idle_mark = if a.idle() { Some(Instant::now()) } else { None };
-    a.cur_phase = IdlePhase::Clock;
+    a.cur_phase = if demo_eye { IdlePhase::Eye } else { IdlePhase::Clock };
     a.was_idle = a.idle();
     true
 }
@@ -328,6 +335,9 @@ pub(crate) fn splash_tick(a: &mut App) -> bool {
 /// Manual toggle: jump the idle cycle to the start of the eye phase (if showing the clock) or to the
 /// start of the clock phase (if showing the eye). The normal 10 min / 15 min loop continues from there.
 pub(crate) unsafe fn toggle_idle_phase(a: &mut App) {
+    if a.cfg.idle_display != 0 {
+        return; // tampilan dikunci di Settings (Idle display)
+    }
     a.splash = None;
     let to_eye = a.idle_phase() == IdlePhase::Clock;
     a.idle_base = if to_eye { CLOCK_PHASE_SECS } else { 0.0 };
@@ -356,6 +366,12 @@ impl App {
     }
 
     pub(crate) fn idle_phase(&self) -> IdlePhase {
+        // Pengaturan "Idle display": jam saja / mata saja menimpa siklus bergantian.
+        match self.cfg.idle_display {
+            1 => return IdlePhase::Clock,
+            2 => return IdlePhase::Eye,
+            _ => {}
+        }
         let cycle_t = self.idle_secs() % IDLE_CYCLE_SECS;
         if cycle_t < CLOCK_PHASE_SECS {
             IdlePhase::Clock
@@ -385,7 +401,7 @@ impl App {
         let k = EYE_H_PX / EYE_SVG_H;
         let (sx, sy) = (k * e.sx, k * e.sy);
         let (cx, cy) = (CX + e.look, h / 2.0 + e.dy);
-        let tr = Transform::from_row(sx, 0.0, 0.0, sy, cx - EYE_PIVOT.0 * sx, cy - EYE_PIVOT.1 * sy);
+        let tr = g.ts.pre_concat(Transform::from_row(sx, 0.0, 0.0, sy, cx - EYE_PIVOT.0 * sx, cy - EYE_PIVOT.1 * sy));
         let white = paint(255, 255, 255, al);
         for p in &self.eye_paths {
             g.pm.fill_path(p, &white, FillRule::Winding, tr, None);

@@ -14,7 +14,7 @@ const CELL_W: f32 = 178.0;
 const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
 const GRID_GAP_Y: f32 = 4.0;
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 const BLUE: [u8; 3] = [90, 170, 255];
 const MAX_ROWS: usize = 16;
 
@@ -123,6 +123,8 @@ impl App {
                 Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
                 Row { label: "Monitor", sub: "Follow = under cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
                 Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
+                Row { label: "Notch size", sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
+                Row { label: "Idle display", sub: "Cycle = clock + eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
             ],
             2 => vec![
                 Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
@@ -299,6 +301,21 @@ impl App {
                         self.cfg.lyric_lead_ms = (self.cfg.lyric_lead_ms + d).clamp(LEAD_MIN, LEAD_MAX);
                     }
                 }
+                (1, 4) => {
+                    if right {
+                        let last = scale::SIZES.len() - 1;
+                        self.cfg.notch_size = if plus { (self.cfg.notch_size + 1).min(last) } else { self.cfg.notch_size.saturating_sub(1) };
+                        self.place(true);
+                    }
+                }
+                (1, 5) => {
+                    if right {
+                        let last = settings::IDLE_DISPLAY_LABELS.len() - 1;
+                        self.cfg.idle_display = if plus { (self.cfg.idle_display + 1).min(last) } else { self.cfg.idle_display.saturating_sub(1) };
+                        self.cur_phase = self.idle_phase();
+                        self.eye = EyeAnim::new();
+                    }
+                }
                 (2, 0) => {
                     self.notif_on = !self.notif_on;
                     notif::set_enabled(self.notif_on);
@@ -394,7 +411,7 @@ impl App {
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
-            let lab = if on { [255, 255, 255] } else { [120, 120, 128] };
+            let lab = if on { [255, 255, 255] } else { [160, 164, 176] };
             g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0);
             let dim = |ok: bool| paint(220, 220, 228, if ok { 0.9 } else { 0.25 } * a);
             // chevron naik / turun
@@ -416,7 +433,7 @@ impl App {
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             Self::draw_cell_bg(g, x, y, a);
             g.txtb(r.label, x + 12.0, y + 4.0, 12.0, [255, 255, 255], a, CELL_W - 62.0);
-            g.txt(r.sub, x + 12.0, y + 19.0, 10.0, GREY, a, CELL_W - 62.0);
+            g.txt(r.sub, x + 12.0, y + 19.0, 11.0, GREY, a, CELL_W - 62.0);
             match &r.kind {
                 RowKind::Toggle(_) => g.toggle(x + CELL_W - 44.0, y + (CELL_H - 20.0) / 2.0, 34.0, 20.0, self.sui.knob[i], 0.0, a),
                 RowKind::Stepper(v) => {

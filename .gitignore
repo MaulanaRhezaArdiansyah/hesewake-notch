@@ -4,3 +4,6 @@
 # Hasil installer (file .exe besar, lebih baik dipublikasikan lewat GitHub Releases)
 /installer_output/
 
+
+# Salinan exe untuk dijalankan lokal
+/dist/

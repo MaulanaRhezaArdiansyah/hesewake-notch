@@ -2,6 +2,32 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-10-27
+
+### Added
+- **Idle display** di Settings > Display: **Cycle** (bawaan: 10 menit jam, 15 menit mata, bergantian), **Clock** (jam saja), atau **Eyes** (mata saja). Pada Clock/Eyes, Ctrl+Alt+H dan tombol H tidak mengganti tampilan.
+
+### Fixed
+- **Notch idle tidak lagi "tertahan" di fase mata setelah ada aktivitas.** Hitungan siklus jam/mata dulu hanya dibekukan saat notch dipakai lalu dilanjutkan, jadi setelah notch dibuka, ada toast, atau musik berhenti, mata yang tertunda bisa muncul lagi (bisa sampai 15 menit). Kini setiap aktivitas mengembalikan siklus ke awal fase jam.
+- Bila tombol pintas Ctrl+Alt+H gagal didaftarkan (sudah dipakai instance lain), kegagalannya dicatat di perf.log, tidak diam saja.
+
+## [0.4.0] - 2026-10-26
+
+### Added
+- Skala DPI: notch mengikuti scaling Windows di monitor tempatnya berada, dengan pilihan "Notch size" di Settings (kontribusi dari @MaulanaRhezaArdiansyah, PR #1).
+- Flag uji `--demo-notifs`: slide Notifications berisi data palsu untuk uji visual tanpa membaca notifikasi asli.
+- **Emoji** di notifikasi, to-do, dan judul lagu tampil sebagai ikon monokrom (Segoe UI Emoji lewat GDI, indeks glyph dari tabel `cmap`), bukan kotak kosong. Penanda variasi, ZWJ, dan pengubah warna kulit tidak lagi menyisakan kotak. Emoji berwarna penuh belum didukung.
+- **Pengingat minum berupa toast "Time to Drink"** dengan tombol **Snooze** (tunda 10 menit) dan **Drank** (catat satu Glass), menggantikan membuka slide Water selama 10 detik. Hover di toast tidak membuka notch; klik di luar tombol membuka slide Water. Bila notch sedang terbuka, pengingat tetap tampil di dalam slide seperti sebelumnya. Flag uji `--demo-toast=water`.
+- **Settings Water baru** (tombol kembali bulat di header): stepper **Bottle** dan **Glass**, chip **Goal** dan **Remind**, **Hours** (jam mulai dan selesai pengingat, menggantikan batas 08:00-22:00 yang tetap), kartu statistik **reminders** (pengingat yang sudah muncul hari ini) dan **refills** (berapa kali botol habis), serta tombol **Reset today** yang menghapus progres, pengingat, dan refill hari itu. `water.txt` mendapat field opsional (bottle, jam mulai/selesai, jumlah pengingat); berkas lama tetap terbaca. Flag uji `--demo-water-settings`.
+- **Slide Timer** (default tersembunyi; aktifkan di Settings > Slides): **stopwatch** dengan persepuluh detik dan ring menit, serta **hitung mundur** dengan preset 1/5/10/15/25/45 menit dan penyesuaian ±1 menit. Saat berjalan dan notch idle, waktunya tampil di kanan jam dalam pil biru berisi ring progres (notch melebar mengikuti isi dengan margin dan jarak yang sama antara cuaca, jam, pil, dan lonceng; di fase mata tetap berbeda jelas dari mata); hitung mundur yang habis memunculkan toast "Time's up". Mode dan durasi terakhir diingat di `timer.txt`. Flag uji `--demo-timer=count|stop`, `--demo-toast=timer`, `--demo-eye`.
+- Flag uji `--demo-playing` (lagu palsu) dan `--demo-priv=cam,mic` (titik kamera/mikrofon) untuk uji tata letak notch kecil.
+
+### Fixed
+- **Titik indikator mikrofon/kamera menimpa lonceng notifikasi** (saat idle) dan lonceng, equalizer, serta teks judul/lirik (saat lagu diputar). Titik kini punya slot sendiri di tepi kanan, sejajar tengah; notch melebar sebesar slot itu dan elemen lain bergeser ke kiri.
+
+### Changed
+- **Teks lebih mudah dibaca** di semua slide dan toast: warna teks sekunder (isi pesan, label, satuan) dibuat lebih terang lewat satu konstanta bersama (`TEXT_DIM` / `TEXT_FAINT`), teks isi yang sebelumnya 10-11 px dinaikkan ke 11-12 px (isi dan waktu notifikasi, label System, sumbu grafik Water, keterangan Settings), dan tepi huruf terang di atas latar gelap diperkuat sedikit agar goresan tipis tidak hilang.
+
 ## [0.3.2] - 2026-10-25
 
 ### Fixed
@@ -44,7 +70,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 - **Toast tombol kunci**: Caps Lock, Num Lock, dan Scroll Lock menampilkan HUD kecil On/Off di notch (hook keyboard low-level yang hanya terpasang saat fitur aktif; toggle di Settings > Features > "Lock keys"). HUD beruntun menggantikan yang sedang tampil tanpa antre.
 - **Indikator mikrofon/kamera**: titik oranye (mic) atau hijau (kamera) di pojok kanan atas notch kecil selama ada aplikasi yang memakainya, plus toast "Microphone/Camera in use" dengan nama aplikasi saat mulai. Dipantau lewat event registry `CapabilityAccessManager` (tanpa polling). Toggle di Settings > Features > "Mic / camera dot".
 - **Musik**: scroll mouse di atas baris kontrol slide Music mengatur **volume master** (2% per takik) dengan indikator di dalam slide; jika ada lebih dari satu pemutar media, header "Now Playing · <pemutar>" bisa diklik untuk berpindah sumber.
-- **Installer** (`hesewake-notch.iss`, Inno Setup 6) dan `scriptsuild-installer.ps1`: pasang per-pengguna tanpa admin, pilihan autostart, menutup aplikasi yang sedang jalan sebelum memperbarui, dan opsi menghapus data saat uninstall.
+- **Installer** (`hesewake-notch.iss`, Inno Setup 6) dan `scripts\build-installer.ps1`: pasang per-pengguna tanpa admin, pilihan autostart, menutup aplikasi yang sedang jalan sebelum memperbarui, dan opsi menghapus data saat uninstall.
 - Registri slide (`SlideId`) dan model pengaturan (`settings.txt`: `slides=`, `lyric_lead_ms=`, `busy_on_maximized=`, ...) yang kompatibel dengan berkas lama.
 
 ### Changed

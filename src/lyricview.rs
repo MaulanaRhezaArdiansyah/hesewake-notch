@@ -21,7 +21,7 @@ const LH: f32 = 19.0;
 const GAP: f32 = 12.0;
 const SK: f32 = 320.0;
 const SC: f32 = 36.0;
-const GREY: [u8; 3] = [118, 126, 145];
+const GREY: [u8; 3] = [140, 148, 168];
 
 pub(crate) struct LineBox {
     pub(crate) idx: usize,

@@ -4,6 +4,9 @@
 use super::*;
 use crate::slides::{self, SlideCfg};
 
+/// Pilihan "Idle display" di Settings.
+pub(crate) const IDLE_DISPLAY_LABELS: [&str; 3] = ["Cycle", "Clock", "Eyes"];
+
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Settings {
     /// Mode "Minimal notch": garis tipis saat tidak ada musik.
@@ -31,6 +34,10 @@ pub(crate) struct Settings {
     pub(crate) weather_city: usize,
     /// Jadwal sholat: hitung mundur 15 menit sebelum waktu + toast saat masuk waktu (kota = kota cuaca).
     pub(crate) prayer_on: bool,
+    /// Indeks di `scale::SIZES`: 0 = Auto (ikut scaling Windows), selebihnya ukuran tetap.
+    pub(crate) notch_size: usize,
+    /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
+    pub(crate) idle_display: usize,
     pub(crate) slides: SlideCfg,
 }
 
@@ -54,6 +61,8 @@ impl Default for Settings {
             monitor: 0,
             weather_city: 0,
             prayer_on: true,
+            notch_size: 0,
+            idle_display: 0,
             slides: slides::default_cfg(),
         }
     }
@@ -88,6 +97,16 @@ impl Settings {
                         s.weather_city = n.min(weather::CITIES.len() - 1);
                     }
                 }
+                "idle_display" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.idle_display = n.min(IDLE_DISPLAY_LABELS.len() - 1);
+                    }
+                }
+                "notch_size" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.notch_size = n.min(scale::SIZES.len() - 1);
+                    }
+                }
                 "lyric_lead_ms" => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.lyric_lead_ms = n.clamp(LEAD_MIN, LEAD_MAX);
@@ -105,7 +124,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -119,6 +138,8 @@ impl Settings {
             self.weather_city,
             self.prayer_on as u8,
             self.monitor,
+            self.notch_size,
+            self.idle_display,
             slides::format_slides(&self.slides),
         )
     }
@@ -171,6 +192,27 @@ mod tests {
         let mut s = Settings::default();
         s.prayer_on = false;
         assert!(!Settings::parse(&s.serialize()).prayer_on);
+    }
+
+    #[test]
+    fn notch_size_roundtrip_and_default() {
+        assert_eq!(Settings::parse("minimal=1
+").notch_size, 0, "berkas lama = Auto");
+        let mut s = Settings::default();
+        s.notch_size = 3;
+        assert_eq!(Settings::parse(&s.serialize()).notch_size, 3);
+        assert_eq!(Settings::parse("notch_size=99").notch_size, scale::SIZES.len() - 1);
+        assert_eq!(Settings::parse("notch_size=x").notch_size, 0);
+    }
+
+    #[test]
+    fn idle_display_roundtrip_and_default() {
+        assert_eq!(Settings::default().idle_display, 0);
+        let mut s = Settings::default();
+        s.idle_display = 2;
+        assert_eq!(Settings::parse(&s.serialize()).idle_display, 2);
+        assert_eq!(Settings::parse("idle_display=9").idle_display, IDLE_DISPLAY_LABELS.len() - 1);
+        assert_eq!(Settings::parse("idle_display=x").idle_display, 0);
     }
 
     #[test]

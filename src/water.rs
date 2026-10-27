@@ -8,12 +8,12 @@ pub(crate) const SNOOZE: Duration = Duration::from_secs(10 * 60);
 // ---------------------------------------------------------------- layout (koordinat kanvas, slide di LX..RX)
 const BLUE: [u8; 3] = [80, 170, 255];
 const GREEN: [u8; 3] = [60, 200, 110];
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 
 const TOGGLE: (f32, f32, f32, f32) = (LX + 152.0, 42.0, 46.0, 26.0);
 const DRINK: (f32, f32, f32, f32) = (LX, 116.0, 84.0, 32.0);
 const SIDE: (f32, f32, f32, f32) = (LX + 92.0, 116.0, 106.0, 32.0); // Settings, atau Snooze saat reminder aktif
-const BACK: (f32, f32, f32, f32) = (RX - 70.0, 8.0, 70.0, 26.0);
+const BACK: (f32, f32, f32, f32) = (LX, 8.0, 26.0, 26.0); // tombol kembali bulat di header Settings
 const DIV_X: f32 = LX + 210.0;
 const PLOT_L: f32 = LX + 224.0;
 const PLOT_R: f32 = RX - 36.0;
@@ -23,7 +23,73 @@ const N_BARS: usize = 8;
 
 const GOALS: [u32; 4] = [1500, 2000, 2500, 3000];
 const REMINDS: [u32; 4] = [0, 30, 60, 90];
-const GLASSES: [u32; 4] = [200, 250, 330, 500];
+const BOTTLE_DEFAULT: u32 = 750;
+
+// Tata letak Settings (koordinat kanvas, x relatif ke LX): empat baris di kiri, kartu statistik + Reset di kanan.
+const ROW_Y: [f32; 4] = [36.0, 66.0, 96.0, 126.0];
+const ROW_H: f32 = 24.0;
+const LBL_W: f32 = 40.0;
+const BTN: f32 = 22.0;
+const VAL_W: f32 = 48.0;
+const CHIP_X: f32 = 52.0;
+const CHIP_W: f32 = 52.0;
+const CHIP_P: f32 = 56.0;
+const CARD: (f32, f32, f32, f32) = (RX - 112.0, 36.0, 112.0, 82.0);
+const RESET: (f32, f32, f32, f32) = (RX - 112.0, 126.0, 112.0, 24.0);
+
+/// Elemen yang bisa diklik di Settings Water.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum SetHit {
+    BottleDn,
+    BottleUp,
+    GlassDn,
+    GlassUp,
+    Goal(usize),
+    Remind(usize),
+    StartDn,
+    StartUp,
+    EndDn,
+    EndUp,
+    Reset,
+}
+
+/// Naikkan/turunkan `v` sebanyak `d` langkah `step`, dibatasi `lo..=hi`.
+pub(crate) fn stepped(v: u32, d: i32, step: u32, lo: u32, hi: u32) -> u32 {
+    (v as i64 + d as i64 * step as i64).clamp(lo as i64, hi.max(lo) as i64) as u32
+}
+
+/// Kotak tombol "-" dan "+" serta titik tengah nilai untuk stepper yang labelnya mulai di `x`.
+fn stepper_rects(x: f32, y: f32) -> ((f32, f32, f32, f32), (f32, f32, f32, f32), f32) {
+    let dn = (x + LBL_W, y + 1.0, BTN, BTN);
+    let up = (x + LBL_W + BTN + VAL_W, y + 1.0, BTN, BTN);
+    (dn, up, x + LBL_W + BTN + VAL_W / 2.0)
+}
+
+const GLASS_X: f32 = LX + 140.0;
+const HOURS_END_X: f32 = LX + LBL_W + BTN + VAL_W + BTN + 22.0 - LBL_W;
+
+/// Semua elemen klik Settings beserta kotaknya; dipakai bersama oleh gambar dan klik supaya tidak bergeser.
+fn set_hits() -> Vec<(SetHit, (f32, f32, f32, f32))> {
+    let mut v = Vec::new();
+    let (d, u, _) = stepper_rects(LX, ROW_Y[0]);
+    v.push((SetHit::BottleDn, d));
+    v.push((SetHit::BottleUp, u));
+    let (d, u, _) = stepper_rects(GLASS_X, ROW_Y[0]);
+    v.push((SetHit::GlassDn, d));
+    v.push((SetHit::GlassUp, u));
+    for i in 0..4 {
+        v.push((SetHit::Goal(i), (LX + CHIP_X + i as f32 * CHIP_P, ROW_Y[1], CHIP_W, ROW_H)));
+        v.push((SetHit::Remind(i), (LX + CHIP_X + i as f32 * CHIP_P, ROW_Y[2], CHIP_W, ROW_H)));
+    }
+    let (d, u, _) = stepper_rects(LX, ROW_Y[3]);
+    v.push((SetHit::StartDn, d));
+    v.push((SetHit::StartUp, u));
+    let (d, u, _) = stepper_rects(HOURS_END_X, ROW_Y[3]);
+    v.push((SetHit::EndDn, d));
+    v.push((SetHit::EndUp, u));
+    v.push((SetHit::Reset, RESET));
+    v
+}
 
 // ---------------------------------------------------------------- data
 pub(crate) struct Water {
@@ -33,13 +99,20 @@ pub(crate) struct Water {
     pub(crate) remind_min: u32,
     pub(crate) glass: u32,
     pub(crate) hours: [u32; 24],
+    /// Kapasitas botol (ml); dipakai untuk menghitung berapa kali botol diisi ulang.
+    pub(crate) bottle: u32,
+    /// Jam aktif pengingat: dari `start_h` (termasuk) sampai `end_h` (tidak termasuk), 0..=24.
+    pub(crate) start_h: u32,
+    pub(crate) end_h: u32,
+    /// Jumlah pengingat yang sudah muncul hari ini.
+    pub(crate) reminders: u32,
     /// Interval terakhir yang aktif, dipakai saat toggle reminder dinyalakan lagi.
     pub(crate) last_remind: u32,
     pub(crate) next: Instant,
 }
 
 impl Water {
-    /// Format: `day|ml|goal|remind[|glass[|h0,h1,...,h23]]` (field setelah `remind` opsional).
+    /// Format: `day|ml|goal|remind[|glass[|h0,...,h23[|bottle|start_h|end_h|reminders]]]` (field setelah `remind` opsional).
     pub(crate) fn parse(s: &str, today: &str) -> Water {
         let mut w = Water {
             day: today.to_string(),
@@ -48,6 +121,10 @@ impl Water {
             remind_min: 60,
             glass: 250,
             hours: [0; 24],
+            bottle: BOTTLE_DEFAULT,
+            start_h: 8,
+            end_h: 22,
+            reminders: 0,
             last_remind: 60,
             next: Instant::now(),
         };
@@ -58,7 +135,16 @@ impl Water {
             if let Some(g) = p.get(4).and_then(|g| g.parse::<u32>().ok()).filter(|g| (50..=2000).contains(g)) {
                 w.glass = g;
             }
+            if let Some(b) = p.get(6).and_then(|b| b.parse::<u32>().ok()).filter(|b| (100..=3000).contains(b)) {
+                w.bottle = b;
+            }
+            if let (Some(s), Some(e)) = (p.get(7).and_then(|v| v.parse::<u32>().ok()), p.get(8).and_then(|v| v.parse::<u32>().ok())) {
+                if s < e && e <= 24 {
+                    (w.start_h, w.end_h) = (s, e);
+                }
+            }
             if p[0] == today {
+                w.reminders = p.get(9).and_then(|v| v.parse().ok()).unwrap_or(0);
                 w.ml = p[1].parse().unwrap_or(0);
                 if let Some(h) = p.get(5) {
                     for (i, v) in h.split(',').take(24).enumerate() {
@@ -75,7 +161,10 @@ impl Water {
 
     pub(crate) fn serialize(&self) -> String {
         let h: Vec<String> = self.hours.iter().map(|v| v.to_string()).collect();
-        format!("{}|{}|{}|{}|{}|{}\n", self.day, self.ml, self.goal, self.remind_min, self.glass, h.join(","))
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
+            self.day, self.ml, self.goal, self.remind_min, self.glass, h.join(","), self.bottle, self.start_h, self.end_h, self.reminders
+        )
     }
 
     pub(crate) fn load() -> Water {
@@ -103,6 +192,7 @@ impl Water {
             self.day = d;
             self.ml = 0;
             self.hours = [0; 24];
+            self.reminders = 0;
             self.save();
             return true;
         }
@@ -113,6 +203,22 @@ impl Water {
         self.ml = (self.ml as i32 + d).max(0) as u32;
         let h = hour.min(23);
         self.hours[h] = (self.hours[h] as i32 + d).max(0) as u32;
+        self.reset_timer();
+        self.save();
+    }
+    /// Jam `h` (0..=23) termasuk jam aktif pengingat.
+    pub(crate) fn in_window(&self, h: u32) -> bool {
+        h >= self.start_h && h < self.end_h
+    }
+    /// Berapa kali botol penuh sudah habis hari ini.
+    pub(crate) fn refills(&self) -> u32 {
+        if self.bottle == 0 { 0 } else { self.ml / self.bottle }
+    }
+    /// Hapus progres hari ini beserta hitungan pengingat dan refill.
+    pub(crate) fn reset_today(&mut self) {
+        self.ml = 0;
+        self.hours = [0; 24];
+        self.reminders = 0;
         self.reset_timer();
         self.save();
     }
@@ -150,13 +256,20 @@ pub(crate) fn check_reminder(a: &mut App) -> bool {
     }
     a.water.reset_timer();
     let st = now_tm();
-    if st.wHour < 8 || st.wHour >= 22 || a.water.ml >= a.water.goal {
+    if !a.water.in_window(st.wHour as u32) || a.water.ml >= a.water.goal || sys::user_fullscreen() {
         return false;
     }
-    a.show_id(SlideId::Water); // slide Water (index 1)
-    a.water_view(0);
-    a.reminding = true;
-    a.peek_until = Some(now + Duration::from_secs(10));
+    a.water.reminders += 1;
+    a.water.save();
+    if a.expanded() {
+        // Notch sedang terbuka: pengingat tampil di dalam slide Water (tombol Snooze menggantikan Settings).
+        a.show_id(SlideId::Water);
+        a.water_view(0);
+        a.reminding = true;
+        a.peek_until = Some(now + Duration::from_secs(10));
+    } else {
+        a.push_toast(toast::ToastKind::Water);
+    }
     true
 }
 
@@ -216,7 +329,7 @@ fn spring(x: &mut f32, v: &mut f32, target: f32, k: f32, c: f32, dt: f32) {
     }
 }
 
-fn fmt_l(ml: f32) -> String {
+pub(crate) fn fmt_l(ml: f32) -> String {
     let s = format!("{:.2}", ml / 1000.0);
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s.is_empty() { "0".to_string() } else { s.to_string() }
@@ -269,6 +382,12 @@ impl App {
             u.enter_t = Instant::now();
             u.shown = 0.0;
             u.knob = if on { 1.0 } else { 0.0 };
+            // `--demo-water-settings`: buka langsung tampilan Settings (uji visual)
+            if std::env::args().any(|a| a == "--demo-water-settings") {
+                u.view = 1;
+                u.view_dir = 1.0;
+                u.view_t0 = Instant::now() - Duration::from_secs(1);
+            }
         }
         spring(&mut u.shown, &mut u.vel, ml, 190.0, 24.0, dt);
         spring(&mut u.knob, &mut u.kvel, if on { 1.0 } else { 0.0 }, 380.0, 30.0, dt);
@@ -324,6 +443,35 @@ impl App {
         self.peek_until = None;
     }
 
+    /// Terapkan satu aksi Settings ke data Water lalu simpan.
+    fn water_set_apply(&mut self, h: SetHit) {
+        let w = &mut self.water;
+        match h {
+            SetHit::BottleDn => w.bottle = stepped(w.bottle, -1, 50, 250, 2000),
+            SetHit::BottleUp => w.bottle = stepped(w.bottle, 1, 50, 250, 2000),
+            SetHit::GlassDn => w.glass = stepped(w.glass, -1, 50, 50, 1000),
+            SetHit::GlassUp => w.glass = stepped(w.glass, 1, 50, 50, 1000),
+            SetHit::Goal(i) => w.goal = GOALS[i],
+            SetHit::Remind(i) => {
+                w.remind_min = REMINDS[i];
+                if REMINDS[i] > 0 {
+                    w.last_remind = REMINDS[i];
+                    w.reset_timer();
+                }
+            }
+            SetHit::StartDn => w.start_h = stepped(w.start_h, -1, 1, 0, w.end_h.saturating_sub(1)),
+            SetHit::StartUp => w.start_h = stepped(w.start_h, 1, 1, 0, w.end_h.saturating_sub(1)),
+            SetHit::EndDn => w.end_h = stepped(w.end_h, -1, 1, w.start_h + 1, 24),
+            SetHit::EndUp => w.end_h = stepped(w.end_h, 1, 1, w.start_h + 1, 24),
+            SetHit::Reset => {
+                w.reset_today();
+                self.wui.ripple = None;
+                return;
+            }
+        }
+        w.save();
+    }
+
     /// Klik pada slide Water (koordinat kanvas).
     pub(crate) fn water_click(&mut self, x: f32, y: f32) {
         let hit = |r: (f32, f32, f32, f32)| in_rect(x, y, r.0, r.1, r.2, r.3);
@@ -332,25 +480,8 @@ impl App {
                 self.water_view(0);
                 return;
             }
-            for (row, ry) in [(0usize, 38.0f32), (1, 70.0), (2, 102.0)] {
-                for i in 0..4 {
-                    let (cx, cw) = (LX + 84.0 + i as f32 * 62.0, 56.0);
-                    if in_rect(x, y, cx, ry, cw, 24.0) {
-                        match row {
-                            0 => self.water.goal = GOALS[i],
-                            1 => {
-                                self.water.remind_min = REMINDS[i];
-                                if REMINDS[i] > 0 {
-                                    self.water.last_remind = REMINDS[i];
-                                    self.water.reset_timer();
-                                }
-                            }
-                            _ => self.water.glass = GLASSES[i],
-                        }
-                        self.water.save();
-                        return;
-                    }
-                }
+            if let Some((h, _)) = set_hits().into_iter().find(|(_, r)| hit(*r)) {
+                self.water_set_apply(h);
             }
             return;
         }
@@ -391,22 +522,32 @@ impl App {
     fn water_header(&self, g: &mut Gfx, ox: f32, al: f32) {
         let wt = &self.water;
         let y = 10.0;
-        g.txtb("Water", LX + ox, y, 15.0, [255, 255, 255], al, 120.0);
-        let w1 = g.width_ex("Water ", 15.0, true);
-        g.txtb("Reminder", LX + ox + w1, y, 15.0, BLUE, al, 120.0);
-        if self.wui.view == 1 {
-            let k = ss(0.0, 0.24, self.wui.view_t0.elapsed().as_secs_f32());
-            g.pill(BACK.0 + ox, BACK.1, BACK.2, BACK.3, [255, 255, 255], 0.12 * al * k, 1.0);
-            g.txt_c("Back", BACK.0 + ox + BACK.2 / 2.0, BACK.1 + ty(BACK.3, 12.0), 12.0, [220, 225, 235], al * k, BACK.2, true);
-            return;
-        }
+        let settings = self.wui.view == 1;
+        let k = ss(0.0, 0.24, self.wui.view_t0.elapsed().as_secs_f32());
+        // Judul: "Water Reminder", atau "Settings" dengan tombol kembali bulat di kirinya.
+        let (lead, title_w) = if settings {
+            let (bx, by, bw, bh) = BACK;
+            let (cx, cy) = (bx + ox + bw / 2.0, by + bh / 2.0);
+            g.circle(cx, cy, bw / 2.0, &paint(255, 255, 255, 0.12 * al * k));
+            let ch = paint(235, 238, 245, al * k);
+            g.line(cx + 2.0, cy - 5.0, cx - 3.0, cy, 1.8, &ch);
+            g.line(cx - 3.0, cy, cx + 2.0, cy + 5.0, 1.8, &ch);
+            let x = LX + ox + 36.0;
+            g.txtb("Settings", x, y, 15.0, [255, 255, 255], al, 120.0);
+            (x, g.width_ex("Settings", 15.0, true))
+        } else {
+            g.txtb("Water", LX + ox, y, 15.0, [255, 255, 255], al, 120.0);
+            let w1 = g.width_ex("Water ", 15.0, true);
+            g.txtb("Reminder", LX + ox + w1, y, 15.0, BLUE, al, 120.0);
+            (LX + ox, w1 + g.width_ex("Reminder", 15.0, true))
+        };
         // Ring progres kecil + tanggal + jam, atau "Time to drink" saat reminder aktif.
-        let rx = LX + ox + w1 + g.width_ex("Reminder", 15.0, true) + 22.0;
+        let rx = lead + title_w + 22.0;
         let frac = if wt.goal > 0 { (self.wui.shown / wt.goal as f32).clamp(0.0, 1.0) } else { 0.0 };
         let rc = if wt.ml >= wt.goal { GREEN } else { BLUE };
         g.ring(rx, y + 9.5, 8.0, frac, 2.6, &paint(255, 255, 255, 0.14 * al), &paint(rc[0], rc[1], rc[2], al));
         let tx = rx + 16.0;
-        if self.reminding {
+        if self.reminding && !settings {
             g.txtb("Time to drink", tx, y + 1.0, 13.0, BLUE, al, 140.0);
         } else {
             let st = now_tm();
@@ -512,7 +653,7 @@ impl App {
                     x += 6.0;
                 }
             }
-            g.txt(&label, pr + 8.0, y - 6.0, 10.0, GREY, al, 40.0);
+            g.txt(&label, pr + 8.0, y - 6.0, 11.0, GREY, al, 40.0);
         }
         // Batang: latar redup penuh + isi bergradasi yang tumbuh dari dasar.
         for i in 0..N_BARS {
@@ -528,24 +669,69 @@ impl App {
                 }
             }
             if i % 3 == 0 {
-                g.txt_c(&format!("{:02}", start + i), x + bw / 2.0, PLOT_B + 6.0, 10.0, GREY, al, 24.0, false);
+                g.txt_c(&format!("{:02}", start + i), x + bw / 2.0, PLOT_B + 6.0, 11.0, GREY, al, 24.0, false);
             }
+        }
+    }
+
+    /// Tombol bulat "-" / "+" di stepper; redup bila nilai sudah di batas.
+    fn round_btn(g: &mut Gfx, r: (f32, f32, f32, f32), plus: bool, ox: f32, al: f32, enabled: bool) {
+        let (cx, cy) = (r.0 + ox + r.2 / 2.0, r.1 + r.3 / 2.0);
+        let a = if enabled { al } else { al * 0.35 };
+        g.circle(cx, cy, r.2 / 2.0, &paint(255, 255, 255, 0.12 * a));
+        let p = paint(235, 238, 245, a);
+        g.line(cx - 4.0, cy, cx + 4.0, cy, 1.8, &p);
+        if plus {
+            g.line(cx, cy - 4.0, cx, cy + 4.0, 1.8, &p);
         }
     }
 
     fn water_settings(&self, g: &mut Gfx, ox: f32, al: f32) {
         let wt = &self.water;
-        let rows: [(&str, f32, [String; 4], usize); 3] = [
-            ("Daily goal", 38.0, GOALS.map(|v| format!("{} L", fmt_l(v as f32))), GOALS.iter().position(|&v| v == wt.goal).unwrap_or(9)),
-            ("Reminder", 70.0, REMINDS.map(|v| if v == 0 { "Off".to_string() } else { format!("{} min", v) }), REMINDS.iter().position(|&v| v == wt.remind_min).unwrap_or(9)),
-            ("Glass", 102.0, GLASSES.map(|v| format!("{} ml", v)), GLASSES.iter().position(|&v| v == wt.glass).unwrap_or(9)),
-        ];
-        for (label, y, chips, sel) in rows {
-            g.txt(label, LX + ox, y + ty(24.0, 12.0), 12.0, GREY, al, 80.0);
-            for (i, c) in chips.iter().enumerate() {
-                g.chip(LX + 84.0 + i as f32 * 62.0 + ox, y, 56.0, 24.0, c, i == sel, al);
+        let lbl = |g: &mut Gfx, s: &str, x: f32, row: usize| g.txt(s, x + ox, ROW_Y[row] + ty(ROW_H, 12.0), 12.0, GREY, al, LBL_W + 4.0);
+        lbl(g, "Bottle", LX, 0);
+        lbl(g, "Glass", GLASS_X, 0);
+        lbl(g, "Goal", LX, 1);
+        lbl(g, "Remind", LX, 2);
+        lbl(g, "Hours", LX, 3);
+        g.txt("to", HOURS_END_X + LBL_W - 16.0 + ox, ROW_Y[3] + ty(ROW_H, 12.0), 12.0, GREY, al, 20.0);
+
+        let val = |g: &mut Gfx, s: &str, cx: f32, row: usize| g.txt_c(s, cx + ox, ROW_Y[row] + ty(ROW_H, 13.0), 13.0, [240, 242, 248], al, VAL_W, true);
+        val(g, &format!("{} ml", wt.bottle), stepper_rects(LX, 0.0).2, 0);
+        val(g, &format!("{} ml", wt.glass), stepper_rects(GLASS_X, 0.0).2, 0);
+        val(g, &format!("{:02}:00", wt.start_h), stepper_rects(LX, 0.0).2, 3);
+        val(g, &format!("{:02}:00", wt.end_h), stepper_rects(HOURS_END_X, 0.0).2, 3);
+
+        for (h, r) in set_hits() {
+            match h {
+                SetHit::BottleDn => Self::round_btn(g, r, false, ox, al, wt.bottle > 250),
+                SetHit::BottleUp => Self::round_btn(g, r, true, ox, al, wt.bottle < 2000),
+                SetHit::GlassDn => Self::round_btn(g, r, false, ox, al, wt.glass > 50),
+                SetHit::GlassUp => Self::round_btn(g, r, true, ox, al, wt.glass < 1000),
+                SetHit::StartDn => Self::round_btn(g, r, false, ox, al, wt.start_h > 0),
+                SetHit::StartUp => Self::round_btn(g, r, true, ox, al, wt.start_h + 1 < wt.end_h),
+                SetHit::EndDn => Self::round_btn(g, r, false, ox, al, wt.end_h > wt.start_h + 1),
+                SetHit::EndUp => Self::round_btn(g, r, true, ox, al, wt.end_h < 24),
+                SetHit::Goal(i) => g.chip(r.0 + ox, r.1, r.2, r.3, &format!("{} L", fmt_l(GOALS[i] as f32)), GOALS[i] == wt.goal, al),
+                SetHit::Remind(i) => {
+                    let label = if REMINDS[i] == 0 { "Off".to_string() } else { format!("{} min", REMINDS[i]) };
+                    g.chip(r.0 + ox, r.1, r.2, r.3, &label, REMINDS[i] == wt.remind_min, al);
+                }
+                SetHit::Reset => {
+                    g.pill(r.0 + ox, r.1, r.2, r.3, [255, 255, 255], 0.10 * al, 1.0);
+                    g.txt_c("Reset today", r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 12.0), 12.0, [225, 228, 236], al, r.2, true);
+                }
             }
         }
+
+        // Kartu statistik hari ini: pengingat yang sudah muncul dan botol yang sudah habis.
+        g.fill(&rrect(CARD.0 + ox, CARD.1, CARD.2, CARD.3, 14.0), &paint(255, 255, 255, 0.07 * al));
+        let stat = |g: &mut Gfx, n: u32, cap: &str, y: f32, rgb: [u8; 3]| {
+            g.txt_c(&n.to_string(), CARD.0 + ox + CARD.2 / 2.0, y, 19.0, rgb, al, CARD.2, true);
+            g.txt_c(cap, CARD.0 + ox + CARD.2 / 2.0, y + 23.0, 11.0, GREY, al, CARD.2, false);
+        };
+        stat(g, wt.reminders, "reminders", CARD.1 + 6.0, BLUE);
+        stat(g, wt.refills(), "refills", CARD.1 + 43.0, BLUE);
     }
 }
 
@@ -604,5 +790,64 @@ mod tests {
         assert_eq!(w.remind_min, 0);
         w.toggle_remind();
         assert_eq!(w.remind_min, 90);
+    }
+
+    #[test]
+    fn new_fields_default_for_old_files_and_roundtrip() {
+        let w = Water::parse("2026-10-24|750|2500|90|330|0,0,0,0,0,0,0,0,0,750", "2026-10-24");
+        assert_eq!((w.bottle, w.start_h, w.end_h, w.reminders), (BOTTLE_DEFAULT, 8, 22, 0));
+        let mut w = w;
+        (w.bottle, w.start_h, w.end_h, w.reminders) = (850, 6, 15, 4);
+        let r = Water::parse(&w.serialize(), "2026-10-24");
+        assert_eq!((r.bottle, r.start_h, r.end_h, r.reminders, r.ml), (850, 6, 15, 4, 750));
+        // hari lain: pengaturan tetap, hitungan hari ini nol
+        let r = Water::parse(&w.serialize(), "2026-10-25");
+        assert_eq!((r.bottle, r.start_h, r.end_h, r.reminders, r.ml), (850, 6, 15, 0, 0));
+    }
+
+    #[test]
+    fn rejects_bad_window_and_bottle() {
+        let w = Water::parse("2026-10-24|0|2000|60|250|0|50|20|10|3", "2026-10-24");
+        assert_eq!((w.bottle, w.start_h, w.end_h), (BOTTLE_DEFAULT, 8, 22));
+    }
+
+    #[test]
+    fn window_and_refills() {
+        let mut w = Water::parse("2026-10-24|0|2000|60", "2026-10-24");
+        (w.start_h, w.end_h, w.bottle, w.ml) = (6, 15, 800, 2100);
+        assert!(!w.in_window(5) && w.in_window(6) && w.in_window(14) && !w.in_window(15));
+        assert_eq!(w.refills(), 2);
+    }
+
+    #[test]
+    fn reset_today_clears_progress_and_counters() {
+        let mut w = Water::parse("2026-10-24|900|2000|60", "2026-10-24");
+        w.reminders = 5;
+        w.hours[9] = 900;
+        w.reset_today();
+        assert_eq!((w.ml, w.reminders, w.hours[9], w.refills()), (0, 0, 0, 0));
+        assert_eq!(w.goal, 2000);
+    }
+
+    #[test]
+    fn stepper_clamps() {
+        assert_eq!(stepped(250, -1, 50, 250, 2000), 250);
+        assert_eq!(stepped(2000, 1, 50, 250, 2000), 2000);
+        assert_eq!(stepped(850, 1, 50, 250, 2000), 900);
+        assert_eq!(stepped(5, 1, 1, 0, 0), 0);
+    }
+
+    #[test]
+    fn settings_hits_do_not_overlap_and_fit_the_slide() {
+        let hits = set_hits();
+        for (i, (_, a)) in hits.iter().enumerate() {
+            assert!(a.0 >= LX - 0.1 && a.0 + a.2 <= RX + 0.1 && a.1 >= 30.0 && a.1 + a.3 <= 156.0, "{a:?} di luar slide");
+            for (_, b) in &hits[i + 1..] {
+                let apart = a.0 + a.2 <= b.0 || b.0 + b.2 <= a.0 || a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1;
+                assert!(apart, "{a:?} menimpa {b:?}");
+            }
+        }
+        // kolom kiri tidak menyentuh kartu statistik
+        assert!(hits.iter().filter(|(h, _)| *h != SetHit::Reset).all(|(_, r)| r.0 + r.2 <= CARD.0 - 4.0));
     }
 }

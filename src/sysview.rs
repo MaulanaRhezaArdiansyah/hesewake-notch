@@ -8,7 +8,7 @@ use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTAT
 use windows::Win32::System::Threading::GetSystemTimes;
 
 const HIST: usize = 36;
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 const BLUE: [u8; 3] = [90, 170, 255];
 const GREEN: [u8; 3] = [60, 200, 110];
 const SAMPLE_SECS: f32 = 1.0;
@@ -229,7 +229,7 @@ impl App {
         // CPU
         let (x, y, a) = card(0);
         g.fill(&rrect(x, y, CARD_W, CARD_H, 12.0), &paint(255, 255, 255, 0.07 * a));
-        g.txt("CPU", x + 12.0, y + 7.0, 10.0, GREY, a, 60.0);
+        g.txt("CPU", x + 12.0, y + 7.0, 11.0, GREY, a, 60.0);
         let cpu_txt = if u.cpu_known { format!("{:.0}%", u.shown[0].clamp(0.0, 100.0)) } else { "...".to_string() };
         g.txtb(&cpu_txt, x + 12.0, y + 20.0, 22.0, [255, 255, 255], a, 70.0);
         self.spark(g, &u.hist_cpu, 100.0, frac, x + 84.0, y + 10.0, 82.0, 34.0, BLUE, a);
@@ -237,9 +237,9 @@ impl App {
         // Memori
         let (x, y, a) = card(1);
         g.fill(&rrect(x, y, CARD_W, CARD_H, 12.0), &paint(255, 255, 255, 0.07 * a));
-        g.txt("MEMORY", x + 12.0, y + 7.0, 10.0, GREY, a, 70.0);
+        g.txt("MEMORY", x + 12.0, y + 7.0, 11.0, GREY, a, 70.0);
         g.txtb(&format!("{:.1} GB", u.ram.0), x + 12.0, y + 20.0, 20.0, [255, 255, 255], a, 90.0);
-        g.txt(&format!("of {:.1} GB", u.ram.1), x + 12.0, y + 40.0, 10.0, GREY, a, 90.0);
+        g.txt(&format!("of {:.1} GB", u.ram.1), x + 12.0, y + 40.0, 11.0, GREY, a, 90.0);
         let rc = if u.shown[1] > 85.0 { ACCENT } else { BLUE };
         g.ring(x + CARD_W - 28.0, y + CARD_H / 2.0, 14.0, (u.shown[1] / 100.0).clamp(0.0, 1.0), 3.5, &paint(255, 255, 255, 0.14 * a), &paint(rc[0], rc[1], rc[2], a));
         g.txt_c(&format!("{:.0}", u.shown[1].clamp(0.0, 100.0)), x + CARD_W - 28.0, y + CARD_H / 2.0 - 6.0, 10.5, [235, 235, 240], a, 30.0, true);
@@ -247,7 +247,7 @@ impl App {
         // Jaringan
         let (x, y, a) = card(2);
         g.fill(&rrect(x, y, CARD_W, CARD_H, 12.0), &paint(255, 255, 255, 0.07 * a));
-        g.txt("NETWORK", x + 12.0, y + 7.0, 10.0, GREY, a, 70.0);
+        g.txt("NETWORK", x + 12.0, y + 7.0, 11.0, GREY, a, 70.0);
         let arrow = |g: &mut Gfx, ax: f32, ay: f32, down: bool, c: [u8; 3]| {
             let p = paint(c[0], c[1], c[2], a);
             let d = if down { 1.0 } else { -1.0 };
@@ -265,7 +265,7 @@ impl App {
         // Baterai
         let (x, y, a) = card(3);
         g.fill(&rrect(x, y, CARD_W, CARD_H, 12.0), &paint(255, 255, 255, 0.07 * a));
-        g.txt("BATTERY", x + 12.0, y + 7.0, 10.0, GREY, a, 70.0);
+        g.txt("BATTERY", x + 12.0, y + 7.0, 11.0, GREY, a, 70.0);
         match u.bat {
             Some(b) => {
                 g.txtb(&format!("{:.0}%", u.shown[2].clamp(0.0, 100.0)), x + 12.0, y + 20.0, 22.0, [255, 255, 255], a, 70.0);
@@ -276,7 +276,7 @@ impl App {
                 } else {
                     b.secs.map_or("On battery".to_string(), |s| format!("{} left", fmt_remaining(s)))
                 };
-                g.txt(&sub, x + 82.0, y + 29.0, 10.0, GREY, a, 90.0);
+                g.txt(&sub, x + 82.0, y + 29.0, 11.0, GREY, a, 90.0);
                 let col = if b.pct <= 20 && !b.ac { ACCENT } else { GREEN };
                 g.ring(x + CARD_W - 24.0, y + CARD_H / 2.0, 11.0, (u.shown[2] / 100.0).clamp(0.0, 1.0), 3.0, &paint(255, 255, 255, 0.14 * a), &paint(col[0], col[1], col[2], a));
                 if b.ac {
@@ -285,7 +285,7 @@ impl App {
             }
             None => {
                 g.txtb("No battery", x + 12.0, y + 22.0, 14.0, [200, 200, 208], a, 120.0);
-                g.txt("Desktop PC", x + 12.0, y + 40.0, 10.0, GREY, a, 90.0);
+                g.txt("Desktop PC", x + 12.0, y + 40.0, 11.0, GREY, a, 90.0);
             }
         }
     }

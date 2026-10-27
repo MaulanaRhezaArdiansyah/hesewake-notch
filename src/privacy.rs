@@ -16,6 +16,11 @@ use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFIN
 /// Pesan ke window: daftar aplikasi pemakai mic/kamera berubah.
 pub(crate) const WM_PRIVACY: u32 = WM_APP + 5;
 
+/// Jarak titik pertama dari tepi kanan notch, jarak antar titik, dan ruang kosong di sebelah kirinya.
+const PRIV_EDGE: f32 = 12.0;
+const PRIV_STEP: f32 = 10.0;
+const PRIV_PAD: f32 = 2.0;
+
 const ROOT: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
 /// [0] = mikrofon, [1] = kamera.
 static STATE: Mutex<[Vec<String>; 2]> = Mutex::new([Vec::new(), Vec::new()]);
@@ -165,19 +170,38 @@ impl App {
         self.cfg.privacy_dot && self.priv_t.elapsed().as_secs_f32() < 0.5
     }
 
-    /// Titik di pojok kanan atas notch kecil: oranye = mikrofon, hijau = kamera.
-    pub(crate) fn draw_privacy_dots(&self, g: &mut Gfx, w: f32, ca: f32) {
-        if !self.cfg.privacy_dot || ca <= 0.05 {
+    /// Jumlah titik yang sedang menyala (kamera dan/atau mikrofon), 0 bila fitur dimatikan.
+    pub(crate) fn priv_dots(&self) -> usize {
+        if !self.cfg.privacy_dot {
+            return 0;
+        }
+        (!self.priv_cam.is_empty()) as usize + (!self.priv_mic.is_empty()) as usize
+    }
+
+    /// Lebar (px) slot titik di tepi kanan notch kecil. Notch dilebarkan sebesar ini, dan lonceng/equalizer/teks
+    /// bergeser ke kiri, supaya titik tidak menimpa elemen lain. 0 bila titik tidak digambar (expanded/toast/tipis).
+    pub(crate) fn priv_extra(&self) -> f32 {
+        let n = self.priv_dots();
+        if n == 0 || self.expanded() || self.toast.is_some() || self.thin() {
+            0.0
+        } else {
+            PRIV_PAD + n as f32 * PRIV_STEP
+        }
+    }
+
+    /// Titik di tepi kanan notch kecil, sejajar tengah: hijau = kamera, oranye = mikrofon.
+    pub(crate) fn draw_privacy_dots(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {
+        if self.priv_extra() <= 0.0 || ca <= 0.05 {
             return;
         }
         let e = self.priv_t.elapsed().as_secs_f32();
         let pop = (1.0 - (-9.0 * e).exp() * (16.0 * e).cos()).clamp(0.0, 1.2);
         let x0 = CX - w / 2.0;
-        let mut x = x0 + w - 9.0;
+        let mut x = x0 + w - PRIV_EDGE;
         for (on, rgb) in [(!self.priv_cam.is_empty(), (48u8, 209u8, 88u8)), (!self.priv_mic.is_empty(), (255u8, 159u8, 10u8))] {
             if on {
-                g.circle(x, 7.0, 3.3 * pop.min(1.15), &paint(rgb.0, rgb.1, rgb.2, ca));
-                x -= 9.0;
+                g.circle(x, h / 2.0, 3.6 * pop.min(1.15), &paint(rgb.0, rgb.1, rgb.2, ca));
+                x -= PRIV_STEP;
             }
         }
     }

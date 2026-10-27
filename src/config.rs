@@ -26,3 +26,8 @@ pub(crate) const SLIDE_ACCENT: [u8; 3] = [90, 150, 255];
 // lalu riak merambat dari tengah ke kiri-kanan sambil meredam.
 pub(crate) const DROP_ANIM_SECS: f32 = 1.6;
 pub(crate) const DROP_AMP: f32 = 22.0;
+
+/// Teks sekunder (isi pesan, label, satuan) di atas latar gelap. Cukup terang agar goresan tipis tetap terbaca.
+pub(crate) const TEXT_DIM: [u8; 3] = [200, 203, 214];
+/// Teks tersier (placeholder, keterangan paling redup); tetap di atas kontras 7:1 pada latar gelap.
+pub(crate) const TEXT_FAINT: [u8; 3] = [168, 172, 184];

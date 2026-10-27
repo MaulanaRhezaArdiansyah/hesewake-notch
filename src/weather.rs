@@ -340,8 +340,7 @@ impl App {
         let t = secs();
         let (v, n) = self.slots();
         let (_, stage, prog) = stage_of(t, n);
-        // Tengah slot antara tepi kiri notch dan jam; notch melebar saat hitung mundur tampil.
-        let (cx, cy) = (CX - w / 2.0 + 32.0 + (w - IDLE.0).max(0.0) / 4.0, h / 2.0);
+        let (cx, cy) = (self.idle_weather_cx(w), h / 2.0);
         let draw_stage = |g: &mut Gfx, st: Slot, a: f32, dy: f32| {
             if a <= 0.01 {
                 return;
