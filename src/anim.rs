@@ -12,11 +12,12 @@ pub(crate) fn target(a: &App) -> (f32, f32) {
         THIN
     } else if a.media.playing && a.lyric_w > 0.0 {
         // Lebar menyesuaikan baris lirik (ruang teks = lebar - 88 px untuk ikon dan equalizer, + lonceng).
-        ((a.lyric_w + 88.0 + 16.0 + a.bell_extra()).clamp(PLAYING.0 + a.bell_extra(), EXP_W), PLAYING.1)
+        let extra = a.bell_extra() + a.priv_extra();
+        ((a.lyric_w + 88.0 + 16.0 + extra).clamp(PLAYING.0 + extra, EXP_W), PLAYING.1)
     } else if a.media.playing {
-        (PLAYING.0 + a.bell_extra(), PLAYING.1)
+        (PLAYING.0 + a.bell_extra() + a.priv_extra(), PLAYING.1)
     } else {
-        IDLE
+        (IDLE.0 + a.priv_extra() + a.timer_extra(), IDLE.1)
     }
 }
 
@@ -38,7 +39,7 @@ pub(crate) unsafe fn schedule(a: &mut App) {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.weather_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.weather_animating() || a.timer_animating() {
         16
     } else if a.expanded() && a.is_slide(SlideId::Music) && a.tint.animating() {
         16 // artwork colour cross-fade on the Music slide
@@ -102,6 +103,9 @@ unsafe fn poll(a: &mut App) {
         redraw = true;
     }
     if a.sys_sample() {
+        redraw = true;
+    }
+    if a.timer_poll() {
         redraw = true;
     }
     // pergantian tahap suhu <-> ikon memicu transisi
@@ -178,8 +182,10 @@ unsafe fn poll(a: &mut App) {
         if a.idle_mark.is_none() && a.splash.is_none() {
             a.idle_mark = Some(now);
         }
-    } else if let Some(m) = a.idle_mark.take() {
-        a.idle_base += (now - m).as_secs_f32();
+    } else if a.idle_mark.take().is_some() {
+        // Ada aktivitas (notch dibuka, toast, musik, app layar penuh): saat idle lagi, siklus mulai dari jam
+        // (bukan melanjutkan fase mata yang tertunda).
+        a.idle_base = 0.0;
     }
     let secs = a.idle_secs();
     if secs >= IDLE_CYCLE_SECS {
@@ -209,9 +215,10 @@ unsafe fn poll(a: &mut App) {
             } else {
                 (a.w.max(IDLE.0) + 12.0, a.h.max(IDLE.1) + 6.0)
             };
-            let x = (p.x - a.wx) as f32;
-            let y = (p.y - a.wy) as f32;
-            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh;
+            let x = (p.x - a.wx) as f32 / a.scale;
+            let y = (p.y - a.wy) as f32 / a.scale;
+            // Toast Water punya tombol: hover di atasnya tidak boleh membuka notch (itu membatalkan toast-nya).
+            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh && !a.water_toast();
             if inside != a.hover {
                 // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.
                 let to_notif = inside

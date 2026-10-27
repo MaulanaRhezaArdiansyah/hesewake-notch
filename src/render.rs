@@ -6,7 +6,7 @@ use super::*;
 fn apply_mask(g: &mut Gfx, shape: &Path, bx: Box4) {
     let Some(mut mask) = g.mask.take() else { return; };
     mask.data_mut().fill(0);
-    mask.fill_path(shape, FillRule::Winding, true, Transform::identity());
+    mask.fill_path(shape, FillRule::Winding, true, g.ts);
     let pm_w = g.pm.width() as usize;
     let pm_h = g.pm.height() as usize;
     let x0 = bx.0.min(pm_w);
@@ -95,13 +95,7 @@ pub(crate) fn draw(a: &mut App) {
     // Kalau panic sebelumnya terjadi saat gfx sedang dipinjam, buat ulang supaya tidak panic berulang.
     let mut g = match a.gfx.take() {
         Some(g) => g,
-        None => Gfx {
-            pm: Pixmap::new(W as u32, H as u32).unwrap(),
-            text: Text::load(),
-            mask: Mask::new(W as u32, H as u32),
-            prev_box: (0, 0, W as usize, H as usize),
-            dirty: (0, 0, W as usize, H as usize),
-        },
+        None => Gfx::new(a.scale),
     };
     let (w, h) = (a.w, a.h);
     // Toast lebih tinggi dari notch kecil, tapi bukan expand: jangan turunkan progres dari tinggi.
@@ -113,8 +107,9 @@ pub(crate) fn draw(a: &mut App) {
     let dip = if wave_t.is_some() { DROP_AMP } else { 0.0 };
 
     // Only the area the notch can touch this frame (whole canvas while expanded).
+    // Dihitung dalam piksel logis, lalu dikonversi ke piksel fisik kanvas.
     let (cw, ch) = (W as usize, H as usize);
-    let cur: Box4 = if p > 0.04 {
+    let cur_log: Box4 = if p > 0.04 {
         (0, 0, cw, ch)
     } else {
         let x1 = ((CX + w / 2.0 + 16.0).ceil().max(0.0) as usize).min(cw);
@@ -123,6 +118,7 @@ pub(crate) fn draw(a: &mut App) {
         let y1 = ((h + 5.0 + dip * 1.6).ceil().max(0.0) as usize).min(ch);
         (x0, 0, x1, y1)
     };
+    let cur = scale::to_phys(cur_log, g.s);
     let dirty = union_box(g.prev_box, cur);
     g.clear_box(dirty);
     g.prev_box = cur;
@@ -138,7 +134,7 @@ pub(crate) fn draw(a: &mut App) {
     if ca > 0.03 {
         a.draw_collapsed(&mut g, w, h, ca);
         if a.toast.is_none() {
-            a.draw_privacy_dots(&mut g, w, ca);
+            a.draw_privacy_dots(&mut g, w, h, ca);
         }
     }
     if p > 0.04 {
@@ -169,6 +165,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Notifications => a.slide_notifs(&mut g, ox, al),
                 SlideId::Settings => a.slide_settings(&mut g, ox, al),
                 SlideId::System => a.slide_system(&mut g, ox, al),
+                SlideId::Timer => a.slide_timer(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
             }
         }
@@ -206,12 +203,16 @@ pub(crate) unsafe fn present(a: &mut App) {
     let draw_dur = t_draw.elapsed();
     let t_blit = Instant::now();
     let Some(g) = a.gfx.as_ref() else { return; };
-    let dst = std::slice::from_raw_parts_mut(a.bits as *mut u8, (W * H * 4) as usize);
+    // Bitmap window selalu seukuran kanvas (keduanya dibuat ulang bersama di `rescale`).
+    let (pw, ph) = (g.pm.width() as usize, g.pm.height() as usize);
+    if scale::canvas(a.scale) != (pw as i32, ph as i32) {
+        return; // jangan pernah menulis melewati bitmap window
+    }
+    let dst = std::slice::from_raw_parts_mut(a.bits as *mut u8, pw * ph * 4);
     // RGBA (premultiplied) -> BGRA, only for the rows/columns that changed.
     let (bx0, by0, bx1, by1) = g.dirty;
-    let pw = W as usize;
     let pix = g.pm.data();
-    for y in by0..by1.min(H as usize) {
+    for y in by0..by1.min(ph) {
         let (lo, hi) = ((y * pw + bx0) * 4, (y * pw + bx1.min(pw)) * 4);
         if hi <= lo {
             continue;
@@ -223,7 +224,7 @@ pub(crate) unsafe fn present(a: &mut App) {
             d[3] = s[3];
         }
     }
-    let size = SIZE { cx: W, cy: H };
+    let size = SIZE { cx: pw as i32, cy: ph as i32 };
     let src = POINT { x: 0, y: 0 };
     let blend = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
@@ -254,9 +255,9 @@ impl App {
             self.collapsed_cover(g, x0 + 14.0, (h - 20.0) / 2.0, 20.0, 5.0, ca);
             for i in 0..4 {
                 let bh = 4.0 + 12.0 * (0.5 + 0.5 * (self.t * 6.0 + i as f32 * 1.7).sin());
-                g.rect(x0 + w - 34.0 + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &sacc(ca));
+                g.rect(x0 + w - 34.0 - self.priv_extra() + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &sacc(ca));
             }
-            let (rl, rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra());
+            let (rl, rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra());
             let rw = rr - rl;
             let lyric = self.lyric_text();
             let title = lyric.unwrap_or(self.media.title.as_str());
@@ -306,6 +307,7 @@ impl App {
                 }
                 IdlePhase::Eye => self.draw_eye(g, w, h, ca),
             }
+            self.draw_timer_chip(g, w, h, ca);
             self.draw_bell(g, ca);
         }
     }

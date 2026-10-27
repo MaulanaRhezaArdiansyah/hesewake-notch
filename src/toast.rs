@@ -8,6 +8,8 @@ pub(crate) const TOAST_BT: (f32, f32) = (372.0, 70.0);
 /// HUD kecil (tombol kunci, volume, kecerahan): lebih pendek dari toast biasa.
 pub(crate) const TOAST_HUD: (f32, f32) = (244.0, 46.0);
 pub(crate) const TOAST_PRIV: (f32, f32) = (292.0, 46.0);
+/// Pengingat minum dengan tombol Snooze / Drank.
+pub(crate) const TOAST_WATER: (f32, f32) = (396.0, 66.0);
 
 /// Jenis HUD kecil.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,6 +61,10 @@ pub(crate) enum ToastKind {
     Hud { kind: HudKind, on: bool },
     /// Aplikasi mulai memakai mikrofon (`cam: false`) atau kamera (`cam: true`).
     Privacy { cam: bool, app: String },
+    /// Pengingat minum; teksnya dibaca dari `App.water`, tombol Snooze/Drank bisa diklik (lihat `toast_click`).
+    Water,
+    /// Hitung mundur habis; `label` mis. "5 min timer".
+    Timer { label: String },
 }
 
 pub(crate) struct Toast {
@@ -69,7 +75,7 @@ pub(crate) struct Toast {
 
 const GREEN: [u8; 3] = [60, 200, 110];
 const BLUE: [u8; 3] = [90, 190, 255];
-const GREY: [u8; 3] = [150, 150, 158];
+const GREY: [u8; 3] = TEXT_DIM;
 
 fn ss(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
@@ -118,6 +124,8 @@ impl App {
             ToastKind::Notification { .. } => 4.5,
             ToastKind::Hud { .. } => 1.9,
             ToastKind::Privacy { .. } => 2.6,
+            ToastKind::Water => 12.0,
+            ToastKind::Timer { .. } => 6.0,
             _ => 3.4,
         };
         perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
@@ -158,6 +166,7 @@ impl App {
             Some(ToastKind::Bluetooth { .. }) | Some(ToastKind::Notification { .. }) => TOAST_BT,
             Some(ToastKind::Hud { .. }) => TOAST_HUD,
             Some(ToastKind::Privacy { .. }) => TOAST_PRIV,
+            Some(ToastKind::Water) => TOAST_WATER,
             _ => TOAST_CHARGE,
         }
     }
@@ -199,12 +208,17 @@ impl App {
             Self::draw_privacy_toast(g, w, h, al, t, *cam, app);
             return;
         }
+        if let ToastKind::Water = &ts.kind {
+            self.draw_water_toast(g, w, h, al, t);
+            return;
+        }
 
         // (warna aksen, judul, subjudul, fraksi ring, teks kanan)
         let (rgb, title, sub, frac, right) = match &ts.kind {
             ToastKind::Charging { pct } => (GREEN, "Charging".to_string(), "Charger connected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::Unplugged { pct } => ([235, 235, 240], "On battery".to_string(), "Charger disconnected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::LowBattery { pct } => (ACCENT, "Battery low".to_string(), "Plug in your charger".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
+            ToastKind::Timer { label } => ([255, 170, 60], "Time's up".to_string(), label.clone(), 1.0, None),
             ToastKind::Bluetooth { name, pct, connected } => {
                 let s = match (connected, pct) {
                     (true, Some(p)) => format!("Connected \u{b7} {}%", p),
@@ -213,7 +227,7 @@ impl App {
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } => unreachable!(),
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => unreachable!(),
         };
 
         // Ring + ikon: membesar dengan pegas, ring menyapu dari 0.
@@ -236,7 +250,8 @@ impl App {
             ToastKind::Unplugged { pct } => g.icon_battery(rcx, cy, 16.0 * sc, *pct as f32 / 100.0, &ic),
             ToastKind::LowBattery { .. } => g.icon_battery(rcx, cy, 16.0 * sc, 0.12, &ic),
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } => {}
+            ToastKind::Timer { .. } => g.icon_bell(rcx, cy, 17.0 * sc, (t * 22.0).sin() * (1.0 - t / 1.5).max(0.0), &ic),
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => {}
         }
 
         // Teks: geser 6 px + fade dengan jeda singkat.
@@ -338,6 +353,88 @@ impl App {
         let state = if on { "On" } else { "Off" };
         let sw = g.width_ex(state, 14.0, true);
         g.txtb(state, x0 + w - 20.0 - sw, cy - 9.0, 14.0, col, al * k, 50.0);
+    }
+}
+
+/// Kotak tombol Snooze dan Drank pada toast Water berukuran (w, h), dalam koordinat kanvas.
+fn water_btns(w: f32, h: f32) -> ((f32, f32, f32, f32), (f32, f32, f32, f32)) {
+    let (x0, cy) = (CX - w / 2.0, h / 2.0);
+    let drank = (x0 + w - 16.0 - 70.0, cy - 14.0, 70.0, 28.0);
+    let snooze = (drank.0 - 8.0 - 76.0, cy - 14.0, 76.0, 28.0);
+    (snooze, drank)
+}
+
+impl App {
+    /// Toast Water sedang tampil (hover di atasnya tidak boleh membuka notch dan membatalkannya).
+    pub(crate) fn water_toast(&self) -> bool {
+        matches!(self.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Water))
+    }
+
+    fn end_toast(&mut self) {
+        self.toast = None;
+        self.toast_end = Instant::now();
+    }
+
+    /// Klik pada toast Water: Snooze menunda, Drank mencatat satu Glass, bagian lain membuka slide Water.
+    /// True bila klik dipakai oleh toast.
+    pub(crate) fn toast_click(&mut self, x: f32, y: f32) -> bool {
+        let Some(ts) = &self.toast else { return false };
+        if !matches!(ts.kind, ToastKind::Water) || ts.t0.elapsed().as_secs_f32() < 0.35 {
+            return false;
+        }
+        let (w, h) = TOAST_WATER;
+        if !in_rect(x, y, CX - w / 2.0, 0.0, w, h) {
+            return false;
+        }
+        let (sn, dr) = water_btns(w, h);
+        if in_rect(x, y, sn.0, sn.1, sn.2, sn.3) {
+            self.water_snooze();
+            self.end_toast();
+        } else if in_rect(x, y, dr.0, dr.1, dr.2, dr.3) {
+            let glass = self.water.glass as i32;
+            self.water_add(glass);
+            self.end_toast();
+        } else {
+            self.end_toast();
+            self.show_id(SlideId::Water);
+            self.water_view(0);
+            self.peek_until = Some(Instant::now() + Duration::from_secs(8));
+        }
+        true
+    }
+
+    /// Posisi pointer dalam koordinat kanvas (untuk highlight tombol saat hover).
+    fn cursor_canvas(&self) -> Option<(f32, f32)> {
+        let mut p = POINT::default();
+        unsafe { GetCursorPos(&mut p).ok()? };
+        Some(((p.x - self.wx) as f32 / self.scale, (p.y - self.wy) as f32 / self.scale))
+    }
+
+    /// "Time to Drink": ikon tetes, progres hari ini, dan tombol Snooze / Drank.
+    fn draw_water_toast(&self, g: &mut Gfx, w: f32, h: f32, al: f32, t: f32) {
+        let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
+        let (icx, r) = (x0 + 34.0, 18.0 * sc);
+        g.circle(icx, cy, r, &paint(30, 90, 170, 0.5 * al));
+        let edge = paint(BLUE[0], BLUE[1], BLUE[2], 0.55 * al);
+        g.ring(icx, cy, r, 0.0, 1.5, &edge, &edge);
+        g.icon_drop(icx, cy, 17.0 * sc, &paint(135, 210, 255, al));
+
+        let k = ss(0.12, 0.4, t);
+        let tx = x0 + 66.0 + (1.0 - k) * 6.0;
+        g.txtb("Time to Drink", tx, cy - 19.0, 14.0, [255, 255, 255], al * k, 150.0);
+        let wt = &self.water;
+        let sub = format!("Stay hydrated! \u{b7} {} / {} L", water::fmt_l(wt.ml as f32), water::fmt_l(wt.goal as f32));
+        g.txt(&sub, tx, cy + 2.0, 12.0, GREY, al * k, 150.0);
+
+        let (sn, dr) = water_btns(w, h);
+        let cur = self.cursor_canvas();
+        let over = |b: (f32, f32, f32, f32)| cur.map_or(false, |(x, y)| in_rect(x, y, b.0, b.1, b.2, b.3));
+        let ba = al * k;
+        g.pill(sn.0, sn.1, sn.2, sn.3, [255, 255, 255], if over(sn) { 0.24 } else { 0.13 } * ba, 1.0);
+        g.txt_c("Snooze", sn.0 + sn.2 / 2.0, sn.1 + ty(sn.3, 13.0), 13.0, [228, 232, 240], ba, sn.2, true);
+        g.pill(dr.0, dr.1, dr.2, dr.3, [40, 120, 235], if over(dr) { 1.0 } else { 0.85 } * ba, 1.0);
+        g.txt_c("Drank", dr.0 + dr.2 / 2.0, dr.1 + ty(dr.3, 13.0), 13.0, [255, 255, 255], ba, dr.2, true);
     }
 }
 

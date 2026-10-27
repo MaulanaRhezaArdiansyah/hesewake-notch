@@ -21,6 +21,9 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_APP => {
+            if demo_playing() {
+                return LRESULT(0);
+            }
             with_app(|a| {
                 let was = a.media.playing;
                 let prev_pos = a.media.pos_ms;
@@ -77,8 +80,10 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_LBUTTONDOWN => {
-            let x = (lp.0 & 0xffff) as i16 as f32;
-            let y = ((lp.0 >> 16) & 0xffff) as i16 as f32;
+            // Koordinat client fisik -> logis.
+            let k = scale::current();
+            let x = (lp.0 & 0xffff) as i16 as f32 / k;
+            let y = ((lp.0 >> 16) & 0xffff) as i16 as f32 / k;
             let _ = SetCapture(hwnd);
 
             // Press inside the note card while editing: caret placement / drag-selection,
@@ -114,8 +119,10 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             LRESULT(0)
         }
         WM_MOUSEMOVE => {
-            let x = (lp.0 & 0xffff) as i16 as f32;
-            let y = ((lp.0 >> 16) & 0xffff) as i16 as f32;
+            // Koordinat client fisik -> logis.
+            let k = scale::current();
+            let x = (lp.0 & 0xffff) as i16 as f32 / k;
+            let y = ((lp.0 >> 16) & 0xffff) as i16 as f32 / k;
             let mut start: Option<(usize, String)> = None;
             with_app(|a| {
                 // Drag-selecting text in the note: extend the selection (scrolls with the caret).
@@ -201,7 +208,7 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 if vertical && a.is_slide(SlideId::Music) && !a.lyric_mode {
                     let mut p = POINT::default();
                     if GetCursorPos(&mut p).is_ok() {
-                        let (x, y) = ((p.x - a.wx) as f32, (p.y - a.wy) as f32);
+                        let (x, y) = ((p.x - a.wx) as f32 / a.scale, (p.y - a.wy) as f32 / a.scale);
                         if in_rect(x, y, MX - 10.0, 100.0, MW + 20.0, 56.0) {
                             if let Some((vol, muted)) = audio::adjust(audio::wheel_step(d)) {
                                 // Notch sedang terbuka: indikator di dalam slide (toast dibatalkan saat hover).
@@ -478,6 +485,16 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     present(a);
                     schedule(a);
                 }
+            });
+            LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            // Scaling monitor diubah (atau window pindah monitor): skala dihitung ulang, ukuran saran Windows diabaikan.
+            with_app(|a| {
+                a.place(true);
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
             });
             LRESULT(0)
         }

@@ -46,6 +46,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, ReleaseCapture, SetCapture, SetFocus, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
 };
+use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
 use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, ShellExecuteW, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -79,6 +80,7 @@ mod pace;
 mod perf;
 mod privacy;
 mod render;
+mod scale;
 mod settings;
 mod settingsview;
 mod shelf;
@@ -87,6 +89,7 @@ mod sys;
 mod sysview;
 mod weather;
 mod todo;
+mod timer;
 mod toast;
 mod water;
 mod window;
@@ -94,10 +97,10 @@ mod window;
 use anim::{schedule, target, tick};
 use busy::{is_busy};
 use clock::{CLOCK_FADE_IN, DAYS_S, MONTHS, now_tm, today};
-use config::{ACCENT, SLIDE_ACCENT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
+use config::{ACCENT, SLIDE_ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
 use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
-use gfx::{Box4, Gfx, Text, acc, sacc, dummy_path, ellipsize, in_rect, notch_path, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
+use gfx::{Box4, Gfx, acc, sacc, dummy_path, ellipsize, in_rect, notch_path, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
 use icon::{load_icon};
 use input::{click, context_menu};
 use music::{ArtData, Cmd, MARQUEE_GAP, MARQUEE_PAUSE, MARQUEE_SPEED, MCX, MCY, MW, MX, Media, media_thread};
@@ -121,7 +124,12 @@ struct App {
     /// Monitor yang sedang dipakai notch (koordinat layar).
     mon: RECT,
     mem_dc: isize,
+    /// Bitmap window (DIB) yang sedang dipilih ke `mem_dc`; dibuat ulang saat skala berubah.
+    bmp: isize,
     bits: usize,
+    /// Skala DPI aktif (lihat scale.rs) dan nilai paksa dari `--scale=`.
+    scale: f32,
+    scale_forced: Option<f32>,
     gfx: Option<Gfx>,
     w: f32,
     h: f32,
@@ -210,6 +218,8 @@ struct App {
     nv: NoteView,
     water: Water,
     wui: WaterUi,
+    /// Stopwatch / hitung mundur (slide Timer).
+    tm: timer::TimerState,
     tx: Sender<Cmd>,
     /// Pengaturan (settings.txt) dan urutan slide yang sedang tampil.
     cfg: Settings,
@@ -251,7 +261,8 @@ impl App {
     fn expanded(&self) -> bool {
         self.hover
             || self.editing
-            || self.drag.is_some()
+            // menekan tombol di toast Water (Snooze/Drank) bukan gestur geser: toast tidak boleh dibatalkan sebelum klik selesai
+            || (self.drag.is_some() && !self.water_toast())
             || self.peek_until.map_or(false, |t| Instant::now() < t)
     }
 
@@ -272,6 +283,28 @@ impl App {
 /// `--demo-toast=charging|unplugged|low|bt|bt-off`: tampilkan satu toast setelah start (uji visual tanpa colok kabel).
 const DEMO_NOTIF_ID: u32 = 999_999;
 
+/// `--demo-playing`: lagu palsu sedang diputar (uji tata letak notch kecil tanpa pemutar media sungguhan).
+pub(crate) fn demo_playing() -> bool {
+    std::env::args().any(|a| a == "--demo-playing")
+}
+
+/// `--demo-priv=cam,mic`: nyalakan titik kamera dan/atau mikrofon sejak start.
+fn demo_priv(dev: &str) -> Vec<String> {
+    let on = std::env::args().find_map(|a| a.strip_prefix("--demo-priv=").map(|v| v.split(',').any(|d| d == dev)));
+    if on == Some(true) { vec!["Demo".to_string()] } else { Vec::new() }
+}
+
+/// `--demo-timer=count|stop`: mulai hitung mundur / stopwatch sejak start (uji tampilan chip di notch idle).
+fn demo_timer(mut t: timer::TimerState) -> timer::TimerState {
+    match std::env::args().find_map(|a| a.strip_prefix("--demo-timer=").map(str::to_string)).as_deref() {
+        Some("stop") => t.set_mode(timer::TMode::Stopwatch),
+        Some("count") => t.set_mode(timer::TMode::Countdown),
+        _ => return t,
+    }
+    t.start(Instant::now());
+    t
+}
+
 fn demo_toast() -> Option<ToastKind> {
     let arg = std::env::args().find_map(|a| a.strip_prefix("--demo-toast=").map(str::to_string))?;
     Some(match arg.as_str() {
@@ -286,6 +319,8 @@ fn demo_toast() -> Option<ToastKind> {
         "volume" => ToastKind::Hud { kind: HudKind::Volume(46, false), on: true },
         "brightness" => ToastKind::Hud { kind: HudKind::Brightness(72), on: true },
         "mute" => ToastKind::Hud { kind: HudKind::Volume(0, true), on: true },
+        "water" => ToastKind::Water,
+        "timer" => ToastKind::Timer { label: "5 min timer".into() },
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
@@ -315,7 +350,10 @@ fn main() -> Result<()> {
     migrate_old_data();
     sys::migrate_autostart();
     unsafe {
-        let _ = SetProcessDPIAware();
+        // Per-monitor: Windows tidak meregangkan window kita; skala digambar sendiri (scale.rs).
+        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).is_err() {
+            let _ = SetProcessDPIAware();
+        }
         let hinst = GetModuleHandleW(None)?;
         let class = w!("HesewakeNotchWindow");
         let wc = WNDCLASSW {
@@ -329,7 +367,11 @@ fn main() -> Result<()> {
 
         let cfg0 = Settings::load();
         let mon = monitors::resolve(cfg0.monitor);
-        let (wx, wy) = monitors::origin(&mon);
+        let scale_forced = scale::forced_from_args(std::env::args());
+        let s0 = scale::effective(cfg0.notch_size, monitors::dpi_of(&mon), scale_forced);
+        scale::set_current(s0);
+        let (cw0, ch0) = scale::canvas(s0);
+        let (wx, wy) = monitors::origin(&mon, cw0);
         let hwnd = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_ACCEPTFILES,
             class,
@@ -337,8 +379,8 @@ fn main() -> Result<()> {
             WS_POPUP,
             wx,
             wy,
-            W,
-            H,
+            cw0,
+            ch0,
             None,
             None,
             hinst,
@@ -350,26 +392,15 @@ fn main() -> Result<()> {
         } else {
             HOT_KEY_MODIFIERS(MOD_ALT.0 | MOD_CONTROL.0 | MOD_NOREPEAT.0)
         };
-        let _ = RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32);
+        if RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32).is_err() {
+            perf::note("hotkey: Ctrl+Alt+H sudah dipakai aplikasi lain (mis. instance lain), tombol pintas jam/mata nonaktif");
+        }
         sys::register_display_notifications(hwnd);
         sys::tray_add(hwnd);
 
         let screen = GetDC(None);
         let mem = CreateCompatibleDC(screen);
-        let bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: W,
-                biHeight: -H,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut bits: *mut c_void = std::ptr::null_mut();
-        let bmp = CreateDIBSection(mem, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)?;
+        let (bmp, bits) = scale::make_surface(mem, s0).ok_or_else(windows::core::Error::from_win32)?;
         SelectObject(mem, bmp);
         ReleaseDC(None, screen);
 
@@ -406,7 +437,8 @@ fn main() -> Result<()> {
             let (_, lat, lon) = weather::CITIES[cfg.weather_city];
             weather::start(hwnd.0 as isize, cfg.weather_on, lat, lon);
         }
-        if notif_on {
+        let demo_notifs = std::env::args().any(|a| a == "--demo-notifs");
+        if notif_on && !demo_notifs {
             notif::start(hwnd.0 as isize, notif_slot.clone());
         }
 
@@ -417,17 +449,11 @@ fn main() -> Result<()> {
             wy,
             mon,
             mem_dc: mem.0 as isize,
+            bmp: bmp.0 as isize,
             bits: bits as usize,
-            gfx: Some(Gfx {
-                pm: Pixmap::new(W as u32, H as u32).unwrap(),
-                text: Text::load().map(|mut t| {
-                    t.warm();
-                    t
-                }),
-                mask: Mask::new(W as u32, H as u32),
-                prev_box: (0, 0, W as usize, H as usize),
-                dirty: (0, 0, W as usize, H as usize),
-            }),
+            scale: s0,
+            scale_forced,
+            gfx: Some(scale::new_gfx(s0)),
             w: IDLE.0,
             h: IDLE.1,
             vw: 0.0,
@@ -450,8 +476,8 @@ fn main() -> Result<()> {
             minimal: cfg.minimal,
             toast: None,
             bt_shared: bt_shared.clone(),
-            notifs: Vec::new(),
-            notif_access: notif::Access::Unknown,
+            notifs: if demo_notifs { notif::demo_items() } else { Vec::new() },
+            notif_access: if demo_notifs { notif::Access::Allowed } else { notif::Access::Unknown },
             notif_slot: notif_slot.clone(),
             notif_on,
             notif_started: notif_on,
@@ -491,7 +517,11 @@ fn main() -> Result<()> {
             lyric_sv: 0.0,
             lyric_t: Instant::now(),
             pos_at: Instant::now(),
-            media: Media::default(),
+            media: if demo_playing() {
+                Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 }
+            } else {
+                Media::default()
+            },
             art: None,
             prev_art: None,
             art_t0: Instant::now() - Duration::from_secs(10),
@@ -516,9 +546,10 @@ fn main() -> Result<()> {
             nv: NoteView::default(),
             water: Water::load(),
             wui: WaterUi::new(),
+            tm: demo_timer(timer::TimerState::load()),
             tx,
-            priv_mic: Vec::new(),
-            priv_cam: Vec::new(),
+            priv_mic: demo_priv("mic"),
+            priv_cam: demo_priv("cam"),
             priv_t: Instant::now() - Duration::from_secs(10),
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,

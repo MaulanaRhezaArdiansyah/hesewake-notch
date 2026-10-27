@@ -166,7 +166,7 @@ impl App {
                 CX + ox,
                 SH_Y + SH_H / 2.0 - 9.0,
                 13.0,
-                [132, 146, 176],
+                [160, 172, 200],
                 al,
                 300.0,
                 false,
@@ -188,7 +188,7 @@ impl App {
                     iy,
                     ic.as_ref(),
                     &PixmapPaint { opacity: al, ..Default::default() },
-                    Transform::identity(),
+                    g.ts,
                     None,
                 );
             }

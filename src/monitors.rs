@@ -2,6 +2,7 @@
 
 use super::*;
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
 /// Nilai `monitor` di pengaturan: 0 = layar utama, 1 = ikuti kursor, `n >= 2` = monitor ke-(n-1) (urut kiri ke kanan).
 pub(crate) const PRIMARY: usize = 0;
@@ -65,9 +66,21 @@ pub(crate) fn mode_label(mode: usize) -> String {
     }
 }
 
-/// Posisi window (x, y) agar notch berada di tengah atas `r`.
-pub(crate) fn origin(r: &RECT) -> (i32, i32) {
-    (r.left + (r.right - r.left - W) / 2, r.top)
+/// Posisi window (x, y) selebar `cw` piksel fisik agar notch berada di tengah atas `r`.
+pub(crate) fn origin(r: &RECT, cw: i32) -> (i32, i32) {
+    (r.left + (r.right - r.left - cw) / 2, r.top)
+}
+
+/// DPI efektif monitor `r` (96 = 100%), 0 bila tidak terbaca.
+pub(crate) fn dpi_of(r: &RECT) -> u32 {
+    unsafe {
+        let c = POINT { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+        let (mut x, mut y) = (0u32, 0u32);
+        match GetDpiForMonitor(MonitorFromPoint(c, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, &mut x, &mut y) {
+            Ok(()) => x,
+            Err(_) => 0,
+        }
+    }
 }
 
 pub(crate) fn same(a: &RECT, b: &RECT) -> bool {
@@ -89,11 +102,14 @@ impl App {
             return false;
         }
         self.mon = r;
-        let (x, y) = origin(&r);
+        // Monitor lain bisa punya scaling lain: sesuaikan kanvas dulu, baru pusatkan window.
+        self.rescale();
+        let (cw, ch) = scale::canvas(self.scale);
+        let (x, y) = origin(&r, cw);
         self.wx = x;
         self.wy = y;
         unsafe {
-            let _ = SetWindowPos(HWND(self.hwnd as *mut c_void), None, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
+            let _ = SetWindowPos(HWND(self.hwnd as *mut c_void), None, x, y, cw, ch, SWP_NOACTIVATE | SWP_NOZORDER);
         }
         true
     }
@@ -114,9 +130,12 @@ mod tests {
     #[test]
     fn origin_centers_notch_on_monitor() {
         let r = RECT { left: 1920, top: 0, right: 1920 + 1600, bottom: 900 };
-        assert_eq!(origin(&r), (1920 + (1600 - W) / 2, 0));
+        assert_eq!(origin(&r, W), (1920 + (1600 - W) / 2, 0));
         let neg = RECT { left: -1280, top: -200, right: 0, bottom: 824 };
-        assert_eq!(origin(&neg), (-1280 + (1280 - W) / 2, -200));
+        assert_eq!(origin(&neg, W), (-1280 + (1280 - W) / 2, -200));
+        // kanvas 125% (675 px) tetap di tengah
+        let big = RECT { left: 0, top: 0, right: 2560, bottom: 1600 };
+        assert_eq!(origin(&big, 675), ((2560 - 675) / 2, 0));
     }
 
     #[test]

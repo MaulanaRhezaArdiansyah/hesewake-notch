@@ -103,7 +103,7 @@ impl App {
             g.circle(cx, cy, 8.0, &paint(255, 255, 255, 0.32 * al));
             g.circle(cx, cy, 6.7, &paint(22, 22, 24, al));
         }
-        let col = if dn { [150, 150, 150] } else { [242, 242, 242] };
+        let col = if dn { [172, 174, 180] } else { [242, 242, 242] };
         let tx = x + 33.0;
         let maxw = w - 33.0 - 10.0 - if self.edit_mode { 24.0 } else { 0.0 };
         g.txt(s, tx, y + ty(ROW_H, 13.0), 13.0, col, al, maxw);
@@ -167,7 +167,7 @@ impl App {
             g.fill(&rrect(LX - 1.0 + ox, 39.0, CW + 2.0, 32.0, 11.0), &sacc(0.55 * al));
             g.fill(&rrect(LX + ox, 40.0, CW, 30.0, 10.0), &paint(26, 26, 29, al));
             let shown: &str = if self.input.is_empty() { "Type a task, Enter to save, Esc to cancel" } else { &self.input };
-            let col = if self.input.is_empty() { [120, 120, 125] } else { [255, 255, 255] };
+            let col = if self.input.is_empty() { TEXT_FAINT } else { [255, 255, 255] };
             g.txt(shown, LX + 12.0 + ox, 40.0 + ty(30.0, 13.0), 13.0, col, al, CW - 30.0);
             if self.caret_on {
                 let cw = if self.input.is_empty() { 0.0 } else { g.width(&self.input, 13.0).min(CW - 30.0) };
@@ -175,11 +175,11 @@ impl App {
             }
         } else {
             g.txtb(&format!("{}/{}", done, total), x, 36.0, 42.0, [255, 255, 255], al, 190.0);
-            g.txt("Tasks done today", x, 92.0, 12.0, [150, 150, 155], al, 190.0);
+            g.txt("Tasks done today", x, 92.0, 12.0, TEXT_DIM, al, 190.0);
             self.pill(g, x, 116.0, "Add Task", false, false, al);
             self.pill(g, x + 98.0, 116.0, if self.edit_mode { "Done" } else { "Edit Task" }, true, self.edit_mode, al);
             if self.todos.is_empty() {
-                g.txt("No tasks yet", rx + ox + 8.0, 56.0, 13.0, [140, 140, 145], al, 180.0);
+                g.txt("No tasks yet", rx + ox + 8.0, 56.0, 13.0, TEXT_FAINT, al, 180.0);
             }
         }
         let order = self.todo_order();
