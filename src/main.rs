@@ -392,7 +392,9 @@ fn main() -> Result<()> {
         } else {
             HOT_KEY_MODIFIERS(MOD_ALT.0 | MOD_CONTROL.0 | MOD_NOREPEAT.0)
         };
-        let _ = RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32);
+        if RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32).is_err() {
+            perf::note("hotkey: Ctrl+Alt+H sudah dipakai aplikasi lain (mis. instance lain), tombol pintas jam/mata nonaktif");
+        }
         sys::register_display_notifications(hwnd);
         sys::tray_add(hwnd);
 

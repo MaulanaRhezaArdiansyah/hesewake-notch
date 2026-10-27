@@ -182,8 +182,10 @@ unsafe fn poll(a: &mut App) {
         if a.idle_mark.is_none() && a.splash.is_none() {
             a.idle_mark = Some(now);
         }
-    } else if let Some(m) = a.idle_mark.take() {
-        a.idle_base += (now - m).as_secs_f32();
+    } else if a.idle_mark.take().is_some() {
+        // Ada aktivitas (notch dibuka, toast, musik, app layar penuh): saat idle lagi, siklus mulai dari jam
+        // (bukan melanjutkan fase mata yang tertunda).
+        a.idle_base = 0.0;
     }
     let secs = a.idle_secs();
     if secs >= IDLE_CYCLE_SECS {

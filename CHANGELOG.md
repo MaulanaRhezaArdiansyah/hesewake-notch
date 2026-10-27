@@ -2,6 +2,12 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 0.4.1
+
+### Fixed
+- **Notch idle tidak lagi "tertahan" di fase mata setelah ada aktivitas.** Hitungan siklus jam/mata dulu hanya dibekukan saat notch dipakai lalu dilanjutkan, jadi setelah notch dibuka, ada toast, atau musik berhenti, mata yang tertunda bisa muncul lagi (bisa sampai 15 menit). Kini setiap aktivitas mengembalikan siklus ke awal fase jam.
+- Bila tombol pintas Ctrl+Alt+H gagal didaftarkan (sudah dipakai instance lain), kegagalannya dicatat di perf.log, tidak diam saja.
+
 ## [0.4.0] - 2026-10-26
 
 ### Added
