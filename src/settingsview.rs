@@ -17,7 +17,7 @@ const TAB_GAP: f32 = 6.0;
 
 const GRID_Y0: f32 = 42.0;
 /// Two columns of cells fill LX..RX exactly (2 x 198 + 8 = 404), like the other slides.
-const CELL_W: f32 = 198.0;
+pub(crate) const CELL_W: f32 = 198.0;
 const CELL_H: f32 = 34.0;
 const GRID_GAP_X: f32 = 8.0;
 const GRID_GAP_Y: f32 = 4.0;
@@ -38,12 +38,14 @@ pub(crate) struct SettingsUi {
     autostart: bool,
     /// Tombol Delete kamus romaji ditekan sekali: tekan lagi dalam `CONFIRM_SECS` untuk benar-benar menghapus.
     dict_confirm: Option<Instant>,
+    /// Settings > Slides: rows scrolled out of view at the top.
+    pub(crate) slides_scroll: usize,
 }
 
 impl SettingsUi {
     pub(crate) fn new() -> SettingsUi {
         let old = Instant::now() - Duration::from_secs(10);
-        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false, dict_confirm: None }
+        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false, dict_confirm: None, slides_scroll: 0 }
     }
 
     fn dict_confirming(&self) -> bool {
@@ -59,7 +61,7 @@ fn ss(e0: f32, e1: f32, x: f32) -> f32 {
 }
 
 /// Tab Slides: 3 kolom x 3 baris (sel sempit agar 7+ slide muat).
-const SC_W: f32 = 117.0;
+pub(crate) const SC_W: f32 = 117.0;
 const SC_GAP: f32 = 6.5;
 
 /// The Settings tabs: (x, width) of each, sized to their names (which depend on the language) and right-aligned.
@@ -78,9 +80,49 @@ pub(crate) fn tab_rects(g: &mut Gfx) -> Vec<(f32, f32)> {
 /// Room for a slide's name in its Settings > Slides cell, left of the up/down chevrons.
 pub(crate) const SLIDE_NAME_W: f32 = 48.0;
 
-fn slide_cell_pos(i: usize) -> (f32, f32) {
-    let (col, row) = (i / 3, i % 3);
-    (LX + col as f32 * (SC_W + SC_GAP), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
+/// Settings > Slides lists the slides in carousel order, 3 per row; 3 rows show at a time and the rest scroll.
+const SC_COLS: usize = 3;
+const SC_ROWS: usize = 3;
+
+fn slide_rows(n: usize) -> usize {
+    n.div_ceil(SC_COLS)
+}
+
+/// Where slide cell `i` is with `scroll` rows scrolled away (may be outside the grid).
+fn slide_cell_pos(i: usize, scroll: usize) -> (f32, f32) {
+    let (col, row) = (i % SC_COLS, i / SC_COLS);
+    (LX + col as f32 * (SC_W + SC_GAP), GRID_Y0 + (row as f32 - scroll as f32) * (CELL_H + GRID_GAP_Y))
+}
+
+/// Slide cell `i`'s position if its row is in view.
+pub(crate) fn slide_cells_visible(i: usize, scroll: usize) -> Option<(f32, f32)> {
+    let row = i / SC_COLS;
+    (row >= scroll && row < scroll + SC_ROWS).then(|| slide_cell_pos(i, scroll))
+}
+
+impl App {
+    /// Wheel over Settings > Slides. True if it scrolled.
+    pub(crate) fn settings_slides_wheel(&mut self, down: bool) -> bool {
+        let max = slide_rows(self.cfg.slides.len()).saturating_sub(SC_ROWS);
+        let old = self.sui.slides_scroll;
+        self.sui.slides_scroll = if down { (old + 1).min(max) } else { old.saturating_sub(1) };
+        self.sui.slides_scroll != old
+    }
+
+    /// Scroll so slide cell `i` is in view (after it moved with the arrows).
+    fn slides_keep_visible(&mut self, i: usize) {
+        let row = i / SC_COLS;
+        if row < self.sui.slides_scroll {
+            self.sui.slides_scroll = row;
+        } else if row >= self.sui.slides_scroll + SC_ROWS {
+            self.sui.slides_scroll = row + 1 - SC_ROWS;
+        }
+    }
+
+    /// Settings > Slides has more rows than fit (the wheel scrolls it).
+    pub(crate) fn slides_scrollable(&self) -> bool {
+        slide_rows(self.cfg.slides.len()) > SC_ROWS
+    }
 }
 
 pub(crate) fn cell_pos(i: usize) -> (f32, f32) {
@@ -219,6 +261,7 @@ impl App {
                 Row { label: tr("Autostart"), sub: tr("Start with Windows"), kind: RowKind::Toggle(self.sui.autostart) },
                 Row { label: tr("Slide hotkeys"), sub: tr("Ctrl+Alt + slide no."), kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
                 Row { label: tr("Language"), sub: tr("Menus and slides"), kind: RowKind::Stepper(i18n::LANGS[self.cfg.lang.min(i18n::LANGS.len() - 1)].to_string()) },
+                Row { label: tr("Calendar"), sub: self.cal_sub(), kind: RowKind::Button(self.cal_button_text().into()) },
             ],
             3 => vec![
                 Row { label: tr("Volume HUD"), sub: tr("Keys and mixer"), kind: RowKind::Toggle(self.cfg.hud_volume) },
@@ -336,6 +379,9 @@ impl App {
             || self.sui.enter_t.elapsed().as_secs_f32() < 0.5
             // label "Sure?" kembali ke "Delete" tepat waktu
             || self.sui.dict_confirm.map_or(false, |t| t.elapsed().as_secs_f32() < CONFIRM_SECS + 0.1)
+            // the Calendar row's "Sure?" / "No ICS link copied" go back on time
+            || self.cal_confirm.is_some_and(|t| t.elapsed().as_secs_f32() < CONFIRM_SECS + 0.1)
+            || self.cal_paste_err.is_some_and(|t| t.elapsed().as_secs_f32() < CONFIRM_SECS + 0.1)
     }
 
     // ------------------------------------------------------------ klik
@@ -356,7 +402,7 @@ impl App {
 
     fn settings_click_slides(&mut self, x: f32, y: f32) {
         for i in 0..self.cfg.slides.len() {
-            let (cx, cy) = slide_cell_pos(i);
+            let Some((cx, cy)) = slide_cells_visible(i, self.sui.slides_scroll) else { continue };
             if !in_rect(x, y, cx, cy, SC_W, CELL_H) {
                 continue;
             }
@@ -372,10 +418,12 @@ impl App {
             } else if x >= dnx && i + 1 < self.cfg.slides.len() {
                 self.cfg.slides.swap(i, i + 1);
                 self.sui.swap = Some((i, i + 1, Instant::now()));
+                self.slides_keep_visible(i + 1);
                 self.slides_changed();
             } else if x >= upx && i > 0 {
                 self.cfg.slides.swap(i, i - 1);
                 self.sui.swap = Some((i - 1, i, Instant::now()));
+                self.slides_keep_visible(i - 1);
                 self.slides_changed();
             }
             return;
@@ -461,6 +509,12 @@ impl App {
                     if right {
                         self.cfg.lang = i18n::step(self.cfg.lang, plus);
                         i18n::set(self.cfg.lang);
+                    }
+                }
+                (2, 5) => {
+                    if right {
+                        let clip = calendar::clipboard_text(self.hwnd);
+                        self.cal_button(clip);
                     }
                 }
                 (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
@@ -550,17 +604,22 @@ impl App {
         let n = self.cfg.slides.len();
         for i in 0..n {
             let (id, on) = self.cfg.slides[i];
-            let (mut x, mut y) = slide_cell_pos(i);
+            let sc = self.sui.slides_scroll;
+            let (mut x, mut y) = slide_cell_pos(i, sc);
             // animasi tukar tempat: sel yang baru pindah meluncur dari posisi lamanya
             if let Some((a, b, t)) = self.sui.swap {
                 let e = ss(0.0, 0.26, t.elapsed().as_secs_f32());
-                let from = if i == a { Some(slide_cell_pos(b)) } else if i == b { Some(slide_cell_pos(a)) } else { None };
+                let from = if i == a { Some(slide_cell_pos(b, sc)) } else if i == b { Some(slide_cell_pos(a, sc)) } else { None };
                 if let Some((fx, fy)) = from {
                     x = fx + (x - fx) * e;
                     y = fy + (y - fy) * e;
                 }
             }
-            let enter = ss(0.0, 0.3, el - i as f32 * 0.04);
+            // only rows in view (a cell sliding in from a hidden row appears once it is inside)
+            if y < GRID_Y0 - 0.5 || y > GRID_Y0 + (SC_ROWS - 1) as f32 * (CELL_H + GRID_GAP_Y) + 0.5 {
+                continue;
+            }
+            let enter = ss(0.0, 0.3, el - i.saturating_sub(sc * SC_COLS) as f32 * 0.04);
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
@@ -571,7 +630,7 @@ impl App {
                     g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, SLIDE_NAME_W);
                     let (kx, ky, kw, kh) = (x + 9.0, y + 19.0, 13.0, 11.0);
                     g.fill(&rrect(kx, ky, kw, kh, 3.0), &paint(255, 255, 255, 0.14 * a));
-                    g.txt_c(&k.to_string(), kx + kw / 2.0, ky + ty(kh, 9.0), 9.0, GREY, a, kw, true);
+                    g.txt_c(&(k % 10).to_string(), kx + kw / 2.0, ky + ty(kh, 9.0), 9.0, GREY, a, kw, true);
                 }
                 None => g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, SLIDE_NAME_W),
             }
@@ -584,6 +643,14 @@ impl App {
             g.line(dx - 3.5, cy - 1.8, dx, cy + 1.8, 1.5, &dn);
             g.line(dx, cy + 1.8, dx + 3.5, cy - 1.8, 1.5, &dn);
             g.toggle(x + SC_W - 33.0, y + (CELL_H - 18.0) / 2.0, 28.0, 18.0, self.sui.knob[i], 0.0, a);
+        }
+        if self.slides_scrollable() {
+            let rows = slide_rows(n);
+            let th = SC_ROWS as f32 * (CELL_H + GRID_GAP_Y) - GRID_GAP_Y;
+            let thumb = (th * SC_ROWS as f32 / rows as f32).max(14.0);
+            let ty0 = GRID_Y0 + (th - thumb) * self.sui.slides_scroll as f32 / (rows - SC_ROWS) as f32;
+            g.fill(&rrect(RX - 4.0 + ox, GRID_Y0, 3.0, th, 1.5), &paint(255, 255, 255, 0.10 * al));
+            g.fill(&rrect(RX - 4.0 + ox, ty0, 3.0, thumb, 1.5), &paint(255, 255, 255, 0.55 * al));
         }
     }
 

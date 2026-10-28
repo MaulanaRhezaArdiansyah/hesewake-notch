@@ -172,6 +172,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Timer => a.slide_timer(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
                 SlideId::Clipboard => a.slide_clipboard(&mut g, ox, al),
+                SlideId::Agenda => a.slide_agenda(&mut g, ox, al),
             }
         }
         if !a.lyric_screen() {
@@ -261,9 +262,9 @@ impl App {
             }
             let (rl, mut rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra());
             // Prayer countdown: right-aligned before the bell/equalizer; the title/lyrics make room.
-            if let Some(lbl) = self.prayer_label() {
+            if let Some((lbl, col)) = self.countdown_text(g) {
                 let tw = g.width(&lbl, 12.0);
-                g.txt(&lbl, rr - tw, ty(h, 12.0), 12.0, prayer::GOLD, ca, tw + 2.0);
+                g.txt(&lbl, rr - tw, ty(h, 12.0), 12.0, col, ca, tw + 2.0);
                 rr -= prayer::PLAY_EXTRA;
             }
             let rw = rr - rl;

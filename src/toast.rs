@@ -10,6 +10,7 @@ pub(crate) const TOAST_HUD: (f32, f32) = (244.0, 46.0);
 pub(crate) const TOAST_PRIV: (f32, f32) = (292.0, 46.0);
 /// Pengingat minum dengan tombol Snooze / Drank.
 pub(crate) const TOAST_WATER: (f32, f32) = (396.0, 66.0);
+pub(crate) const TOAST_MEETING: (f32, f32) = (396.0, 66.0);
 
 /// Jenis HUD kecil.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,6 +68,8 @@ pub(crate) enum ToastKind {
     Water,
     /// A countdown ended; `title` e.g. "Time's up" / "Break over", `label` e.g. "5 min timer".
     Timer { title: String, label: String },
+    /// A meeting starts now: title, start (unix seconds) and its Join link.
+    Meeting { title: String, at: i64, link: Option<String> },
 }
 
 pub(crate) struct Toast {
@@ -79,13 +82,13 @@ const GREEN: [u8; 3] = [60, 200, 110];
 const BLUE: [u8; 3] = [90, 190, 255];
 const GREY: [u8; 3] = TEXT_DIM;
 
-fn ss(e0: f32, e1: f32, x: f32) -> f32 {
+pub(crate) fn ss(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
 /// Pegas teredam 0 -> 1 dengan sedikit overshoot (dipakai untuk ikon yang "muncul").
-fn pop(t: f32) -> f32 {
+pub(crate) fn pop(t: f32) -> f32 {
     1.0 - (-8.0 * t).exp() * (14.0 * t).cos()
 }
 
@@ -129,6 +132,7 @@ impl App {
             ToastKind::Prayer { .. } => 6.0,
             ToastKind::Water => 12.0,
             ToastKind::Timer { .. } => 6.0,
+            ToastKind::Meeting { .. } => 15.0,
             _ => 3.4,
         };
         perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
@@ -170,6 +174,7 @@ impl App {
             Some(ToastKind::Hud { .. }) => TOAST_HUD,
             Some(ToastKind::Privacy { .. }) => TOAST_PRIV,
             Some(ToastKind::Water) => TOAST_WATER,
+            Some(ToastKind::Meeting { .. }) => TOAST_MEETING,
             _ => TOAST_CHARGE,
         }
     }
@@ -215,6 +220,10 @@ impl App {
             self.draw_water_toast(g, w, h, al, t);
             return;
         }
+        if let ToastKind::Meeting { title, at, link } = &ts.kind {
+            self.draw_meeting_toast(g, (w, h), al, t, (title, *at, link.is_some()));
+            return;
+        }
 
         // (warna aksen, judul, subjudul, fraksi ring, teks kanan)
         let (rgb, title, sub, frac, right) = match &ts.kind {
@@ -233,7 +242,9 @@ impl App {
             ToastKind::Prayer { idx, at } => {
                 (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), tr("Prayer time").to_string(), 1.0, Some(prayer::hhmm(*at)))
             }
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => unreachable!(),
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } => {
+                unreachable!()
+            }
         };
 
         // Ring + ikon: membesar dengan pegas, ring menyapu dari 0.
@@ -258,7 +269,7 @@ impl App {
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
             ToastKind::Prayer { .. } => g.icon_crescent(rcx, cy, 18.0 * sc, &ic),
             ToastKind::Timer { .. } => g.icon_bell(rcx, cy, 17.0 * sc, (t * 22.0).sin() * (1.0 - t / 1.5).max(0.0), &ic),
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => {}
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } => {}
         }
 
         // Teks: geser 6 px + fade dengan jeda singkat.
@@ -364,6 +375,12 @@ impl App {
 }
 
 /// Kotak tombol Snooze dan Drank pada toast Water berukuran (w, h), dalam koordinat kanvas.
+/// The Join button on a meeting toast of size (w, h): x, y, w, h.
+pub(crate) fn meeting_join_rect(w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let (x0, cy) = (CX - w / 2.0, h / 2.0);
+    (x0 + w - 16.0 - 70.0, cy - 14.0, 70.0, 28.0)
+}
+
 fn water_btns(w: f32, h: f32) -> ((f32, f32, f32, f32), (f32, f32, f32, f32)) {
     let (x0, cy) = (CX - w / 2.0, h / 2.0);
     let drank = (x0 + w - 16.0 - 70.0, cy - 14.0, 70.0, 28.0);
@@ -386,7 +403,29 @@ impl App {
     /// True bila klik dipakai oleh toast.
     pub(crate) fn toast_click(&mut self, x: f32, y: f32) -> bool {
         let Some(ts) = &self.toast else { return false };
-        if !matches!(ts.kind, ToastKind::Water) || ts.t0.elapsed().as_secs_f32() < 0.35 {
+        if ts.t0.elapsed().as_secs_f32() < 0.35 {
+            return false;
+        }
+        if let ToastKind::Meeting { link, .. } = &ts.kind {
+            let (w, h) = TOAST_MEETING;
+            if !in_rect(x, y, CX - w / 2.0, 0.0, w, h) {
+                return false;
+            }
+            let (bx, by, bw, bh) = meeting_join_rect(w, h);
+            match link.clone() {
+                Some(link) if in_rect(x, y, bx, by, bw, bh) => sys::open_url(&link),
+                _ if self.cfg.slides.iter().any(|&(s, on)| s == SlideId::Agenda && on) => {
+                    self.end_toast();
+                    self.show_id(SlideId::Agenda);
+                    self.peek_until = Some(Instant::now() + Duration::from_secs(8));
+                    return true;
+                }
+                _ => {}
+            }
+            self.end_toast();
+            return true;
+        }
+        if !matches!(ts.kind, ToastKind::Water) {
             return false;
         }
         let (w, h) = TOAST_WATER;
@@ -411,7 +450,7 @@ impl App {
     }
 
     /// Posisi pointer dalam koordinat kanvas (untuk highlight tombol saat hover).
-    fn cursor_canvas(&self) -> Option<(f32, f32)> {
+    pub(crate) fn cursor_canvas(&self) -> Option<(f32, f32)> {
         let mut p = POINT::default();
         unsafe { GetCursorPos(&mut p).ok()? };
         Some(((p.x - self.wx) as f32 / self.scale, (p.y - self.wy) as f32 / self.scale))

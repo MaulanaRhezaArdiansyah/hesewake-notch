@@ -300,6 +300,27 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("Click to write a note", "Klik untuk menulis catatan"),
     ("{} is full", "{} penuh"),
     ("Drop files or folders here", "Taruh file atau folder di sini"),
+    // Calendar
+    ("Calendar", "Kalender"),
+    ("Copy an ICS link first", "Copy link ICS dulu"),
+    ("No ICS link copied", "Belum ada link ICS"),
+    ("Press again to remove", "Tekan lagi untuk hapus"),
+    ("Loading\u{2026}", "Memuat\u{2026}"),
+    ("Synced", "Tersinkron"),
+    ("Couldn't load it", "Gagal dimuat"),
+    ("Paste", "Tempel"),
+    ("Remove", "Hapus"),
+    ("Join", "Gabung"),
+    ("Starts now \u{b7} {}", "Mulai sekarang \u{b7} {}"),
+    ("All day", "Seharian"),
+    ("Now", "Sekarang"),
+    ("Link your calendar in Settings \u{203a} Features", "Hubungkan kalender di Pengaturan \u{203a} Fitur"),
+    ("Paste its secret ICS address there", "Tempel alamat ICS rahasianya di sana"),
+    ("Loading your calendar\u{2026}", "Memuat kalender\u{2026}"),
+    ("Couldn't load your calendar", "Kalender gagal dimuat"),
+    ("Check the link in Settings \u{203a} Features", "Cek link-nya di Pengaturan \u{203a} Fitur"),
+    ("Nothing else today", "Tidak ada lagi hari ini"),
+    ("Next: {} {} \u{b7} {}", "Berikutnya: {} {} \u{b7} {}"),
 ];
 
 #[cfg(test)]

@@ -204,7 +204,7 @@ pub(crate) unsafe fn clip_set(hwnd: HWND, text: &str) {
     let _ = CloseClipboard();
 }
 
-unsafe fn clip_get(hwnd: HWND) -> Option<String> {
+pub(crate) unsafe fn clip_get(hwnd: HWND) -> Option<String> {
     if OpenClipboard(hwnd).is_err() {
         return None;
     }

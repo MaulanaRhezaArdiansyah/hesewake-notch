@@ -208,6 +208,27 @@ pub(crate) unsafe fn track(hwnd: HWND, menu: HMENU) -> i32 {
     cmd.0
 }
 
+/// Open a web link in the default browser / meeting app. Tests only record it (see `opened`).
+pub(crate) fn open_url(url: &str) {
+    #[cfg(test)]
+    OPENED.with(|o| o.borrow_mut().push(url.to_string()));
+    #[cfg(not(test))]
+    unsafe {
+        let _ = ShellExecuteW(None, w!("open"), &HSTRING::from(url), None, None, SW_SHOWNORMAL);
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static OPENED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Tests: the links `open_url` was asked to open on this thread (and forget them).
+#[cfg(test)]
+pub(crate) fn opened() -> Vec<String> {
+    OPENED.with(|o| std::mem::take(&mut *o.borrow_mut()))
+}
+
 pub(crate) unsafe fn about(hwnd: HWND) {
     let text = fill(
         tr("Hesewake Notch {}\nA personal notch for the top of your screen.\n\nBased on Poch by Commonly Works\n(github.com/klawcodes/poch), MIT License.\nLyrics provided by LRCLIB (lrclib.net).\nRomaji: Lindera (IPADIC) and WanaKana.\nFont: Instrument Sans."),
