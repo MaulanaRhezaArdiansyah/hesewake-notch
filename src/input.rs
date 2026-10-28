@@ -148,6 +148,14 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 present(a);
             }
             SlideId::System => {}
+            SlideId::Clipboard => {
+                if let Some(text) = a.clip_hit(x, y).and_then(|hit| a.clip_apply(hit)) {
+                    note::clip_set(HWND(a.hwnd as _), &text);
+                }
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            }
             SlideId::Timer => {
                 a.timer_click(x, y);
                 present(a);

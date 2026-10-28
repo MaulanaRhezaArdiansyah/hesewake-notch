@@ -171,6 +171,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::System => a.slide_system(&mut g, ox, al),
                 SlideId::Timer => a.slide_timer(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
+                SlideId::Clipboard => a.slide_clipboard(&mut g, ox, al),
             }
         }
         if !a.lyric_screen() {
