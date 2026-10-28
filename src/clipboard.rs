@@ -90,10 +90,12 @@ pub(crate) fn ago(secs: u64) -> String {
 }
 
 /// May this clipboard content be recorded? `exclude` / `viewer_ignore`: the
-/// "ExcludeClipboardContentFromMonitorProcessing" / "Clipboard Viewer Ignore" formats are present; `can_include`: the
-/// DWORD in "CanIncludeInClipboardHistory", if present (0 = do not keep). Password managers set these.
-pub(crate) fn allowed(exclude: bool, viewer_ignore: bool, can_include: Option<u32>) -> bool {
-    !exclude && !viewer_ignore && can_include != Some(0)
+/// "ExcludeClipboardContentFromMonitorProcessing" / "Clipboard Viewer Ignore" formats are present; `can_include`:
+/// None if "CanIncludeInClipboardHistory" is absent, else its DWORD (0 = do not keep), or `Some(None)` if it is
+/// present but could not be read. Password managers set these.
+pub(crate) fn allowed(exclude: bool, viewer_ignore: bool, can_include: Option<Option<u32>>) -> bool {
+    // when unsure (the value can't be read), don't keep it
+    !exclude && !viewer_ignore && !matches!(can_include, Some(None | Some(0)))
 }
 
 // ---------------------------------------------------------------- Win32
@@ -141,20 +143,19 @@ unsafe fn open(hwnd: HWND) -> bool {
     false
 }
 
-/// The clipboard's text, if there is some and it may be recorded.
+/// The clipboard's text, if there is some and it may be recorded. Every check runs while the clipboard is open, so
+/// the checks and the text come from the same copy.
 pub(crate) fn read(hwnd: isize) -> Option<String> {
     let hwnd = HWND(hwnd as _);
-    let exclude = format_present(w!("ExcludeClipboardContentFromMonitorProcessing")).is_some();
-    let viewer_ignore = format_present(w!("Clipboard Viewer Ignore")).is_some();
-    if !allowed(exclude, viewer_ignore, None) || unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) }.is_err() {
-        return None;
-    }
     unsafe {
         if !open(hwnd) {
             return None;
         }
-        let can_include = format_present(w!("CanIncludeInClipboardHistory")).and_then(|f| read_dword(f));
-        let text = if allowed(exclude, viewer_ignore, can_include) { note::read_open_clipboard() } else { None };
+        let exclude = format_present(w!("ExcludeClipboardContentFromMonitorProcessing")).is_some();
+        let viewer_ignore = format_present(w!("Clipboard Viewer Ignore")).is_some();
+        let can_include = format_present(w!("CanIncludeInClipboardHistory")).map(|f| read_dword(f));
+        let has_text = IsClipboardFormatAvailable(CF_UNICODETEXT).is_ok();
+        let text = if has_text && allowed(exclude, viewer_ignore, can_include) { note::read_open_clipboard() } else { None };
         let _ = CloseClipboard();
         text
     }
@@ -520,9 +521,10 @@ mod tests {
     #[test]
     fn password_manager_copies_are_skipped() {
         assert!(allowed(false, false, None));
-        assert!(allowed(false, false, Some(1)));
+        assert!(allowed(false, false, Some(Some(1))));
         assert!(!allowed(true, false, None), "ExcludeClipboardContentFromMonitorProcessing");
         assert!(!allowed(false, true, None), "Clipboard Viewer Ignore");
-        assert!(!allowed(false, false, Some(0)), "CanIncludeInClipboardHistory = 0");
+        assert!(!allowed(false, false, Some(Some(0))), "CanIncludeInClipboardHistory = 0");
+        assert!(!allowed(false, false, Some(None)), "CanIncludeInClipboardHistory present but unreadable: do not keep");
     }
 }
