@@ -183,7 +183,7 @@ fn fmt_num(n: usize) -> String {
 }
 
 // ---------------------------------------------------------------- clipboard
-unsafe fn clip_set(hwnd: HWND, text: &str) {
+pub(crate) unsafe fn clip_set(hwnd: HWND, text: &str) {
     if OpenClipboard(hwnd).is_err() {
         return;
     }
@@ -208,21 +208,26 @@ unsafe fn clip_get(hwnd: HWND) -> Option<String> {
     if OpenClipboard(hwnd).is_err() {
         return None;
     }
-    let mut out: Option<String> = None;
-    if let Ok(h) = GetClipboardData(CF_UNICODETEXT) {
-        let hg = HGLOBAL(h.0);
-        let p = GlobalLock(hg) as *const u16;
-        if !p.is_null() {
-            let mut len = 0usize;
-            while len < (1 << 20) && *p.add(len) != 0 {
-                len += 1;
-            }
-            out = Some(String::from_utf16_lossy(std::slice::from_raw_parts(p, len)));
-            let _ = GlobalUnlock(hg);
-        }
-    }
+    let out = read_open_clipboard();
     let _ = CloseClipboard();
     out
+}
+
+/// The text on the clipboard, which the caller has already opened.
+pub(crate) unsafe fn read_open_clipboard() -> Option<String> {
+    let h = GetClipboardData(CF_UNICODETEXT).ok()?;
+    let hg = HGLOBAL(h.0);
+    let p = GlobalLock(hg) as *const u16;
+    if p.is_null() {
+        return None;
+    }
+    let mut len = 0usize;
+    while len < (1 << 20) && *p.add(len) != 0 {
+        len += 1;
+    }
+    let out = String::from_utf16_lossy(std::slice::from_raw_parts(p, len));
+    let _ = GlobalUnlock(hg);
+    Some(out)
 }
 
 // ---------------------------------------------------------------- editing

@@ -239,6 +239,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     present(a);
                     return;
                 }
+                if vertical && a.is_slide(SlideId::Clipboard) && a.clips.len() > clipboard::ROWS {
+                    if a.last_wheel.elapsed() >= Duration::from_millis(90) {
+                        a.last_wheel = Instant::now();
+                        if a.clip_wheel(d < 0) {
+                            present(a);
+                        }
+                    }
+                    return;
+                }
                 if vertical && a.is_slide(SlideId::Todo) && !a.editing && a.todos.len() > 3 {
                     if a.last_wheel.elapsed() < Duration::from_millis(90) {
                         return;
@@ -528,6 +537,16 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     }
                 });
             }
+            LRESULT(0)
+        }
+        WM_CLIPBOARDUPDATE => {
+            with_app(|a| {
+                // with the slide off the clipboard is not even read
+                let text = if a.clip_enabled() { clipboard::read(a.hwnd) } else { None };
+                if a.on_clipboard(text, Instant::now()) && a.expanded() && a.is_slide(SlideId::Clipboard) {
+                    present(a);
+                }
+            });
             LRESULT(0)
         }
         WM_DROPFILES => {

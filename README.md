@@ -43,6 +43,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 | <img src="https://api.iconify.design/lucide/list-checks.svg?color=%23ff453a" width="22">  | **To-do** | Simple checklist with add, edit and delete. Scrolls when the list gets long.                                                                                      |
 | <img src="https://api.iconify.design/lucide/folder-open.svg?color=%23ff453a" width="22">  | **Ledge** | A shelf for up to 5 files or folders. Drop them in, click to open, drag them back out (copy by default, hold `Shift` to move).                                    |
 | <img src="https://api.iconify.design/lucide/notebook-pen.svg?color=%23ff453a" width="22"> | **Scrap** | Mini notepad, up to 3,333 characters, with caret, selection, clipboard and a live character counter.                                                              |
+| <img src="https://api.iconify.design/lucide/clipboard-list.svg?color=%23ff453a" width="22"> | **Clipboard** | Optional (turn it on in Settings > Slides). The last 10 texts you copied in any app; click one to copy it again. Kept in memory only, and copies that password managers mark as private are skipped. |
 
 ---
 
@@ -93,6 +94,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics 
 | `music.rs`                                   | Media thread, artwork and artwork tint, Music slide                |
 | `clock.rs`                                   | Clock and date helpers                                             |
 | `water.rs`, `todo.rs`, `shelf.rs`, `note.rs` | Water, To-do, Ledge and Scrap slides                               |
+| `clipboard.rs`                               | Clipboard history slide and clipboard listener                     |
 | `dragdrop.rs`                                | OLE drag out of the Ledge                                          |
 | `eye.rs`, `busy.rs`, `icon.rs`               | Eye animation, busy detection, app icons                           |
 | `nav.rs`, `input.rs`, `config.rs`, `data.rs` | Carousel, clicks and menu, shared sizes, data storage              |

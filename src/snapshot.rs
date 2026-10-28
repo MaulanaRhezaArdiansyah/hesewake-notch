@@ -109,6 +109,9 @@ fn test_app(s: f32) -> App {
         prev_fg: 0,
         shelf: Vec::new(),
         shelf_flash: None,
+        clips: clipboard::History::default(),
+        clip_scroll: 0,
+        clip_flash: None,
         drop_pulse: None,
         note: String::new(),
         note_mode: false,
@@ -217,6 +220,42 @@ fn snap_timer_toast() {
     shot("toast-timer", 1.0, |a| show_toast(a, ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() }));
 }
 
+/// A Pomodoro that has finished `done` focus sessions and is in phase `phase`, running for `secs` seconds.
+fn pomo(a: &mut App, done: u32, phase: timer::Phase, secs: u64) {
+    a.tm.set_mode(timer::TMode::Pomodoro);
+    a.tm.done = done;
+    a.tm.phase = phase;
+    a.tm.start(Instant::now() - Duration::from_secs(secs));
+}
+
+#[test]
+fn snap_pomodoro() {
+    for s in SCALES {
+        shot("pomo-focus", s, |a| {
+            pomo(a, 2, timer::Phase::Focus, 9 * 60 + 12);
+            open_slide(a, SlideId::Timer);
+        });
+        shot("pomo-chip-focus", s, |a| pomo(a, 2, timer::Phase::Focus, 9 * 60 + 12));
+    }
+    shot("pomo-short-break", 1.0, |a| {
+        pomo(a, 3, timer::Phase::Short, 70);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("pomo-long-break", 1.0, |a| {
+        pomo(a, 4, timer::Phase::Long, 70);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("pomo-paused-fresh", 1.0, |a| {
+        a.tm.set_mode(timer::TMode::Pomodoro);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("pomo-chip-break", 1.0, |a| pomo(a, 1, timer::Phase::Short, 70));
+    shot("toast-pomo-focus-done", 1.0, |a| {
+        show_toast(a, ToastKind::Timer { title: "Focus #4 done".into(), label: "Long break \u{b7} 15 min".into() })
+    });
+    shot("toast-pomo-break-over", 1.0, |a| show_toast(a, ToastKind::Timer { title: "Break over".into(), label: "Focus \u{b7} 25 min".into() }));
+}
+
 #[test]
 fn snap_slide_todo() {
     shot("slide-todo", 1.0, |a| open_slide(a, SlideId::Todo));
@@ -260,7 +299,7 @@ fn snap_settings_long_city() {
         let i = weather::CITIES.iter().position(|c| c.0 == city).unwrap();
         shot(name, 1.0, |a| {
             a.cfg.weather_city = i;
-            open_settings_tab(a, 3);
+            open_settings_tab(a, 4);
         });
     }
 }
@@ -322,6 +361,16 @@ fn moved_minus_button_is_still_clickable() {
     assert_eq!(a.cfg.weather_city, (long + 1) % weather::CITIES.len(), "+ still steps forward");
 }
 
+/// Every slide name fits in its Settings > Slides cell instead of running into the chevrons.
+#[test]
+fn slide_names_fit_settings_cells() {
+    let mut g = Gfx::new(1.0);
+    for id in SlideId::USER {
+        let w = g.width_ex(id.short_label(), 11.0, true);
+        assert!(w <= settingsview::SLIDE_NAME_W, "{:?} is {w:.1} px wide", id.short_label());
+    }
+}
+
 /// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
 #[test]
 fn settings_text_fits_cells() {
@@ -335,4 +384,221 @@ fn settings_text_fits_cells() {
             assert!(sw <= w, "tab {tab}: sub {:?} {sw:.1} px > {w} px", r.sub);
         }
     }
+}
+
+/// Fake prayer times: prayer `idx` is `mins` minutes from now, the others are outside the countdown window.
+fn prayer_in(a: &mut App, idx: usize, mins: u16) {
+    let st = now_tm();
+    let now = st.wHour * 60 + st.wMinute;
+    let mut t = [0u16; 5];
+    for (i, v) in t.iter_mut().enumerate() {
+        *v = if i < idx { 0 } else if i == idx { now + mins } else { now + mins + 600 };
+    }
+    a.prayer = Some((0, t));
+}
+
+#[test]
+fn snap_prayer() {
+    for s in SCALES {
+        shot("prayer-idle", s, |a| prayer_in(a, 2, 12));
+    }
+    shot("prayer-playing", 1.0, |a| {
+        prayer_in(a, 3, 5);
+        a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    });
+    shot("prayer-with-timer", 1.0, |a| {
+        prayer_in(a, 4, 9);
+        a.tm.start(Instant::now() - Duration::from_secs(61));
+    });
+    shot("toast-prayer", 1.0, |a| show_toast(a, ToastKind::Prayer { idx: 2, at: 15 * 60 + 12 }));
+    // the "Prayer times" row in Settings > Extras: see settings-tab4
+}
+
+#[test]
+fn snap_accents() {
+    for (i, ac) in accent::ACCENTS.iter().enumerate() {
+        let n = ac.name.to_lowercase();
+        shot(&format!("accent-{n}-settings"), 1.0, |a| {
+            a.cfg.accent = i;
+            open_settings_tab(a, 4);
+        });
+        shot(&format!("accent-{n}-todo"), 1.0, |a| {
+            a.cfg.accent = i;
+            open_slide(a, SlideId::Todo);
+        });
+        shot(&format!("accent-{n}-timer"), 1.0, |a| {
+            a.cfg.accent = i;
+            a.tm.start(Instant::now() - Duration::from_secs(100));
+            open_slide(a, SlideId::Timer);
+        });
+    }
+}
+
+/// The accent setting really changes the render, and every accent produces a different image.
+#[test]
+fn accent_changes_the_rendered_slide() {
+    let render = |i: usize| {
+        let mut a = test_app(1.0);
+        a.cfg.accent = i;
+        open_slide(&mut a, SlideId::Todo);
+        (a.w, a.h) = anim::target(&a);
+        a.sp = a.slide as f32;
+        render::draw(&mut a);
+        a.gfx.as_ref().expect("gfx").pm.data().to_vec()
+    };
+    let shots: Vec<_> = (0..accent::ACCENTS.len()).map(render).collect();
+    for i in 0..shots.len() {
+        for j in i + 1..shots.len() {
+            assert_ne!(shots[i], shots[j], "accents {i} and {j} render the same");
+        }
+    }
+}
+
+#[test]
+fn snap_slide_hotkeys() {
+    // Settings > Slides with each slide's shortcut, and Features with the "Slide hotkeys" toggle
+    shot("hotkeys-settings-slides", 1.0, |a| open_settings_tab(a, 0));
+    shot("hotkeys-settings-features", 1.0, |a| open_settings_tab(a, 2));
+    shot("hotkeys-settings-slides-off", 1.0, |a| {
+        a.cfg.slide_hotkeys = false;
+        open_settings_tab(a, 0);
+    });
+    // Ctrl+Alt+3 from the idle notch
+    shot("hotkeys-open-third", 1.0, |a| {
+        assert!(a.slide_hotkey(2));
+    });
+}
+
+/// Ctrl+Alt+N opens the Nth slide, the same key closes it again, and a missing slide is ignored.
+#[test]
+fn slide_hotkey_opens_and_closes() {
+    let mut a = test_app(1.0);
+    assert!(!a.expanded());
+    assert!(a.slide_hotkey(2));
+    assert!(a.expanded());
+    assert_eq!(a.cur_id(), a.order[2]);
+    assert!(a.slide_hotkey(0), "another hotkey switches slides");
+    assert_eq!(a.cur(), 0);
+    assert!(a.expanded());
+    assert!(a.slide_hotkey(0), "same hotkey again closes");
+    assert!(!a.expanded());
+    assert!(!a.slide_hotkey(a.order.len()), "no slide at that position");
+}
+
+/// Fill the clipboard history, oldest first: (text, seconds ago).
+fn with_clips(a: &mut App, clips: &[(&str, u64)]) {
+    let now = Instant::now();
+    for (s, ago) in clips {
+        a.clips.push(s, now - Duration::from_secs(*ago));
+    }
+}
+
+const CLIPS: [(&str, u64); 4] = [
+    ("https://github.com/dirgaastya/hesewake-notch/issues/13", 3 * 86400),
+    ("fn main() {\r\n    println!(\"hello\");\r\n}", 2 * 3600),
+    ("Meeting notes: ship 0.6 after the clipboard slide lands, then look at the ICS calendar idea and the update check", 600),
+    ("rhezaardiansyah", 20),
+];
+
+/// Middle of visible row `vi` on the Clipboard slide.
+fn clip_row_y(vi: usize) -> f32 {
+    clipboard::ROW_Y0 + vi as f32 * clipboard::ROW_P + clipboard::ROW_H / 2.0
+}
+
+fn set_slide(a: &mut App, id: SlideId, on: bool) {
+    a.cfg.slides.iter_mut().find(|(s, _)| *s == id).expect("slide in config").1 = on;
+}
+
+#[test]
+fn snap_clipboard() {
+    shot("clipboard-empty", 1.0, |a| open_slide(a, SlideId::Clipboard));
+    for s in SCALES {
+        shot("clipboard", s, |a| {
+            with_clips(a, &CLIPS);
+            open_slide(a, SlideId::Clipboard);
+        });
+    }
+    shot("clipboard-copied", 1.0, |a| {
+        with_clips(a, &CLIPS);
+        open_slide(a, SlideId::Clipboard);
+        let hit = a.clip_hit(LX + 60.0, clip_row_y(2)).expect("third row");
+        a.clip_apply(hit);
+    });
+    shot("clipboard-full-scrolled", 1.0, |a| {
+        for i in 0..clipboard::MAX_ITEMS {
+            a.clips.push(&format!("Copied text number {}", i + 1), Instant::now() - Duration::from_secs(60 * (10 - i as u64)));
+        }
+        open_slide(a, SlideId::Clipboard);
+        a.clip_scroll = clipboard::MAX_ITEMS - 3;
+    });
+}
+
+/// Clicking an entry gives its full text back for the clipboard and moves it to the top; the clipboard update that
+/// follows does not add it twice.
+#[test]
+fn clipboard_click_copies_back_and_moves_to_top() {
+    let mut a = test_app(1.0);
+    with_clips(&mut a, &CLIPS);
+    open_slide(&mut a, SlideId::Clipboard);
+    let hit = a.clip_hit(LX + 60.0, clip_row_y(2));
+    assert_eq!(hit, Some(clipboard::ClipHit::Copy(2)));
+    assert_eq!(a.clip_apply(hit.unwrap()).as_deref(), Some(CLIPS[1].0), "full text, newlines kept");
+    assert_eq!(a.clips.items()[0].text, CLIPS[1].0, "moved to the top");
+    assert!(a.clip_flash.is_some(), "the row shows \"Copied\"");
+    assert!(!a.on_clipboard(Some(CLIPS[1].0.into()), Instant::now()), "our own copy is not added again");
+    assert_eq!(a.clips.len(), CLIPS.len());
+    assert_eq!(a.clip_hit(LX + 60.0, EXP_H - 10.0), None, "below the rows");
+}
+
+#[test]
+fn clipboard_remove_and_clear_buttons() {
+    let mut a = test_app(1.0);
+    with_clips(&mut a, &CLIPS);
+    open_slide(&mut a, SlideId::Clipboard);
+    let x_btn = LX + clipboard::row_w(a.clips.len()) - 15.0;
+    assert_eq!(a.clip_hit(x_btn, clip_row_y(0)), Some(clipboard::ClipHit::Remove(0)));
+    assert_eq!(a.clip_apply(clipboard::ClipHit::Remove(0)), None, "nothing to copy");
+    assert_eq!(a.clips.items()[0].text, CLIPS[2].0);
+    let (cx, cy, cw, ch) = clipboard::CLEAR_BTN;
+    assert_eq!(a.clip_hit(cx + cw / 2.0, cy + ch / 2.0), Some(clipboard::ClipHit::Clear));
+    a.clip_apply(clipboard::ClipHit::Clear);
+    assert!(a.clips.is_empty());
+    assert_eq!(a.clip_hit(cx + cw / 2.0, cy + ch / 2.0), None, "no Clear button on an empty list");
+}
+
+#[test]
+fn clipboard_scrolls_with_the_wheel() {
+    let mut a = test_app(1.0);
+    for i in 0..5 {
+        a.clips.push(&format!("clip {i}"), Instant::now());
+    }
+    open_slide(&mut a, SlideId::Clipboard);
+    assert!(a.clip_wheel(true));
+    assert_eq!(a.clip_scroll, 1);
+    assert_eq!(a.clip_hit(LX + 60.0, clip_row_y(0)), Some(clipboard::ClipHit::Copy(1)), "rows follow the scroll");
+    for _ in 0..5 {
+        a.clip_wheel(true);
+    }
+    assert_eq!(a.clip_scroll, 2, "stops at the last full page");
+    assert!(!a.clip_wheel(true));
+    assert!(a.clip_wheel(false));
+    assert_eq!(a.clip_scroll, 1);
+    a.clip_apply(clipboard::ClipHit::Clear);
+    assert_eq!(a.clip_scroll, 0);
+}
+
+/// Nothing is recorded while the Clipboard slide is off, and turning it off forgets what was kept.
+#[test]
+fn clipboard_is_only_recorded_while_the_slide_is_on() {
+    let mut a = test_app(1.0);
+    set_slide(&mut a, SlideId::Clipboard, false);
+    assert!(!a.on_clipboard(Some("secret".into()), Instant::now()));
+    assert!(a.clips.is_empty());
+    set_slide(&mut a, SlideId::Clipboard, true);
+    assert!(a.on_clipboard(Some("hello".into()), Instant::now()));
+    assert!(!a.on_clipboard(None, Instant::now()), "no text (or not allowed): nothing changes");
+    assert_eq!(a.clips.len(), 1);
+    set_slide(&mut a, SlideId::Clipboard, false);
+    a.on_clipboard(Some("another".into()), Instant::now());
+    assert!(a.clips.is_empty(), "turned off: history forgotten");
 }
