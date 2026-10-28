@@ -60,9 +60,9 @@ pub(crate) fn mode_count() -> usize {
 
 pub(crate) fn mode_label(mode: usize) -> String {
     match mode {
-        PRIMARY => "Primary".to_string(),
-        FOLLOW => "Follow".to_string(),
-        n => format!("Display {}", n - 1),
+        PRIMARY => tr("Primary").to_string(),
+        FOLLOW => tr("Follow").to_string(),
+        n => fill(tr("Display {}"), &[&(n - 1)]),
     }
 }
 

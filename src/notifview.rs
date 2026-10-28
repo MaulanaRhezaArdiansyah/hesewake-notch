@@ -148,19 +148,19 @@ impl App {
 
     pub(crate) fn slide_notifs(&self, g: &mut Gfx, ox: f32, al: f32) {
         // Header
-        g.txtb("Notifications", LX + ox, 10.0, 15.0, [255, 255, 255], al, 160.0);
+        g.txtb(tr("Notifications"), LX + ox, 10.0, 15.0, [255, 255, 255], al, 160.0);
         let live = self.notifs.iter().filter(|n| n.dismiss.is_none()).count();
         if live > 0 && self.notif_on && self.notif_access == Access::Allowed {
             // Jumlah sebagai badge bulat kecil, sejajar dengan tengah judul (y ≈ 18).
             let label = if live > 99 { "99+".to_string() } else { live.to_string() };
-            let hw = g.width_ex("Notifications", 15.0, true);
+            let hw = g.width_ex(tr("Notifications"), 15.0, true);
             let lw = g.width_ex(&label, 11.0, true);
             let (bw, bh) = ((lw + 12.0).max(20.0), 18.0);
             let bx = LX + ox + hw + 9.0;
             g.pill(bx, 9.0, bw, bh, [255, 255, 255], 0.14 * al, 1.0);
             g.txt_c(&label, bx + bw / 2.0, 9.0 + ty(bh, 11.0), 11.0, [225, 225, 232], al, bw, true);
             g.pill(CLEAR.0 + ox, CLEAR.1, CLEAR.2, CLEAR.3, [255, 255, 255], 0.12 * al, 1.0);
-            g.txt_c("Clear all", CLEAR.0 + ox + CLEAR.2 / 2.0, CLEAR.1 + ty(CLEAR.3, 12.0), 12.0, [225, 225, 232], al, CLEAR.2, true);
+            g.txt_c(tr("Clear all"), CLEAR.0 + ox + CLEAR.2 / 2.0, CLEAR.1 + ty(CLEAR.3, 12.0), 12.0, [225, 225, 232], al, CLEAR.2, true);
         }
 
         // Keadaan khusus: izin ditolak / fitur dimatikan / kosong.
@@ -172,19 +172,19 @@ impl App {
             }
         };
         if self.notif_access == Access::Denied {
-            g.txt_c("Notification access is off", LX + CW / 2.0 + ox, 62.0, 13.0, [220, 220, 228], al, CW, true);
-            g.txt_c("Allow Hesewake Notch in Windows Settings to see them here.", LX + CW / 2.0 + ox, 80.0, 12.0, GREY, al, CW, false);
+            g.txt_c(tr("Notification access is off"), LX + CW / 2.0 + ox, 62.0, 13.0, [220, 220, 228], al, CW, true);
+            g.txt_c(tr("Allow Hesewake Notch in Windows Settings to see them here."), LX + CW / 2.0 + ox, 80.0, 12.0, GREY, al, CW, false);
             g.pill(OPEN_BTN.0 + ox, OPEN_BTN.1, OPEN_BTN.2, OPEN_BTN.3, g.acc.bright, 0.28 * al, 1.0);
-            g.txt_c("Open Settings", OPEN_BTN.0 + ox + OPEN_BTN.2 / 2.0, OPEN_BTN.1 + ty(OPEN_BTN.3, 13.0), 13.0, [200, 228, 255], al, OPEN_BTN.2, true);
+            g.txt_c(tr("Open Settings"), OPEN_BTN.0 + ox + OPEN_BTN.2 / 2.0, OPEN_BTN.1 + ty(OPEN_BTN.3, 13.0), 13.0, [200, 228, 255], al, OPEN_BTN.2, true);
             return;
         }
         if !self.notif_on {
-            center_msg(g, "Windows notifications are off", "Turn them on from the menu (right-click the notch).");
+            center_msg(g, tr("Windows notifications are off"), tr("Turn them on from the menu (right-click the notch)."));
             return;
         }
         let rows = self.notif_rows();
         if rows.is_empty() {
-            center_msg(g, "No notifications", "");
+            center_msg(g, tr("No notifications"), "");
             return;
         }
 

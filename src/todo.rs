@@ -21,7 +21,7 @@ pub(crate) fn load_todos() -> Vec<(bool, String)> {
             .filter_map(|l| l.split_once('|').map(|(d, t)| (d == "1", t.to_string())))
             .collect(),
         Err(_) => {
-            let d = vec![(false, "Tap Add Task to create a task".to_string())];
+            let d = vec![(false, tr("Tap Add Task to create a task").to_string())];
             save_todos(&d);
             d
         }
@@ -139,16 +139,18 @@ impl App {
 
     pub(crate) fn slide_todo(&self, g: &mut Gfx, ox: f32, al: f32) {
         let x = LX + ox;
-        g.txtb("Todo", x, 12.0, 15.0, [255, 255, 255], al, 80.0);
-        let tw = g.width_ex("Todo", 15.0, true);
-        g.txtb("List", x + tw, 12.0, 15.0, g.acc.main, al, 80.0);
+        // two-colour title; "|" marks where the accent part starts
+        let (t1, t2) = tr("Todo|List").split_once('|').unwrap_or(("", ""));
+        g.txtb(t1, x, 12.0, 15.0, [255, 255, 255], al, 80.0);
+        let tw = g.width_ex(t1, 15.0, true);
+        g.txtb(t2, x + tw, 12.0, 15.0, g.acc.main, al, 80.0);
         let st = now_tm();
         let time = format!("{:02}:{:02}", st.wHour, st.wMinute);
         let date = format!(
             "{} {} {} {}",
-            DAYS_S[(st.wDayOfWeek as usize) % 7],
+            clock::day_short(st.wDayOfWeek as usize),
             st.wDay,
-            MONTHS[((st.wMonth as usize).max(1) - 1) % 12],
+            clock::month((st.wMonth as usize).max(1) - 1),
             st.wYear
         );
         let timew = g.width_ex(&time, 13.0, true);
@@ -166,7 +168,7 @@ impl App {
         if self.editing {
             g.fill(&rrect(LX - 1.0 + ox, 39.0, CW + 2.0, 32.0, 11.0), &g.sacc(0.55 * al));
             g.fill(&rrect(LX + ox, 40.0, CW, 30.0, 10.0), &paint(26, 26, 29, al));
-            let shown: &str = if self.input.is_empty() { "Type a task, Enter to save, Esc to cancel" } else { &self.input };
+            let shown: &str = if self.input.is_empty() { tr("Type a task, Enter to save, Esc to cancel") } else { &self.input };
             let col = if self.input.is_empty() { TEXT_FAINT } else { [255, 255, 255] };
             g.txt(shown, LX + 12.0 + ox, 40.0 + ty(30.0, 13.0), 13.0, col, al, CW - 30.0);
             if self.caret_on {
@@ -175,11 +177,11 @@ impl App {
             }
         } else {
             g.txtb(&format!("{}/{}", done, total), x, 36.0, 42.0, [255, 255, 255], al, 190.0);
-            g.txt("Tasks done today", x, 92.0, 12.0, TEXT_DIM, al, 190.0);
-            self.pill(g, x, 116.0, "Add Task", false, false, al);
-            self.pill(g, x + 98.0, 116.0, if self.edit_mode { "Done" } else { "Edit Task" }, true, self.edit_mode, al);
+            g.txt(tr("Tasks done today"), x, 92.0, 12.0, TEXT_DIM, al, 190.0);
+            self.pill(g, x, 116.0, tr("Add Task"), false, false, al);
+            self.pill(g, x + 98.0, 116.0, if self.edit_mode { tr("Done") } else { tr("Edit Task") }, true, self.edit_mode, al);
             if self.todos.is_empty() {
-                g.txt("No tasks yet", rx + ox + 8.0, 56.0, 13.0, TEXT_FAINT, al, 180.0);
+                g.txt(tr("No tasks yet"), rx + ox + 8.0, 56.0, 13.0, TEXT_FAINT, al, 180.0);
             }
         }
         let order = self.todo_order();

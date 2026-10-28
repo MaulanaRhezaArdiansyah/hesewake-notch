@@ -308,6 +308,7 @@ fn snap_settings_long_city() {
 /// lyric timing extremes, every notch size and idle display.
 #[test]
 fn stepper_values_fit_without_cutting() {
+    let _lang = i18n::restore_on_drop();
     let mut a = test_app(1.0);
     let mut g = Gfx::new(1.0);
     let mut check = |a: &App, tab: u8| {
@@ -328,10 +329,25 @@ fn stepper_values_fit_without_cutting() {
         a.cfg.lyric_lead_ms = lead;
         check(&a, 1);
     }
-    for n in 0..scale::SIZES.len() {
-        a.cfg.notch_size = n;
-        a.cfg.idle_display = n % settings::IDLE_DISPLAY_LABELS.len();
-        check(&a, 1);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        for n in 0..scale::SIZES.len() {
+            a.cfg.notch_size = n;
+            a.cfg.idle_display = n % settings::IDLE_DISPLAY_LABELS.len();
+            check(&a, 1);
+        }
+        for m in 0..monitors::mode_count() {
+            a.cfg.monitor = m;
+            check(&a, 1);
+        }
+        for ac in 0..accent::ACCENTS.len() {
+            a.cfg.accent = ac;
+            check(&a, 4);
+        }
+        for l in 0..i18n::LANGS.len() {
+            a.cfg.lang = l;
+            check(&a, 2);
+        }
     }
 }
 
@@ -364,27 +380,128 @@ fn moved_minus_button_is_still_clickable() {
 /// Every slide name fits in its Settings > Slides cell instead of running into the chevrons.
 #[test]
 fn slide_names_fit_settings_cells() {
+    let _lang = i18n::restore_on_drop();
     let mut g = Gfx::new(1.0);
-    for id in SlideId::USER {
-        let w = g.width_ex(id.short_label(), 11.0, true);
-        assert!(w <= settingsview::SLIDE_NAME_W, "{:?} is {w:.1} px wide", id.short_label());
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        for id in SlideId::USER {
+            let w = g.width_ex(id.short_label(), 11.0, true);
+            assert!(w <= settingsview::SLIDE_NAME_W, "{:?} is {w:.1} px wide", id.short_label());
+        }
     }
 }
 
 /// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
 #[test]
 fn settings_text_fits_cells() {
+    let _lang = i18n::restore_on_drop();
     let a = test_app(1.0);
     let mut g = Gfx::new(1.0);
-    for tab in 1..=4u8 {
-        for r in a.settings_rows(tab) {
-            let w = settingsview::text_w(&r.kind);
-            let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));
-            assert!(lw <= w, "tab {tab}: label {:?} {lw:.1} px > {w} px", r.label);
-            assert!(sw <= w, "tab {tab}: sub {:?} {sw:.1} px > {w} px", r.sub);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        for tab in 1..=4u8 {
+            for r in a.settings_rows(tab) {
+                let w = settingsview::text_w(&r.kind);
+                let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));
+                assert!(lw <= w, "tab {tab}: label {:?} {lw:.1} px > {w} px", r.label);
+                assert!(sw <= w, "tab {tab}: sub {:?} {sw:.1} px > {w} px", r.sub);
+            }
         }
     }
 }
+
+/// The Settings tabs sit right of the title and inside the notch, in every language.
+#[test]
+fn settings_tabs_fit_next_to_the_title() {
+    let _lang = i18n::restore_on_drop();
+    let mut g = Gfx::new(1.0);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        let tabs = settingsview::tab_rects(&mut g);
+        let title_end = LX + g.width_ex(i18n::tr("Settings"), 15.0, true);
+        assert!(tabs[0].0 >= title_end + 8.0, "lang {lang}: tabs start at {:.1}, title ends at {title_end:.1}", tabs[0].0);
+        let (x, w) = tabs[tabs.len() - 1];
+        assert!(x + w <= RX + 0.01, "lang {lang}: tabs end at {:.1} > {RX}", x + w);
+    }
+}
+
+/// The Language row in Settings > Features switches the whole UI right away, and back.
+#[test]
+fn language_row_switches_the_ui() {
+    let _lang = i18n::restore_on_drop();
+    let mut a = test_app(1.0);
+    let i = a.settings_rows(2).iter().position(|r| r.label == "Language").expect("Language row in Features");
+    let (cx, cy) = settingsview::cell_pos(i);
+    a.settings_click_rows(2, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    assert_eq!(a.cfg.lang, i18n::ID);
+    assert_eq!(i18n::current(), i18n::ID, "applied right away");
+    assert_eq!(a.settings_rows(2)[i].label, "Bahasa");
+    assert_eq!(a.settings_rows(4)[1].label, "Kota");
+    assert_eq!(SlideId::Todo.label(), "Tugas");
+    assert_eq!(clock::day_short(1), "Sen");
+    assert_eq!(clock::month(4), "Mei");
+    assert_eq!(timer::fmt_preset(90 * 60), "1 j 30 mnt");
+    a.settings_click_rows(2, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    assert_eq!(a.cfg.lang, i18n::EN);
+    assert_eq!(a.settings_rows(4)[1].label, "City");
+    assert_eq!(clock::day_short(1), "Mon");
+    assert_eq!(timer::fmt_preset(90 * 60), "1 h 30 min");
+}
+
+/// The main screens in Indonesian, for review.
+#[test]
+fn snap_indonesian() {
+    let _lang = i18n::restore_on_drop();
+    let id = |a: &mut App| {
+        a.cfg.lang = i18n::ID;
+        i18n::set(i18n::ID);
+    };
+    for tab in 0..5u8 {
+        shot(&format!("id-settings-tab{tab}"), 1.0, |a| {
+            id(a);
+            open_settings_tab(a, tab);
+        });
+    }
+    for (name, slide) in [("id-todo", SlideId::Todo), ("id-water", SlideId::Water), ("id-system", SlideId::System), ("id-notifs", SlideId::Notifications), ("id-music", SlideId::Music), ("id-clipboard", SlideId::Clipboard), ("id-ledge", SlideId::Ledge), ("id-scrap", SlideId::Scrap)] {
+        shot(name, 1.0, |a| {
+            id(a);
+            open_slide(a, slide);
+        });
+    }
+    shot("id-timer", 1.0, |a| {
+        id(a);
+        a.tm.start(Instant::now() - Duration::from_secs(100));
+        open_slide(a, SlideId::Timer);
+    });
+    shot("id-pomodoro", 1.0, |a| {
+        id(a);
+        pomo(a, 2, timer::Phase::Focus, 9 * 60 + 12);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("id-clipboard-full", 1.0, |a| {
+        id(a);
+        with_clips(a, &CLIPS);
+        open_slide(a, SlideId::Clipboard);
+    });
+    shot("id-toast-prayer", 1.0, |a| {
+        id(a);
+        show_toast(a, ToastKind::Prayer { idx: 2, at: 15 * 60 + 12 });
+    });
+    shot("id-toast-battery", 1.0, |a| {
+        id(a);
+        show_toast(a, ToastKind::LowBattery { pct: 15 });
+    });
+    shot("id-toast-water", 1.0, |a| {
+        id(a);
+        show_toast(a, ToastKind::Water);
+    });
+    shot("id-toast-mic", 1.0, |a| {
+        id(a);
+        show_toast(a, ToastKind::Privacy { cam: false, app: "Zoom".into() });
+    });
+}
+
+/// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
 
 /// Fake prayer times: prayer `idx` is `mins` minutes from now, the others are outside the countdown window.
 fn prayer_in(a: &mut App, idx: usize, mins: u16) {

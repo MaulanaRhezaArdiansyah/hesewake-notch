@@ -33,6 +33,12 @@ pub(crate) fn get(i: usize) -> Accent {
     ACCENTS.get(i).copied().unwrap_or(ACCENTS[0])
 }
 
+/// Accent `i`'s name in the UI language.
+pub(crate) fn label(i: usize) -> &'static str {
+    use crate::i18n::tr;
+    [tr("Blue"), tr("Purple"), "Pink", tr("Orange"), tr("Green"), tr("Teal")].get(i).copied().unwrap_or(ACCENTS[0].name)
+}
+
 /// Next/previous index, wrapping around.
 pub(crate) fn step(i: usize, forward: bool) -> usize {
     let n = ACCENTS.len();

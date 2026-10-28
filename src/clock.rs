@@ -4,9 +4,20 @@ use super::*;
 
 pub(crate) const CLOCK_FADE_IN: f32 = 0.35;
 
-const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-pub(crate) const DAYS_S: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-pub(crate) const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/// Day name, 0 = Sunday.
+pub(crate) fn day_long(i: usize) -> &'static str {
+    [tr("Sunday"), tr("Monday"), tr("Tuesday"), tr("Wednesday"), tr("Thursday"), tr("Friday"), tr("Saturday")][i % 7]
+}
+
+/// Short day name, 0 = Sunday.
+pub(crate) fn day_short(i: usize) -> &'static str {
+    [tr("Sun"), tr("Mon"), tr("Tue"), tr("Wed"), tr("Thu"), tr("Fri"), tr("Sat")][i % 7]
+}
+
+/// Short month name, 0 = January.
+pub(crate) fn month(i: usize) -> &'static str {
+    ["Jan", "Feb", "Mar", "Apr", tr("May"), "Jun", "Jul", tr("Aug"), "Sep", tr("Oct"), "Nov", tr("Dec")][i % 12]
+}
 
 pub(crate) fn now_tm() -> SYSTEMTIME {
     unsafe { GetLocalTime() }
@@ -34,8 +45,8 @@ impl App {
     pub(crate) fn clock_side(&self, g: &mut Gfx, rx: f32, al: f32) {
         let st = now_tm();
         let hm = format!("{:02}:{:02}", st.wHour, st.wMinute);
-        let day = DAYS[(st.wDayOfWeek as usize) % 7].to_uppercase();
-        let mon = MONTHS[((st.wMonth as usize).max(1) - 1) % 12].to_uppercase();
+        let day = day_long(st.wDayOfWeek as usize).to_uppercase();
+        let mon = month((st.wMonth as usize).max(1) - 1).to_uppercase();
         let date = format!("{} {} {}", st.wDay, mon, st.wYear);
         let (hs, ds, ts) = (46.0, 14.0, 12.0);
         let hw = g.width_ex(&hm, hs, true);

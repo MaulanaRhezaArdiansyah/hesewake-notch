@@ -82,10 +82,10 @@ pub(crate) fn one_line(s: &str) -> String {
 /// How long ago, short: "now", "5m", "2h", "3d".
 pub(crate) fn ago(secs: u64) -> String {
     match secs {
-        0..=59 => "now".into(),
+        0..=59 => tr("now").into(),
         60..=3599 => format!("{}m", secs / 60),
-        3600..=86399 => format!("{}h", secs / 3600),
-        _ => format!("{}d", secs / 86400),
+        3600..=86399 => fill(tr("{}h"), &[&(secs / 3600)]),
+        _ => fill(tr("{}d"), &[&(secs / 86400)]),
     }
 }
 
@@ -292,14 +292,14 @@ impl App {
         let n = self.clips.len();
         if n == 0 {
             let cx = x + CW / 2.0;
-            g.txt_c("Copy some text and it shows up here", cx, 66.0, 13.0, TEXT_DIM, al, CW, false);
-            g.txt_c("Kept in memory only, gone when the app closes", cx, 88.0, 11.0, TEXT_FAINT, al, CW, false);
+            g.txt_c(tr("Copy some text and it shows up here"), cx, 66.0, 13.0, TEXT_DIM, al, CW, false);
+            g.txt_c(tr("Kept in memory only, gone when the app closes"), cx, 88.0, 11.0, TEXT_FAINT, al, CW, false);
             return;
         }
         let (bx, by, bw, bh) = CLEAR_BTN;
         g.fill(&rrect(bx + ox, by, bw, bh, bh / 2.0), &paint(255, 255, 255, 0.11 * al));
-        g.txt_c("Clear", bx + ox + bw / 2.0, by + ty(bh, 12.0), 12.0, [255, 255, 255], al, bw, false);
-        let count = format!("{n} of {MAX_ITEMS}");
+        g.txt_c(tr("Clear"), bx + ox + bw / 2.0, by + ty(bh, 12.0), 12.0, [255, 255, 255], al, bw, false);
+        let count = fill(tr("{} of {}"), &[&n, &MAX_ITEMS]);
         let cw = g.width(&count, 11.0);
         g.txt(&count, bx + ox - 10.0 - cw, 15.0, 11.0, TEXT_FAINT, al, 80.0);
 
@@ -311,7 +311,7 @@ impl App {
             let copied = i == 0 && flashing;
             let bg = if copied { g.sacc(0.30 * al) } else { paint(255, 255, 255, 0.08 * al) };
             g.fill(&rrect(x, y, w, ROW_H, 10.0), &bg);
-            let (right, rcol) = if copied { ("Copied".to_string(), g.acc.bright) } else { (ago(c.at.elapsed().as_secs()), TEXT_FAINT) };
+            let (right, rcol) = if copied { (tr("Copied").to_string(), g.acc.bright) } else { (ago(c.at.elapsed().as_secs()), TEXT_FAINT) };
             let rw = g.width(&right, 11.0);
             g.txt(&right, x + w - X_W - rw, y + ty(ROW_H, 11.0), 11.0, rcol, al, 60.0);
             let maxw = w - 12.0 - X_W - rw - 10.0;

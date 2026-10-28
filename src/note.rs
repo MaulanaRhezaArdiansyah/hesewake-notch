@@ -564,9 +564,9 @@ impl App {
         }
 
         let (hint, hcol) = if editing {
-            ("Esc to save", TEXT_FAINT)
+            (tr("Esc to save"), TEXT_FAINT)
         } else if n > 0 {
-            ("Clear", g.acc.main)
+            (tr("Clear"), g.acc.main)
         } else {
             ("", g.acc.main)
         };
@@ -582,7 +582,7 @@ impl App {
         let tx = x + 14.0;
         if n == 0 {
             if !editing {
-                g.txt("Click to write a note", tx, NOTE_Y + NOTE_TOP, NOTE_SIZE, [160, 172, 200], al, NOTE_W);
+                g.txt(tr("Click to write a note"), tx, NOTE_Y + NOTE_TOP, NOTE_SIZE, [160, 172, 200], al, NOTE_W);
             }
             if editing && self.caret_on {
                 g.rect(tx, NOTE_Y + NOTE_TOP + 1.0, 1.5, 15.0, &paint(255, 255, 255, al));
