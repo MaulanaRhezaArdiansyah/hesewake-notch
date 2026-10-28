@@ -2,6 +2,17 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-10-28
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #17, #18) dan Dependabot (PR #11).
+
+### Added
+- **Slide Clipboard** (opsional, tersembunyi secara default; nyalakan di Settings > Slides, hotkey `Ctrl+Alt+9`): menyimpan 10 teks terakhir yang disalin dari aplikasi mana pun, terbaru di atas. Klik baris untuk menyalin ulang (baris menampilkan "Copied"), tombol **×** menghapus satu entri, dan **Clear** mengosongkan daftar. Menyalin teks yang sama memindahkannya ke atas tanpa entri ganda. Hanya teks, hanya di memori (tidak pernah ditulis ke disk), dan clipboard tidak dibaca sama sekali saat slide mati. Salinan dari password manager (`ExcludeClipboardContentFromMonitorProcessing`, `Clipboard Viewer Ignore`, `CanIncludeInClipboardHistory = 0`) dan salinan di atas 100.000 karakter dilewati (kontribusi @MaulanaRhezaArdiansyah, PR #18).
+- **Tes snapshot** untuk Pomodoro, waktu sholat, warna aksen, dan hotkey slide (kontribusi @MaulanaRhezaArdiansyah, PR #17).
+
+### Changed
+- GitHub Actions `actions/checkout` naik dari 5.1.0 ke 7.0.1 (Dependabot, PR #11).
+
 ## [0.5.0] - 2026-10-27
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #2, #3, #4, #5, #6, #8, #9) dan @gewall (PR #7).
