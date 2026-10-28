@@ -26,7 +26,7 @@ const MAX_PERIODS: i64 = 20_000;
 const FEED_BUDGET: i64 = 500_000;
 /// Each recurring event gets an equal share of the budget (thousands of periods in a normal feed), so a few costly
 /// events (an invite anyone can send) can't use up the share of the user's own. The floor only matters for feeds
-/// with thousands of rules, and stays low so adding invites can't raise the total work much past the budget.
+/// with thousands of rules; the total never goes past the budget.
 const MIN_SHARE: i64 = 100;
 
 // ---------------------------------------------------------------- civil time
@@ -499,13 +499,19 @@ fn meeting_link(text: &str) -> Option<String> {
 /// The occurrences that overlap `[from, to)`, sorted by start. `local_offset` (seconds east of UTC) is used for times
 /// without a zone and for all-day events.
 pub(crate) fn events_between(ics: &str, from: i64, to: i64, local_offset: i32) -> Vec<Event> {
-    let mut budget = FEED_BUDGET;
-    events_with_budget(ics, from, to, local_offset, &mut budget)
+    events_with_budget(ics, from, to, local_offset, FEED_BUDGET).0
 }
 
-/// `events_between` with the work budget passed in (rule periods for the whole feed, shared out per event). It is
-/// lowered by the work done, and left below 0 if some event needed more than its share.
-fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: &mut i64) -> Vec<Event> {
+/// Work done expanding recurring events: rule periods looked at, and whether some event was cut short.
+#[derive(Debug)]
+struct Work {
+    used: i64,
+    cut: bool,
+}
+
+/// `events_between` with the work budget (rule periods for the whole feed, shared out per event) passed in, and the
+/// work done reported back.
+fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: i64) -> (Vec<Event>, Work) {
     let mut zones = Zones { tz: HashMap::new(), local: local_offset };
     let mut raws: Vec<Raw> = Vec::new();
     let mut cur: Option<Raw> = None;
@@ -578,8 +584,8 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
         raws.iter().filter_map(|e| e.recurrence_id.as_ref().map(|r| (e.uid.clone(), zones.to_utc(r)))).collect();
     let mut out = Vec::new();
     let rules = raws.iter().filter(|e| e.rrule.is_some() && e.recurrence_id.is_none()).count().max(1) as i64;
-    let share = (*budget / rules).clamp(MIN_SHARE, MAX_PERIODS);
-    let mut cut = false;
+    let share = (budget / rules).clamp(MIN_SHARE, MAX_PERIODS);
+    let mut work = Work { used: 0, cut: false };
     for e in &raws {
         let Some(start) = &e.start else { continue };
         if e.cancelled {
@@ -608,10 +614,16 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
                 };
                 // the window in this event's wall time, with a day of slack for the zone offset
                 let shift = start.wall - start_utc;
-                let mut mine = share;
+                // its share, but never more than what is left: the total stays within the budget
+                let allowed = share.min(budget - work.used);
+                if allowed <= 0 {
+                    work.cut = true;
+                    continue;
+                }
+                let mut mine = allowed;
                 let walls = expand(&rule, start.wall, from + shift - D, to + shift + D, &until_ok, &mut mine);
-                *budget -= share - mine.max(0);
-                cut |= mine < 0;
+                work.used += allowed - mine.max(0);
+                work.cut |= mine < 0;
                 walls
             }
             None => vec![start.wall],
@@ -628,14 +640,11 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
             }
         }
     }
-    if cut {
-        *budget = (*budget).min(-1);
-        if !cfg!(test) {
-            crate::perf::note("calendar: some recurring events needed more work than allowed and were cut short");
-        }
+    if work.cut && !cfg!(test) {
+        crate::perf::note("calendar: some recurring events needed more work than allowed and were cut short");
     }
     out.sort_by(|a, b| (a.start, &a.summary).cmp(&(b.start, &b.summary)));
-    out
+    (out, work)
 }
 
 #[cfg(test)]
@@ -846,15 +855,13 @@ mod tests {
         assert!(ics.len() < 10_000_000);
         let (from, to) = week();
         let t = std::time::Instant::now();
-        let mut budget = FEED_BUDGET;
-        let _ = events_with_budget(&ics, from, to, WIB, &mut budget);
-        assert!(budget < 0, "the budget stopped the work");
+        let (_, work) = events_with_budget(&ics, from, to, WIB, FEED_BUDGET);
+        assert!(work.cut, "the budget stopped the work");
         // without the budget this took hours; the limit is loose for slow debug builds on CI
         assert!(t.elapsed().as_secs_f32() < 30.0, "took {:?}", t.elapsed());
-        let mut budget = FEED_BUDGET;
-        let normal = events_with_budget(&cal(&ev("UID:n\r\nDTSTART:20261026T010000Z\r\nDTEND:20261026T011500Z\r\nRRULE:FREQ=DAILY\r\nSUMMARY:n\r\n")), from, to, WIB, &mut budget);
+        let (normal, work) = events_with_budget(&cal(&ev("UID:n\r\nDTSTART:20261026T010000Z\r\nDTEND:20261026T011500Z\r\nRRULE:FREQ=DAILY\r\nSUMMARY:n\r\n")), from, to, WIB, FEED_BUDGET);
         assert_eq!(normal.len(), 7);
-        assert!(budget >= FEED_BUDGET - 20, "an ordinary rule costs a few periods, not the budget");
+        assert!(work.used <= 20 && !work.cut, "an ordinary rule costs a few periods: {work:?}");
     }
 
     /// Costly invites placed first in the feed must not use up the work budget and hide the user's own meetings.
@@ -884,14 +891,13 @@ mod tests {
         // the first week only counts days from DTSTART (Wednesday) on
         let mid_week = ev("UID:m\r\nDTSTART:20261021T020000Z\r\nDTEND:20261021T021500Z\r\nRRULE:FREQ=WEEKLY;COUNT=2;BYDAY=MO,WE\r\nSUMMARY:two\r\n");
         let daily = ev("UID:d\r\nDTSTART:20000101T030000Z\r\nDTEND:20000101T031500Z\r\nRRULE:FREQ=DAILY;COUNT=9796\r\nSUMMARY:daily\r\n");
-        let mut budget = FEED_BUDGET;
-        let v = events_with_budget(&cal(&(ended + &running + &mid_week + &daily)), from, to, WIB, &mut budget);
+        let (v, work) = events_with_budget(&cal(&(ended + &running + &mid_week + &daily)), from, to, WIB, FEED_BUDGET);
         let n = |s: &str| v.iter().filter(|e| e.summary == s).count();
         assert_eq!((n("ended"), n("running")), (0, 2));
         assert_eq!(n("two"), 1, "Wed 21, then Mon 26 in the window; none after");
         // 1 Jan 2000 + 9795 days = 26 Oct 2026: the last one
         assert_eq!(n("daily"), 1);
-        assert!(budget > FEED_BUDGET - 100, "skipped ahead instead of walking 26 years");
+        assert!(work.used < 100, "skipped ahead instead of walking 26 years: {work:?}");
     }
 
     /// Rules that never produce a date (30 February) must stop at the window too, not run every period they are
@@ -905,6 +911,19 @@ mod tests {
         let v = events_between(&ics, from, to, WIB);
         let mine: Vec<_> = v.iter().map(|e| (e.summary.as_str(), e.start)).collect();
         assert_eq!(mine, [("Monthly review", unix_utc(2026, 10, 26, 2, 0, 0))]);
+    }
+
+    /// However many recurring events a feed has, the total work stays within the budget (the per-event floor must not
+    /// add up past it).
+    #[test]
+    fn total_work_never_exceeds_the_budget() {
+        let busy = ev("UID:c\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=MONTHLY;COUNT=999999;BYMONTHDAY=1\r\nSUMMARY:x\r\n");
+        let ics = cal(&busy.repeat(8000));
+        let (from, to) = week();
+        let budget = 300_000;
+        let (_, work) = events_with_budget(&ics, from, to, WIB, budget);
+        assert!(work.cut);
+        assert!(work.used <= budget, "{work:?}");
     }
 
     #[test]
