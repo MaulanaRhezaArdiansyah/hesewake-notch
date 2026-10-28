@@ -501,8 +501,6 @@ fn snap_indonesian() {
     });
 }
 
-/// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
-
 /// Fake prayer times: prayer `idx` is `mins` minutes from now, the others are outside the countdown window.
 fn prayer_in(a: &mut App, idx: usize, mins: u16) {
     let st = now_tm();
