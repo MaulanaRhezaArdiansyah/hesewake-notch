@@ -24,10 +24,11 @@ const MEETING_HOSTS: [&str; 5] = ["meet.google.com", "zoom.us", "teams.microsoft
 /// hostile feed (anyone can send an invite) can't keep the fetch thread busy.
 const MAX_PERIODS: i64 = 20_000;
 const FEED_BUDGET: i64 = 500_000;
-/// Each recurring event gets an equal share of the budget (thousands of periods in a normal feed), so a few costly
-/// events (an invite anyone can send) can't use up the share of the user's own. The floor only matters for feeds
-/// with thousands of rules; the total never goes past the budget.
-const MIN_SHARE: i64 = 100;
+/// Each recurring event gets an equal share of the budget whatever its place in the feed (thousands of periods in a
+/// normal feed), so costly events (an invite anyone can send) can't use up the share of the user's own. The floor
+/// is what a rule needs to jump to the window and read it; it only applies past ~30 000 rules, so the total stays
+/// within max(budget, 16 x rules), and the 10 MB download limit keeps that around 2 million cheap periods.
+const MIN_SHARE: i64 = 16;
 
 // ---------------------------------------------------------------- civil time
 
@@ -614,15 +615,9 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
                 };
                 // the window in this event's wall time, with a day of slack for the zone offset
                 let shift = start.wall - start_utc;
-                // its share, but never more than what is left: the total stays within the budget
-                let allowed = share.min(budget - work.used);
-                if allowed <= 0 {
-                    work.cut = true;
-                    continue;
-                }
-                let mut mine = allowed;
+                let mut mine = share;
                 let walls = expand(&rule, start.wall, from + shift - D, to + shift + D, &until_ok, &mut mine);
-                work.used += allowed - mine.max(0);
+                work.used += share - mine.max(0);
                 work.cut |= mine < 0;
                 walls
             }
@@ -913,8 +908,8 @@ mod tests {
         assert_eq!(mine, [("Monthly review", unix_utc(2026, 10, 26, 2, 0, 0))]);
     }
 
-    /// However many recurring events a feed has, the total work stays within the budget (the per-event floor must not
-    /// add up past it).
+    /// With thousands of recurring events the shares shrink so the total stays within the budget (the floor only
+    /// takes over past budget / 16 rules).
     #[test]
     fn total_work_never_exceeds_the_budget() {
         let busy = ev("UID:c\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=MONTHLY;COUNT=999999;BYMONTHDAY=1\r\nSUMMARY:x\r\n");
@@ -924,6 +919,18 @@ mod tests {
         let (_, work) = events_with_budget(&ics, from, to, WIB, budget);
         assert!(work.cut);
         assert!(work.used <= budget, "{work:?}");
+    }
+
+    /// Feed order can't be used to starve an event: thousands of costly rules placed first still leave the user's own
+    /// weekly meeting (which needs only a few periods) its share.
+    #[test]
+    fn feed_order_cannot_starve_an_event() {
+        let busy = ev("UID:c\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=MONTHLY;COUNT=999999;BYMONTHDAY=1\r\nSUMMARY:x\r\n");
+        let standup = ev("UID:s\r\nDTSTART:20200106T020000Z\r\nDTEND:20200106T021500Z\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\nSUMMARY:Standup\r\n");
+        let ics = cal(&(busy.repeat(8000) + &standup));
+        let (from, to) = week();
+        let (v, work) = events_with_budget(&ics, from, to, WIB, 300_000);
+        assert!(v.iter().any(|e| e.summary == "Standup" && e.start == unix_utc(2026, 10, 26, 2, 0, 0)), "{work:?}");
     }
 
     #[test]
