@@ -109,6 +109,9 @@ fn test_app(s: f32) -> App {
         prev_fg: 0,
         shelf: Vec::new(),
         shelf_flash: None,
+        clips: clipboard::History::default(),
+        clip_scroll: 0,
+        clip_flash: None,
         drop_pulse: None,
         note: String::new(),
         note_mode: false,
@@ -358,6 +361,16 @@ fn moved_minus_button_is_still_clickable() {
     assert_eq!(a.cfg.weather_city, (long + 1) % weather::CITIES.len(), "+ still steps forward");
 }
 
+/// Every slide name fits in its Settings > Slides cell instead of running into the chevrons.
+#[test]
+fn slide_names_fit_settings_cells() {
+    let mut g = Gfx::new(1.0);
+    for id in SlideId::USER {
+        let w = g.width_ex(id.short_label(), 11.0, true);
+        assert!(w <= settingsview::SLIDE_NAME_W, "{:?} is {w:.1} px wide", id.short_label());
+    }
+}
+
 /// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
 #[test]
 fn settings_text_fits_cells() {
@@ -470,4 +483,122 @@ fn slide_hotkey_opens_and_closes() {
     assert!(a.slide_hotkey(0), "same hotkey again closes");
     assert!(!a.expanded());
     assert!(!a.slide_hotkey(a.order.len()), "no slide at that position");
+}
+
+/// Fill the clipboard history, oldest first: (text, seconds ago).
+fn with_clips(a: &mut App, clips: &[(&str, u64)]) {
+    let now = Instant::now();
+    for (s, ago) in clips {
+        a.clips.push(s, now - Duration::from_secs(*ago));
+    }
+}
+
+const CLIPS: [(&str, u64); 4] = [
+    ("https://github.com/dirgaastya/hesewake-notch/issues/13", 3 * 86400),
+    ("fn main() {\r\n    println!(\"hello\");\r\n}", 2 * 3600),
+    ("Meeting notes: ship 0.6 after the clipboard slide lands, then look at the ICS calendar idea and the update check", 600),
+    ("rhezaardiansyah", 20),
+];
+
+/// Middle of visible row `vi` on the Clipboard slide.
+fn clip_row_y(vi: usize) -> f32 {
+    clipboard::ROW_Y0 + vi as f32 * clipboard::ROW_P + clipboard::ROW_H / 2.0
+}
+
+fn set_slide(a: &mut App, id: SlideId, on: bool) {
+    a.cfg.slides.iter_mut().find(|(s, _)| *s == id).expect("slide in config").1 = on;
+}
+
+#[test]
+fn snap_clipboard() {
+    shot("clipboard-empty", 1.0, |a| open_slide(a, SlideId::Clipboard));
+    for s in SCALES {
+        shot("clipboard", s, |a| {
+            with_clips(a, &CLIPS);
+            open_slide(a, SlideId::Clipboard);
+        });
+    }
+    shot("clipboard-copied", 1.0, |a| {
+        with_clips(a, &CLIPS);
+        open_slide(a, SlideId::Clipboard);
+        let hit = a.clip_hit(LX + 60.0, clip_row_y(2)).expect("third row");
+        a.clip_apply(hit);
+    });
+    shot("clipboard-full-scrolled", 1.0, |a| {
+        for i in 0..clipboard::MAX_ITEMS {
+            a.clips.push(&format!("Copied text number {}", i + 1), Instant::now() - Duration::from_secs(60 * (10 - i as u64)));
+        }
+        open_slide(a, SlideId::Clipboard);
+        a.clip_scroll = clipboard::MAX_ITEMS - 3;
+    });
+}
+
+/// Clicking an entry gives its full text back for the clipboard and moves it to the top; the clipboard update that
+/// follows does not add it twice.
+#[test]
+fn clipboard_click_copies_back_and_moves_to_top() {
+    let mut a = test_app(1.0);
+    with_clips(&mut a, &CLIPS);
+    open_slide(&mut a, SlideId::Clipboard);
+    let hit = a.clip_hit(LX + 60.0, clip_row_y(2));
+    assert_eq!(hit, Some(clipboard::ClipHit::Copy(2)));
+    assert_eq!(a.clip_apply(hit.unwrap()).as_deref(), Some(CLIPS[1].0), "full text, newlines kept");
+    assert_eq!(a.clips.items()[0].text, CLIPS[1].0, "moved to the top");
+    assert!(a.clip_flash.is_some(), "the row shows \"Copied\"");
+    assert!(!a.on_clipboard(Some(CLIPS[1].0.into()), Instant::now()), "our own copy is not added again");
+    assert_eq!(a.clips.len(), CLIPS.len());
+    assert_eq!(a.clip_hit(LX + 60.0, EXP_H - 10.0), None, "below the rows");
+}
+
+#[test]
+fn clipboard_remove_and_clear_buttons() {
+    let mut a = test_app(1.0);
+    with_clips(&mut a, &CLIPS);
+    open_slide(&mut a, SlideId::Clipboard);
+    let x_btn = LX + clipboard::row_w(a.clips.len()) - 15.0;
+    assert_eq!(a.clip_hit(x_btn, clip_row_y(0)), Some(clipboard::ClipHit::Remove(0)));
+    assert_eq!(a.clip_apply(clipboard::ClipHit::Remove(0)), None, "nothing to copy");
+    assert_eq!(a.clips.items()[0].text, CLIPS[2].0);
+    let (cx, cy, cw, ch) = clipboard::CLEAR_BTN;
+    assert_eq!(a.clip_hit(cx + cw / 2.0, cy + ch / 2.0), Some(clipboard::ClipHit::Clear));
+    a.clip_apply(clipboard::ClipHit::Clear);
+    assert!(a.clips.is_empty());
+    assert_eq!(a.clip_hit(cx + cw / 2.0, cy + ch / 2.0), None, "no Clear button on an empty list");
+}
+
+#[test]
+fn clipboard_scrolls_with_the_wheel() {
+    let mut a = test_app(1.0);
+    for i in 0..5 {
+        a.clips.push(&format!("clip {i}"), Instant::now());
+    }
+    open_slide(&mut a, SlideId::Clipboard);
+    assert!(a.clip_wheel(true));
+    assert_eq!(a.clip_scroll, 1);
+    assert_eq!(a.clip_hit(LX + 60.0, clip_row_y(0)), Some(clipboard::ClipHit::Copy(1)), "rows follow the scroll");
+    for _ in 0..5 {
+        a.clip_wheel(true);
+    }
+    assert_eq!(a.clip_scroll, 2, "stops at the last full page");
+    assert!(!a.clip_wheel(true));
+    assert!(a.clip_wheel(false));
+    assert_eq!(a.clip_scroll, 1);
+    a.clip_apply(clipboard::ClipHit::Clear);
+    assert_eq!(a.clip_scroll, 0);
+}
+
+/// Nothing is recorded while the Clipboard slide is off, and turning it off forgets what was kept.
+#[test]
+fn clipboard_is_only_recorded_while_the_slide_is_on() {
+    let mut a = test_app(1.0);
+    set_slide(&mut a, SlideId::Clipboard, false);
+    assert!(!a.on_clipboard(Some("secret".into()), Instant::now()));
+    assert!(a.clips.is_empty());
+    set_slide(&mut a, SlideId::Clipboard, true);
+    assert!(a.on_clipboard(Some("hello".into()), Instant::now()));
+    assert!(!a.on_clipboard(None, Instant::now()), "no text (or not allowed): nothing changes");
+    assert_eq!(a.clips.len(), 1);
+    set_slide(&mut a, SlideId::Clipboard, false);
+    a.on_clipboard(Some("another".into()), Instant::now());
+    assert!(a.clips.is_empty(), "turned off: history forgotten");
 }

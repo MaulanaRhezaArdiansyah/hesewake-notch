@@ -56,6 +56,9 @@ fn ss(e0: f32, e1: f32, x: f32) -> f32 {
 const SC_W: f32 = 117.0;
 const SC_GAP: f32 = 6.5;
 
+/// Room for a slide's name in its Settings > Slides cell, left of the up/down chevrons.
+pub(crate) const SLIDE_NAME_W: f32 = 48.0;
+
 fn slide_cell_pos(i: usize) -> (f32, f32) {
     let (col, row) = (i / 3, i % 3);
     (LX + col as f32 * (SC_W + SC_GAP), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
@@ -542,12 +545,12 @@ impl App {
             // with hotkeys on, a small keycap under the name shows the slide's Ctrl+Alt number
             match hotkeys::number(&self.cfg.slides, i).filter(|_| self.cfg.slide_hotkeys) {
                 Some(k) => {
-                    g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, 48.0);
+                    g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, SLIDE_NAME_W);
                     let (kx, ky, kw, kh) = (x + 9.0, y + 19.0, 13.0, 11.0);
                     g.fill(&rrect(kx, ky, kw, kh, 3.0), &paint(255, 255, 255, 0.14 * a));
                     g.txt_c(&k.to_string(), kx + kw / 2.0, ky + ty(kh, 9.0), 9.0, GREY, a, kw, true);
                 }
-                None => g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, 48.0),
+                None => g.txtb(id.short_label(), x + 9.0, y + ty(CELL_H, 11.0), 11.0, lab, a, SLIDE_NAME_W),
             }
             let dim = |ok: bool| paint(220, 220, 228, if ok { 0.9 } else { 0.25 } * a);
             // chevron naik / turun
