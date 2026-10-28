@@ -602,3 +602,21 @@ fn clipboard_is_only_recorded_while_the_slide_is_on() {
     a.on_clipboard(Some("another".into()), Instant::now());
     assert!(a.clips.is_empty(), "turned off: history forgotten");
 }
+
+/// Busy mode (fullscreen video) with music playing: right after a toast such as the volume HUD closes, the notch
+/// shrinks back to the thin line. The cover and the equalizer must not be drawn into that line, because the timer
+/// can stop before the toast's grace period ends and leave them on screen.
+#[test]
+fn thin_line_stays_empty_right_after_a_toast() {
+    let mut a = test_app(1.0);
+    a.media = Media { title: "Netflix".into(), artist: String::new(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    a.busy = true;
+    a.toast_end = Instant::now();
+    assert!(a.toast_hold(), "still inside the grace period after the toast");
+    (a.w, a.h) = anim::target(&a);
+    assert_eq!((a.w, a.h), THIN);
+    render::draw(&mut a);
+    let g = a.gfx.as_ref().expect("gfx");
+    let lit = g.pm.data().chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count();
+    assert_eq!(lit, 0, "the thin line shows {lit} coloured pixels");
+}
