@@ -57,6 +57,7 @@ mod audio;
 mod bt;
 mod busy;
 mod cjk;
+mod clipboard;
 mod clock;
 mod config;
 mod data;
@@ -223,6 +224,10 @@ struct App {
     prev_fg: isize,
     shelf: Vec<ShelfItem>,
     shelf_flash: Option<Instant>,
+    /// Clipboard slide: copied texts (newest first), scroll offset, and when an entry was last copied back.
+    clips: clipboard::History,
+    clip_scroll: usize,
+    clip_flash: Option<Instant>,
     drop_pulse: Option<Instant>,
     note: String,
     note_mode: bool,
@@ -410,6 +415,7 @@ fn main() -> Result<()> {
             perf::note("hotkey: Ctrl+Alt+H sudah dipakai aplikasi lain (mis. instance lain), tombol pintas jam/mata nonaktif");
         }
         hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
+        clipboard::listen(hwnd.0 as isize);
         sys::register_display_notifications(hwnd);
         sys::tray_add(hwnd);
 
@@ -558,6 +564,9 @@ fn main() -> Result<()> {
             prev_fg: 0,
             shelf: load_shelf(),
             shelf_flash: None,
+            clips: clipboard::History::default(),
+            clip_scroll: 0,
+            clip_flash: None,
             drop_pulse: None,
             note: load_note(),
             note_mode: false,
