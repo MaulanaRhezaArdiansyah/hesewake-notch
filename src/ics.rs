@@ -20,8 +20,10 @@ pub(crate) struct Event {
 const D: i64 = 86400;
 /// Hosts whose links count as "join the meeting".
 const MEETING_HOSTS: [&str; 5] = ["meet.google.com", "zoom.us", "teams.microsoft.com", "teams.live.com", "webex.com"];
-/// Most rule periods looked at for one event (a daily rule over ~50 years), so a broken feed can't hang the app.
+/// Most rule periods looked at for one event (a daily rule over ~50 years), and for the whole feed, so a broken or
+/// hostile feed (anyone can send an invite) can't keep the fetch thread busy.
 const MAX_PERIODS: i64 = 20_000;
+const FEED_BUDGET: i64 = 500_000;
 
 // ---------------------------------------------------------------- civil time
 
@@ -180,7 +182,7 @@ fn parse_duration(v: &str) -> Option<i64> {
     let (mut total, mut n) = (0i64, 0i64);
     for c in v.chars() {
         match c {
-            '0'..='9' => n = n * 10 + c.to_digit(10)? as i64,
+            '0'..='9' => n = n.checked_mul(10)?.checked_add(c.to_digit(10)? as i64)?,
             'T' => {}
             'W' => {
                 (total, n) = (total + n * 7 * D, 0);
@@ -200,7 +202,8 @@ fn parse_duration(v: &str) -> Option<i64> {
             _ => return None,
         }
     }
-    Some(total)
+    // longer than a year is not a meeting length worth trusting
+    Some(total.clamp(0, 366 * D))
 }
 
 /// A STANDARD / DAYLIGHT part being read: TZOFFSETTO, DTSTART, yearly rule.
@@ -291,12 +294,16 @@ struct Rule {
 
 fn parse_rule(s: &str) -> Option<Rule> {
     let mut r = Rule { freq: String::new(), interval: 1, count: None, until: None, by_day: vec![], by_month_day: vec![], by_month: vec![] };
+    // real rules list a handful of days or months; very long lists are not worth reading
+    if s.matches(',').count() > 100 {
+        return None;
+    }
     for part in s.split(';') {
         let (k, v) = part.split_once('=')?;
         match k.to_ascii_uppercase().as_str() {
             "FREQ" => r.freq = v.to_ascii_uppercase(),
-            "INTERVAL" => r.interval = v.parse::<i64>().ok()?.max(1),
-            "COUNT" => r.count = v.parse().ok(),
+            "INTERVAL" => r.interval = v.parse::<i64>().ok()?.clamp(1, 10_000),
+            "COUNT" => r.count = Some(v.parse::<u64>().ok()?.min(u32::MAX as u64) as u32),
             "UNTIL" => {
                 let (wall, date_only, utc) = parse_wall(v)?;
                 r.until = Some(Dt { wall, date_only, utc, tz: None });
@@ -304,13 +311,27 @@ fn parse_rule(s: &str) -> Option<Rule> {
             "BYDAY" => {
                 for d in v.split(',') {
                     let d = d.trim();
-                    let (n, code) = d.split_at(d.len().saturating_sub(2));
-                    let nth = if n.is_empty() { 0 } else { n.parse().ok()? };
+                    if !d.is_ascii() || d.len() < 2 {
+                        return None;
+                    }
+                    let (n, code) = d.split_at(d.len() - 2);
+                    let nth = if n.is_empty() { 0 } else { n.parse::<i32>().ok().filter(|n| (-5..=5).contains(n) && *n != 0)? };
                     r.by_day.push((nth, weekday_code(&code.to_ascii_uppercase())?));
                 }
+                r.by_day.sort_unstable();
+                r.by_day.dedup();
+                r.by_day.truncate(7 * 11);
             }
-            "BYMONTHDAY" => r.by_month_day = v.split(',').filter_map(|x| x.trim().parse().ok()).collect(),
-            "BYMONTH" => r.by_month = v.split(',').filter_map(|x| x.trim().parse().ok()).collect(),
+            "BYMONTHDAY" => {
+                r.by_month_day = v.split(',').filter_map(|x| x.trim().parse().ok()).filter(|d: &i32| (-31..=31).contains(d) && *d != 0).collect();
+                r.by_month_day.sort_unstable();
+                r.by_month_day.dedup();
+            }
+            "BYMONTH" => {
+                r.by_month = v.split(',').filter_map(|x| x.trim().parse().ok()).filter(|m| (1..=12).contains(m)).collect();
+                r.by_month.sort_unstable();
+                r.by_month.dedup();
+            }
             _ => {}
         }
     }
@@ -352,7 +373,7 @@ fn month_days(r: &Rule, y: i64, m: u32, d0: u32) -> Vec<i64> {
 
 /// Start wall times (as in `start`) produced by `rule`, up to wall time `to_wall`; earlier periods than `from_wall`
 /// are skipped when that doesn't change COUNT.
-fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(i64) -> bool) -> Vec<i64> {
+fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(i64) -> bool, budget: &mut i64) -> Vec<i64> {
     let (day0, tod) = (start.div_euclid(D), start.rem_euclid(D));
     let (y0, m0, d0) = civil_from_days(day0);
     let months0 = y0 * 12 + m0 as i64 - 1;
@@ -374,6 +395,10 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
     let mut out = Vec::new();
     let mut count = 0u32;
     for p in first_period..first_period + MAX_PERIODS {
+        *budget -= 1;
+        if *budget < 0 {
+            break;
+        }
         let k = p * r.interval;
         let days: Vec<i64> = match r.freq.as_str() {
             "DAILY" => vec![day0 + k],
@@ -425,8 +450,12 @@ fn meeting_link(text: &str) -> Option<String> {
     while let Some(i) = rest.find("https://") {
         let url: String = rest[i..].chars().take_while(|c| !c.is_whitespace() && !matches!(c, '<' | '>' | '"' | '\'' | ')' | ',' | ';')).collect();
         let url = url.trim_end_matches(['.', ']']).to_string();
-        let host = url["https://".len()..].split(['/', '?', '#', ':']).next().unwrap_or("").to_ascii_lowercase();
-        if MEETING_HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}"))) {
+        // only a plain host: no user@, port, backslash or %-escapes that a browser could read as another host
+        let after = &url["https://".len()..];
+        let host = &after[..after.find(['/', '?', '#']).unwrap_or(after.len())];
+        let plain = !host.is_empty() && host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.') && !url.contains('\\');
+        let host = host.to_ascii_lowercase();
+        if plain && MEETING_HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}"))) {
             return Some(url);
         }
         rest = &rest[i + "https://".len()..];
@@ -437,6 +466,13 @@ fn meeting_link(text: &str) -> Option<String> {
 /// The occurrences that overlap `[from, to)`, sorted by start. `local_offset` (seconds east of UTC) is used for times
 /// without a zone and for all-day events.
 pub(crate) fn events_between(ics: &str, from: i64, to: i64, local_offset: i32) -> Vec<Event> {
+    let mut budget = FEED_BUDGET;
+    events_with_budget(ics, from, to, local_offset, &mut budget)
+}
+
+/// `events_between` with the work budget passed in (rule periods for the whole feed); it is left below 0 if the
+/// feed needed more.
+fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: &mut i64) -> Vec<Event> {
     let mut zones = Zones { tz: HashMap::new(), local: local_offset };
     let mut raws: Vec<Raw> = Vec::new();
     let mut cur: Option<Raw> = None;
@@ -536,7 +572,7 @@ pub(crate) fn events_between(ics: &str, from: i64, to: i64, local_offset: i32) -
                 };
                 // the window in this event's wall time, with a day of slack for the zone offset
                 let shift = start.wall - start_utc;
-                expand(&rule, start.wall, from + shift - D, to + shift + D, &until_ok)
+                expand(&rule, start.wall, from + shift - D, to + shift + D, &until_ok, budget)
             }
             None => vec![start.wall],
         };
@@ -720,6 +756,59 @@ mod tests {
         assert_eq!(link("Zoom").as_deref(), Some("https://us02web.zoom.us/j/8123456789?pwd=Ab"));
         assert_eq!(link("Teams").as_deref(), Some("https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=y"));
         assert_eq!(link("Lunch"), None, "a map link is not a meeting");
+    }
+
+    /// Anyone can send a calendar invite, so links in a feed are untrusted: only a plain https URL whose host really
+    /// is a meeting service counts.
+    #[test]
+    fn disguised_links_are_not_meeting_links() {
+        for bad in [
+            "https://evil.com\\@x.zoom.us/j/1",
+            "https://meet.google.com@evil.com/abc",
+            "https://evil.com%2F@meet.google.com/abc",
+            "https://evil.com\\meet.google.com/abc",
+            "https://meet.google.com.evil.com/abc",
+            "https://xzoom.us/j/1",
+            "https://meet.google.com:443@evil.com/",
+        ] {
+            assert_eq!(meeting_link(bad), None, "{bad:?}");
+        }
+        assert_eq!(meeting_link("Join: https://us02web.zoom.us/j/81?pwd=Ab").as_deref(), Some("https://us02web.zoom.us/j/81?pwd=Ab"));
+        assert_eq!(meeting_link("https://meet.google.com/abc-defg-hij.").as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+    }
+
+    /// The release build aborts on panic, so a hostile feed must never panic the fetch thread.
+    #[test]
+    fn hostile_values_do_not_panic() {
+        let (from, to) = week();
+        for rule in ["FREQ=WEEKLY;BYDAY=\u{e9}\u{e9}", "FREQ=WEEKLY;BYDAY=1\u{e9}", "FREQ=DAILY;INTERVAL=999999999999999999", "FREQ=MONTHLY;BYDAY=99999999999MO", "FREQ=DAILY;COUNT=99999999999"] {
+            let ics = cal(&ev(&format!("UID:h\r\nDTSTART:20261026T010000Z\r\nDURATION:PT99999999999999999999H\r\nRRULE:{rule}\r\nSUMMARY:x\r\n")));
+            let _ = events_between(&ics, from, to, WIB);
+        }
+        let ics = cal(&ev("UID:h\r\nDTSTART:99991231T235959Z\r\nDTEND:00010101T000000Z\r\nRRULE:FREQ=YEARLY;INTERVAL=9999\r\nSUMMARY:x\r\n"));
+        let _ = events_between(&ics, i64::MIN / 4, i64::MAX / 4, WIB);
+    }
+
+    /// Thousands of recurring events with long BYDAY lists still finish quickly.
+    #[test]
+    fn work_stays_bounded_for_huge_feeds() {
+        // ~6 MB, under the 10 MB download limit: long lists, and many rules counted from 1900
+        let by_day = vec!["MO,TU,WE,TH,FR,SA,SU"; 300].join(",");
+        let long = ev(&format!("UID:b\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=WEEKLY;COUNT=999999;BYDAY={by_day}\r\nSUMMARY:x\r\n"));
+        let busy = ev("UID:c\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=WEEKLY;COUNT=999999;BYDAY=MO,TU,WE,TH,FR,SA,SU\r\nSUMMARY:x\r\n");
+        let ics = cal(&(long.repeat(900) + &busy.repeat(2000)));
+        assert!(ics.len() < 10_000_000);
+        let (from, to) = week();
+        let t = std::time::Instant::now();
+        let mut budget = FEED_BUDGET;
+        let _ = events_with_budget(&ics, from, to, WIB, &mut budget);
+        assert!(budget < 0, "the budget stopped the work");
+        // without the budget this took hours; the limit is loose for slow debug builds on CI
+        assert!(t.elapsed().as_secs_f32() < 30.0, "took {:?}", t.elapsed());
+        let mut budget = FEED_BUDGET;
+        let normal = events_with_budget(&cal(&ev("UID:n\r\nDTSTART:20261026T010000Z\r\nDTEND:20261026T011500Z\r\nRRULE:FREQ=DAILY\r\nSUMMARY:n\r\n")), from, to, WIB, &mut budget);
+        assert_eq!(normal.len(), 7);
+        assert!(budget >= FEED_BUDGET - 20, "an ordinary rule costs a few periods, not the budget");
     }
 
     #[test]
