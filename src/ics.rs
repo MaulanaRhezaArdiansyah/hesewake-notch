@@ -379,9 +379,15 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
     let months0 = y0 * 12 + m0 as i64 - 1;
     let week0 = day0 - ((weekday(day0) + 6) % 7) as i64;
     // jump ahead to near the window when nothing has to be counted from the start
-    let first_period = if r.count.is_some() {
-        0
-    } else {
+    // weekday offsets from Monday that a WEEKLY rule uses
+    let week_days: Vec<i64> = {
+        let mut v: Vec<i64> = if r.by_day.is_empty() { vec![day0 - week0] } else { r.by_day.iter().map(|&(_, wd)| ((wd + 6) % 7) as i64).collect() };
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    // jump to just before the window; with COUNT only where each period makes a known number of occurrences
+    let span = {
         let from_day = from_wall.div_euclid(D) - 1;
         let (fy, fm, _) = civil_from_days(from_day);
         let span = match r.freq.as_str() {
@@ -392,8 +398,25 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
         };
         (span - 1).max(0)
     };
+    let mut count = 0u64;
+    let first_period = match (r.count, r.freq.as_str()) {
+        (None, _) => span,
+        (Some(_), "DAILY") => {
+            count = span as u64;
+            span
+        }
+        (Some(_), "WEEKLY") if span > 0 => {
+            // the first week counts only the days from DTSTART on
+            let first = week_days.iter().filter(|&&o| o >= day0 - week0).count() as u64;
+            count = first + (span as u64 - 1) * week_days.len() as u64;
+            span
+        }
+        _ => 0,
+    };
+    if r.count.is_some_and(|c| count >= c as u64) {
+        return Vec::new(); // all occurrences were before the window
+    }
     let mut out = Vec::new();
-    let mut count = 0u32;
     for p in first_period..first_period + MAX_PERIODS {
         *budget -= 1;
         if *budget < 0 {
@@ -404,10 +427,7 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
             "DAILY" => vec![day0 + k],
             "WEEKLY" => {
                 let ws = week0 + 7 * k;
-                let mut v: Vec<i64> = if r.by_day.is_empty() { vec![day0 - week0] } else { r.by_day.iter().map(|&(_, wd)| ((wd + 6) % 7) as i64).collect() };
-                v.sort_unstable();
-                v.dedup();
-                v.into_iter().map(|o| ws + o).collect()
+                week_days.iter().map(|o| ws + o).collect()
             }
             "MONTHLY" => {
                 let mi = months0 + k;
@@ -428,7 +448,7 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
                 continue;
             }
             let wall = d * D + tod;
-            if !until_ok(wall) || r.count.is_some_and(|c| count >= c) {
+            if !until_ok(wall) || r.count.is_some_and(|c| count >= c as u64) {
                 return out;
             }
             count += 1;
@@ -544,7 +564,15 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
     let replaced: HashSet<(String, i64)> =
         raws.iter().filter_map(|e| e.recurrence_id.as_ref().map(|r| (e.uid.clone(), zones.to_utc(r)))).collect();
     let mut out = Vec::new();
-    for e in &raws {
+    // cheapest first, so costly rules (e.g. from an invite) can't use up the budget before the user's own events:
+    // single events, then rules without COUNT (they jump to the window), then COUNT rules, most recent first
+    let mut order: Vec<&Raw> = raws.iter().collect();
+    order.sort_by_key(|e| {
+        let rule = e.rrule.is_some() && e.recurrence_id.is_none();
+        let counted = rule && e.rrule.as_deref().is_some_and(|r| r.to_ascii_uppercase().contains("COUNT="));
+        (rule, counted, std::cmp::Reverse(e.start.as_ref().map_or(i64::MIN, |s| s.wall)))
+    });
+    for e in order {
         let Some(start) = &e.start else { continue };
         if e.cancelled {
             continue;
@@ -587,6 +615,9 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
                 out.push(Event { summary: e.summary.clone(), start: s, end, all_day: start.date_only, link: link.clone() });
             }
         }
+    }
+    if *budget < 0 && !cfg!(test) {
+        crate::perf::note("calendar: the feed needs more work than allowed; some recurring events were skipped");
     }
     out.sort_by(|a, b| (a.start, &a.summary).cmp(&(b.start, &b.summary)));
     out
@@ -794,8 +825,8 @@ mod tests {
     fn work_stays_bounded_for_huge_feeds() {
         // ~6 MB, under the 10 MB download limit: long lists, and many rules counted from 1900
         let by_day = vec!["MO,TU,WE,TH,FR,SA,SU"; 300].join(",");
-        let long = ev(&format!("UID:b\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=WEEKLY;COUNT=999999;BYDAY={by_day}\r\nSUMMARY:x\r\n"));
-        let busy = ev("UID:c\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=WEEKLY;COUNT=999999;BYDAY=MO,TU,WE,TH,FR,SA,SU\r\nSUMMARY:x\r\n");
+        let long = ev(&format!("UID:b\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=MONTHLY;COUNT=999999;BYDAY={by_day}\r\nSUMMARY:x\r\n"));
+        let busy = ev("UID:c\r\nDTSTART:19000101T010000Z\r\nDTEND:19000101T011500Z\r\nRRULE:FREQ=MONTHLY;COUNT=999999;BYDAY=MO,TU,WE,TH,FR,SA,SU\r\nSUMMARY:x\r\n");
         let ics = cal(&(long.repeat(900) + &busy.repeat(2000)));
         assert!(ics.len() < 10_000_000);
         let (from, to) = week();
@@ -809,6 +840,43 @@ mod tests {
         let normal = events_with_budget(&cal(&ev("UID:n\r\nDTSTART:20261026T010000Z\r\nDTEND:20261026T011500Z\r\nRRULE:FREQ=DAILY\r\nSUMMARY:n\r\n")), from, to, WIB, &mut budget);
         assert_eq!(normal.len(), 7);
         assert!(budget >= FEED_BUDGET - 20, "an ordinary rule costs a few periods, not the budget");
+    }
+
+    /// Costly invites placed first in the feed must not use up the work budget and hide the user's own meetings.
+    #[test]
+    fn a_costly_invite_cannot_hide_real_meetings() {
+        // monthly from year 1 with COUNT: can't skip ahead, so each one costs the per-event maximum
+        let costly = ev("UID:x\r\nDTSTART:00010101T010000Z\r\nDTEND:00010101T011500Z\r\nRRULE:FREQ=MONTHLY;COUNT=999999;BYDAY=MO,TU,WE,TH,FR\r\nSUMMARY:spam\r\n");
+        let standup = ev("UID:s\r\nDTSTART:20000103T020000Z\r\nDTEND:20000103T021500Z\r\nRRULE:FREQ=WEEKLY;COUNT=5000;BYDAY=MO,WE\r\nSUMMARY:Standup\r\n");
+        let review = ev("UID:r\r\nDTSTART:20261028T070000Z\r\nDTEND:20261028T080000Z\r\nSUMMARY:Review\r\n");
+        let ics = cal(&(costly.repeat(40) + &standup + &review));
+        let (from, to) = week();
+        let v = events_between(&ics, from, to, WIB);
+        let mine: Vec<_> = v.iter().filter(|e| e.summary != "spam").map(|e| (e.summary.as_str(), e.start)).collect();
+        assert_eq!(
+            mine,
+            [("Standup", unix_utc(2026, 10, 26, 2, 0, 0)), ("Standup", unix_utc(2026, 10, 28, 2, 0, 0)), ("Review", unix_utc(2026, 10, 28, 7, 0, 0))]
+        );
+    }
+
+    /// COUNT on a daily / weekly rule is worked out without walking from the start, and still ends at the right time.
+    #[test]
+    fn count_skips_ahead_and_still_ends() {
+        let (from, to) = week();
+        // 2 per week since Mon 3 Jan 2000: Mon 26 Oct 2026 is the 2 799th, so COUNT=2798 ended last week
+        let ended = ev("UID:e\r\nDTSTART:20000103T020000Z\r\nDTEND:20000103T021500Z\r\nRRULE:FREQ=WEEKLY;COUNT=2798;BYDAY=MO,WE\r\nSUMMARY:ended\r\n");
+        let running = ev("UID:r\r\nDTSTART:20000103T020000Z\r\nDTEND:20000103T021500Z\r\nRRULE:FREQ=WEEKLY;COUNT=2900;BYDAY=MO,WE\r\nSUMMARY:running\r\n");
+        // the first week only counts days from DTSTART (Wednesday) on
+        let mid_week = ev("UID:m\r\nDTSTART:20261021T020000Z\r\nDTEND:20261021T021500Z\r\nRRULE:FREQ=WEEKLY;COUNT=2;BYDAY=MO,WE\r\nSUMMARY:two\r\n");
+        let daily = ev("UID:d\r\nDTSTART:20000101T030000Z\r\nDTEND:20000101T031500Z\r\nRRULE:FREQ=DAILY;COUNT=9796\r\nSUMMARY:daily\r\n");
+        let mut budget = FEED_BUDGET;
+        let v = events_with_budget(&cal(&(ended + &running + &mid_week + &daily)), from, to, WIB, &mut budget);
+        let n = |s: &str| v.iter().filter(|e| e.summary == s).count();
+        assert_eq!((n("ended"), n("running")), (0, 2));
+        assert_eq!(n("two"), 1, "Wed 21, then Mon 26 in the window; none after");
+        // 1 Jan 2000 + 9795 days = 26 Oct 2026: the last one
+        assert_eq!(n("daily"), 1);
+        assert!(budget > FEED_BUDGET - 100, "skipped ahead instead of walking 26 years");
     }
 
     #[test]
