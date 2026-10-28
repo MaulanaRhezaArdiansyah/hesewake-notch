@@ -1,12 +1,12 @@
 //! Calendar: upcoming meetings from the calendar's secret ICS link (Google "Secret address in iCal format", Outlook
 //! "Publish calendar"). A countdown in the notch in the last 10 minutes, a toast with a Join button when a meeting
-//! starts, and the Agenda slide. The link works like a password, so it is stored encrypted for the Windows user (DPAPI).
+//! starts, and the Agenda slide. The link works like a password, so it is kept in Windows Credential Manager, not in a
+//! file.
 
 use super::*;
 use std::sync::{Mutex, OnceLock};
 use std::sync::mpsc::{RecvTimeoutError, Sender};
-use windows::Win32::Foundation::{LocalFree, HLOCAL};
-use windows::Win32::Security::Cryptography::{CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB};
+use windows::Win32::Security::Credentials::{CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC};
 
 /// The countdown shows in the last 10 minutes before a meeting.
 pub(crate) const LEAD_SECS: i64 = 10 * 60;
@@ -18,9 +18,8 @@ const REFRESH: Duration = Duration::from_secs(10 * 60);
 const MAX_BYTES: usize = 10_000_000;
 /// "Remove" must be pressed again within this time.
 const CONFIRM_SECS: f32 = 3.0;
-/// Mixed into the DPAPI encryption so other programs can't decrypt the file without knowing it.
-const ENTROPY: &[u8] = b"hesewake-notch calendar link";
-const LINK_FILE: &str = "calendar.bin";
+/// Where the link is kept in Windows Credential Manager (Control Panel > Credential Manager > Windows Credentials).
+const LINK_TARGET: &str = "HesewakeNotch/calendar-link";
 
 /// Status of the calendar feed, shown in Settings and on the Agenda slide.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -51,49 +50,49 @@ pub(crate) fn local_offset() -> i32 {
     (prayer::local_utc_offset() * 3600.0).round() as i32
 }
 
-// ---------------------------------------------------------------- the link, encrypted on disk
+// ---------------------------------------------------------------- the link, in Windows Credential Manager
 
-fn dpapi(data: &[u8], encrypt: bool) -> Option<Vec<u8>> {
-    let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 };
-    let entropy = CRYPT_INTEGER_BLOB { cbData: ENTROPY.len() as u32, pbData: ENTROPY.as_ptr() as *mut u8 };
-    let mut out = CRYPT_INTEGER_BLOB::default();
+/// Save `link` under `target` in Windows Credential Manager (a generic credential for this Windows user, kept on this
+/// PC), or remove it. True on success; removing a link that isn't there also counts.
+fn store_link(target: &str, link: Option<&str>) -> bool {
+    let mut name: Vec<u16> = target.encode_utf16().chain([0]).collect();
     unsafe {
-        let r = if encrypt {
-            CryptProtectData(&input, w!("Hesewake Notch calendar"), Some(&entropy), None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out)
-        } else {
-            CryptUnprotectData(&input, None, Some(&entropy), None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out)
-        };
-        r.ok()?;
-        if out.pbData.is_null() {
-            return None;
+        match link {
+            Some(l) => {
+                let mut blob = l.as_bytes().to_vec();
+                let mut user: Vec<u16> = "Hesewake Notch".encode_utf16().chain([0]).collect();
+                let cred = CREDENTIALW {
+                    Type: CRED_TYPE_GENERIC,
+                    TargetName: PWSTR(name.as_mut_ptr()),
+                    CredentialBlobSize: blob.len() as u32,
+                    CredentialBlob: blob.as_mut_ptr(),
+                    Persist: CRED_PERSIST_LOCAL_MACHINE,
+                    UserName: PWSTR(user.as_mut_ptr()),
+                    ..Default::default()
+                };
+                CredWriteW(&cred, 0).is_ok()
+            }
+            None => CredDeleteW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0).is_ok() || read_link(target).is_none(),
         }
-        let v = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
-        let _ = LocalFree(HLOCAL(out.pbData as *mut c_void));
-        Some(v)
     }
 }
 
-/// Encrypt for the current Windows user (DPAPI).
-pub(crate) fn protect(data: &[u8]) -> Option<Vec<u8>> {
-    dpapi(data, true)
-}
-
-pub(crate) fn unprotect(data: &[u8]) -> Option<Vec<u8>> {
-    dpapi(data, false)
+/// The link saved under `target` in Windows Credential Manager.
+fn read_link(target: &str) -> Option<String> {
+    let name: Vec<u16> = target.encode_utf16().chain([0]).collect();
+    let mut cred: *mut CREDENTIALW = std::ptr::null_mut();
+    unsafe {
+        CredReadW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0, &mut cred).ok()?;
+        let c = &*cred;
+        let bytes = if c.CredentialBlob.is_null() { Vec::new() } else { std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize).to_vec() };
+        CredFree(cred as *const c_void);
+        String::from_utf8(bytes).ok().filter(|s| !s.is_empty())
+    }
 }
 
 fn save_link(link: Option<&str>) {
-    let p = data_path(LINK_FILE);
-    match link.and_then(|l| protect(l.as_bytes())) {
-        Some(enc) => {
-            if let Some(dir) = p.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let _ = std::fs::write(&p, enc);
-        }
-        None => {
-            let _ = std::fs::remove_file(&p);
-        }
+    if !store_link(LINK_TARGET, link) {
+        perf::note("calendar: saving the link in Windows Credential Manager failed");
     }
 }
 
@@ -102,8 +101,7 @@ pub(crate) fn load_link() -> Option<String> {
     if cfg!(test) {
         return None;
     }
-    let enc = std::fs::read(data_path(LINK_FILE)).ok()?;
-    String::from_utf8(unprotect(&enc)?).ok()
+    read_link(LINK_TARGET)
 }
 
 // ---------------------------------------------------------------- fetch thread
@@ -529,12 +527,18 @@ mod tests {
         eprintln!("{} holidays, e.g. {:?}", year.len(), year.first().map(|e| &e.summary));
     }
 
+    /// The link lives in Windows Credential Manager (decided in #14), not in a file. Uses its own test entry and
+    /// removes it again.
     #[test]
-    fn dpapi_round_trip_hides_the_link() {
-        let link = b"https://calendar.google.com/calendar/ical/private-secret/basic.ics";
-        let enc = protect(link).expect("encrypt");
-        assert!(!enc.windows(14).any(|w| w == b"private-secret"), "not stored in plain text");
-        assert_eq!(unprotect(&enc).as_deref(), Some(&link[..]));
-        assert_eq!(unprotect(b"not dpapi data"), None);
+    fn link_is_kept_in_credential_manager() {
+        let target = "HesewakeNotch/calendar-link-test";
+        let link = "https://calendar.google.com/calendar/ical/x/private-secret/basic.ics";
+        assert!(store_link(target, Some(link)));
+        assert_eq!(read_link(target).as_deref(), Some(link));
+        assert!(store_link(target, Some("https://x.com/other.ics")), "replacing works");
+        assert_eq!(read_link(target).as_deref(), Some("https://x.com/other.ics"));
+        assert!(store_link(target, None));
+        assert_eq!(read_link(target), None, "removed");
+        assert!(store_link(target, None), "removing twice is fine");
     }
 }
