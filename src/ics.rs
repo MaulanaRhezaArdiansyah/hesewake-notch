@@ -24,6 +24,10 @@ const MEETING_HOSTS: [&str; 5] = ["meet.google.com", "zoom.us", "teams.microsoft
 /// hostile feed (anyone can send an invite) can't keep the fetch thread busy.
 const MAX_PERIODS: i64 = 20_000;
 const FEED_BUDGET: i64 = 500_000;
+/// Each recurring event gets an equal share of the budget (thousands of periods in a normal feed), so a few costly
+/// events (an invite anyone can send) can't use up the share of the user's own. The floor only matters for feeds
+/// with thousands of rules, and stays low so adding invites can't raise the total work much past the budget.
+const MIN_SHARE: i64 = 100;
 
 // ---------------------------------------------------------------- civil time
 
@@ -423,6 +427,18 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
             break;
         }
         let k = p * r.interval;
+        let period_day = match r.freq.as_str() {
+            "DAILY" => day0 + k,
+            "WEEKLY" => week0 + 7 * k,
+            "MONTHLY" => {
+                let mi = months0 + k;
+                days_from_civil(mi.div_euclid(12), (mi.rem_euclid(12) + 1) as u32, 1)
+            }
+            _ => days_from_civil(y0 + k, 1, 1),
+        };
+        if period_day * D > to_wall + D {
+            break;
+        }
         let days: Vec<i64> = match r.freq.as_str() {
             "DAILY" => vec![day0 + k],
             "WEEKLY" => {
@@ -440,9 +456,6 @@ fn expand(r: &Rule, start: i64, from_wall: i64, to_wall: i64, until_ok: &dyn Fn(
                 months.into_iter().filter(|m| (1..=12).contains(m)).flat_map(|m| month_days(&yearly, y, m, d0)).collect()
             }
         };
-        if days.first().is_some_and(|&d| d * D > to_wall + D) {
-            break;
-        }
         for d in days {
             if d < day0 {
                 continue;
@@ -490,8 +503,8 @@ pub(crate) fn events_between(ics: &str, from: i64, to: i64, local_offset: i32) -
     events_with_budget(ics, from, to, local_offset, &mut budget)
 }
 
-/// `events_between` with the work budget passed in (rule periods for the whole feed); it is left below 0 if the
-/// feed needed more.
+/// `events_between` with the work budget passed in (rule periods for the whole feed, shared out per event). It is
+/// lowered by the work done, and left below 0 if some event needed more than its share.
 fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: &mut i64) -> Vec<Event> {
     let mut zones = Zones { tz: HashMap::new(), local: local_offset };
     let mut raws: Vec<Raw> = Vec::new();
@@ -564,15 +577,10 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
     let replaced: HashSet<(String, i64)> =
         raws.iter().filter_map(|e| e.recurrence_id.as_ref().map(|r| (e.uid.clone(), zones.to_utc(r)))).collect();
     let mut out = Vec::new();
-    // cheapest first, so costly rules (e.g. from an invite) can't use up the budget before the user's own events:
-    // single events, then rules without COUNT (they jump to the window), then COUNT rules, most recent first
-    let mut order: Vec<&Raw> = raws.iter().collect();
-    order.sort_by_key(|e| {
-        let rule = e.rrule.is_some() && e.recurrence_id.is_none();
-        let counted = rule && e.rrule.as_deref().is_some_and(|r| r.to_ascii_uppercase().contains("COUNT="));
-        (rule, counted, std::cmp::Reverse(e.start.as_ref().map_or(i64::MIN, |s| s.wall)))
-    });
-    for e in order {
+    let rules = raws.iter().filter(|e| e.rrule.is_some() && e.recurrence_id.is_none()).count().max(1) as i64;
+    let share = (*budget / rules).clamp(MIN_SHARE, MAX_PERIODS);
+    let mut cut = false;
+    for e in &raws {
         let Some(start) = &e.start else { continue };
         if e.cancelled {
             continue;
@@ -600,7 +608,11 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
                 };
                 // the window in this event's wall time, with a day of slack for the zone offset
                 let shift = start.wall - start_utc;
-                expand(&rule, start.wall, from + shift - D, to + shift + D, &until_ok, budget)
+                let mut mine = share;
+                let walls = expand(&rule, start.wall, from + shift - D, to + shift + D, &until_ok, &mut mine);
+                *budget -= share - mine.max(0);
+                cut |= mine < 0;
+                walls
             }
             None => vec![start.wall],
         };
@@ -616,8 +628,11 @@ fn events_with_budget(ics: &str, from: i64, to: i64, local_offset: i32, budget: 
             }
         }
     }
-    if *budget < 0 && !cfg!(test) {
-        crate::perf::note("calendar: the feed needs more work than allowed; some recurring events were skipped");
+    if cut {
+        *budget = (*budget).min(-1);
+        if !cfg!(test) {
+            crate::perf::note("calendar: some recurring events needed more work than allowed and were cut short");
+        }
     }
     out.sort_by(|a, b| (a.start, &a.summary).cmp(&(b.start, &b.summary)));
     out
@@ -877,6 +892,19 @@ mod tests {
         // 1 Jan 2000 + 9795 days = 26 Oct 2026: the last one
         assert_eq!(n("daily"), 1);
         assert!(budget > FEED_BUDGET - 100, "skipped ahead instead of walking 26 years");
+    }
+
+    /// Rules that never produce a date (30 February) must stop at the window too, not run every period they are
+    /// allowed and starve the user's own events.
+    #[test]
+    fn rules_that_never_happen_cost_almost_nothing() {
+        let never = ev("UID:n\r\nDTSTART:20000101T010000Z\r\nDTEND:20000101T011500Z\r\nRRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30\r\nSUMMARY:never\r\n");
+        let monthly = ev("UID:m\r\nDTSTART:20000126T020000Z\r\nDTEND:20000126T021500Z\r\nRRULE:FREQ=MONTHLY;COUNT=500;BYMONTHDAY=26\r\nSUMMARY:Monthly review\r\n");
+        let ics = cal(&(never.repeat(40) + &monthly));
+        let (from, to) = week();
+        let v = events_between(&ics, from, to, WIB);
+        let mine: Vec<_> = v.iter().map(|e| (e.summary.as_str(), e.start)).collect();
+        assert_eq!(mine, [("Monthly review", unix_utc(2026, 10, 26, 2, 0, 0))]);
     }
 
     #[test]
