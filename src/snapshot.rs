@@ -217,6 +217,42 @@ fn snap_timer_toast() {
     shot("toast-timer", 1.0, |a| show_toast(a, ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() }));
 }
 
+/// A Pomodoro that has finished `done` focus sessions and is in phase `phase`, running for `secs` seconds.
+fn pomo(a: &mut App, done: u32, phase: timer::Phase, secs: u64) {
+    a.tm.set_mode(timer::TMode::Pomodoro);
+    a.tm.done = done;
+    a.tm.phase = phase;
+    a.tm.start(Instant::now() - Duration::from_secs(secs));
+}
+
+#[test]
+fn snap_pomodoro() {
+    for s in SCALES {
+        shot("pomo-focus", s, |a| {
+            pomo(a, 2, timer::Phase::Focus, 9 * 60 + 12);
+            open_slide(a, SlideId::Timer);
+        });
+        shot("pomo-chip-focus", s, |a| pomo(a, 2, timer::Phase::Focus, 9 * 60 + 12));
+    }
+    shot("pomo-short-break", 1.0, |a| {
+        pomo(a, 3, timer::Phase::Short, 70);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("pomo-long-break", 1.0, |a| {
+        pomo(a, 4, timer::Phase::Long, 70);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("pomo-paused-fresh", 1.0, |a| {
+        a.tm.set_mode(timer::TMode::Pomodoro);
+        open_slide(a, SlideId::Timer);
+    });
+    shot("pomo-chip-break", 1.0, |a| pomo(a, 1, timer::Phase::Short, 70));
+    shot("toast-pomo-focus-done", 1.0, |a| {
+        show_toast(a, ToastKind::Timer { title: "Focus #4 done".into(), label: "Long break \u{b7} 15 min".into() })
+    });
+    shot("toast-pomo-break-over", 1.0, |a| show_toast(a, ToastKind::Timer { title: "Break over".into(), label: "Focus \u{b7} 25 min".into() }));
+}
+
 #[test]
 fn snap_slide_todo() {
     shot("slide-todo", 1.0, |a| open_slide(a, SlideId::Todo));
@@ -260,7 +296,7 @@ fn snap_settings_long_city() {
         let i = weather::CITIES.iter().position(|c| c.0 == city).unwrap();
         shot(name, 1.0, |a| {
             a.cfg.weather_city = i;
-            open_settings_tab(a, 3);
+            open_settings_tab(a, 4);
         });
     }
 }
@@ -335,4 +371,103 @@ fn settings_text_fits_cells() {
             assert!(sw <= w, "tab {tab}: sub {:?} {sw:.1} px > {w} px", r.sub);
         }
     }
+}
+
+/// Fake prayer times: prayer `idx` is `mins` minutes from now, the others are outside the countdown window.
+fn prayer_in(a: &mut App, idx: usize, mins: u16) {
+    let st = now_tm();
+    let now = st.wHour * 60 + st.wMinute;
+    let mut t = [0u16; 5];
+    for (i, v) in t.iter_mut().enumerate() {
+        *v = if i < idx { 0 } else if i == idx { now + mins } else { now + mins + 600 };
+    }
+    a.prayer = Some((0, t));
+}
+
+#[test]
+fn snap_prayer() {
+    for s in SCALES {
+        shot("prayer-idle", s, |a| prayer_in(a, 2, 12));
+    }
+    shot("prayer-playing", 1.0, |a| {
+        prayer_in(a, 3, 5);
+        a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    });
+    shot("prayer-with-timer", 1.0, |a| {
+        prayer_in(a, 4, 9);
+        a.tm.start(Instant::now() - Duration::from_secs(61));
+    });
+    shot("toast-prayer", 1.0, |a| show_toast(a, ToastKind::Prayer { idx: 2, at: 15 * 60 + 12 }));
+    // the "Prayer times" row in Settings > Extras: see settings-tab4
+}
+
+#[test]
+fn snap_accents() {
+    for (i, ac) in accent::ACCENTS.iter().enumerate() {
+        let n = ac.name.to_lowercase();
+        shot(&format!("accent-{n}-settings"), 1.0, |a| {
+            a.cfg.accent = i;
+            open_settings_tab(a, 4);
+        });
+        shot(&format!("accent-{n}-todo"), 1.0, |a| {
+            a.cfg.accent = i;
+            open_slide(a, SlideId::Todo);
+        });
+        shot(&format!("accent-{n}-timer"), 1.0, |a| {
+            a.cfg.accent = i;
+            a.tm.start(Instant::now() - Duration::from_secs(100));
+            open_slide(a, SlideId::Timer);
+        });
+    }
+}
+
+/// The accent setting really changes the render, and every accent produces a different image.
+#[test]
+fn accent_changes_the_rendered_slide() {
+    let render = |i: usize| {
+        let mut a = test_app(1.0);
+        a.cfg.accent = i;
+        open_slide(&mut a, SlideId::Todo);
+        (a.w, a.h) = anim::target(&a);
+        a.sp = a.slide as f32;
+        render::draw(&mut a);
+        a.gfx.as_ref().expect("gfx").pm.data().to_vec()
+    };
+    let shots: Vec<_> = (0..accent::ACCENTS.len()).map(render).collect();
+    for i in 0..shots.len() {
+        for j in i + 1..shots.len() {
+            assert_ne!(shots[i], shots[j], "accents {i} and {j} render the same");
+        }
+    }
+}
+
+#[test]
+fn snap_slide_hotkeys() {
+    // Settings > Slides with each slide's shortcut, and Features with the "Slide hotkeys" toggle
+    shot("hotkeys-settings-slides", 1.0, |a| open_settings_tab(a, 0));
+    shot("hotkeys-settings-features", 1.0, |a| open_settings_tab(a, 2));
+    shot("hotkeys-settings-slides-off", 1.0, |a| {
+        a.cfg.slide_hotkeys = false;
+        open_settings_tab(a, 0);
+    });
+    // Ctrl+Alt+3 from the idle notch
+    shot("hotkeys-open-third", 1.0, |a| {
+        assert!(a.slide_hotkey(2));
+    });
+}
+
+/// Ctrl+Alt+N opens the Nth slide, the same key closes it again, and a missing slide is ignored.
+#[test]
+fn slide_hotkey_opens_and_closes() {
+    let mut a = test_app(1.0);
+    assert!(!a.expanded());
+    assert!(a.slide_hotkey(2));
+    assert!(a.expanded());
+    assert_eq!(a.cur_id(), a.order[2]);
+    assert!(a.slide_hotkey(0), "another hotkey switches slides");
+    assert_eq!(a.cur(), 0);
+    assert!(a.expanded());
+    assert!(a.slide_hotkey(0), "same hotkey again closes");
+    assert!(!a.expanded());
+    assert!(!a.slide_hotkey(a.order.len()), "no slide at that position");
 }
