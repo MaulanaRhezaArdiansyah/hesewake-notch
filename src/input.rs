@@ -176,14 +176,14 @@ pub(crate) unsafe fn context_menu(hwnd: HWND, autostart: bool, minimal: bool, no
         Err(_) => return 0,
     };
     let chk = |on: bool| if on { MF_STRING | MF_CHECKED } else { MF_STRING };
-    let _ = AppendMenuW(menu, chk(autostart), sys::CMD_AUTOSTART as usize, w!("Start with Windows"));
-    let _ = AppendMenuW(menu, chk(minimal), sys::CMD_MINIMAL as usize, w!("Minimal notch"));
-    let _ = AppendMenuW(menu, chk(notif_on), sys::CMD_NOTIF as usize, w!("Windows notifications"));
-    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_NOTIF_ACCESS as usize, w!("Notification access..."));
-    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_SETTINGS as usize, w!("Settings"));
-    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_ABOUT as usize, w!("About Hesewake Notch"));
+    let _ = AppendMenuW(menu, chk(autostart), sys::CMD_AUTOSTART as usize, &HSTRING::from(tr("Start with Windows")));
+    let _ = AppendMenuW(menu, chk(minimal), sys::CMD_MINIMAL as usize, &HSTRING::from(tr("Minimal notch")));
+    let _ = AppendMenuW(menu, chk(notif_on), sys::CMD_NOTIF as usize, &HSTRING::from(tr("Windows notifications")));
+    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_NOTIF_ACCESS as usize, &HSTRING::from(tr("Notification access...")));
+    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_SETTINGS as usize, &HSTRING::from(tr("Settings")));
+    let _ = AppendMenuW(menu, MF_STRING, sys::CMD_ABOUT as usize, &HSTRING::from(tr("About Hesewake Notch")));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = AppendMenuW(menu, MF_STRING, 1, w!("Exit"));
+    let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from(tr("Exit")));
 
     sys::track(hwnd, menu)
 }

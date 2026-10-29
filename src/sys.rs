@@ -183,14 +183,14 @@ pub(crate) fn taskbar_created_msg() -> u32 {
 pub(crate) unsafe fn tray_menu(hwnd: HWND, autostart: bool, minimal: bool, notif_on: bool) -> i32 {
     let Ok(menu) = CreatePopupMenu() else { return 0 };
     let chk = |on: bool| if on { MF_STRING | MF_CHECKED } else { MF_STRING };
-    let _ = AppendMenuW(menu, chk(autostart), CMD_AUTOSTART as usize, w!("Start with Windows"));
-    let _ = AppendMenuW(menu, chk(minimal), CMD_MINIMAL as usize, w!("Minimal notch"));
-    let _ = AppendMenuW(menu, chk(notif_on), CMD_NOTIF as usize, w!("Windows notifications"));
-    let _ = AppendMenuW(menu, MF_STRING, CMD_NOTIF_ACCESS as usize, w!("Notification access..."));
+    let _ = AppendMenuW(menu, chk(autostart), CMD_AUTOSTART as usize, &HSTRING::from(tr("Start with Windows")));
+    let _ = AppendMenuW(menu, chk(minimal), CMD_MINIMAL as usize, &HSTRING::from(tr("Minimal notch")));
+    let _ = AppendMenuW(menu, chk(notif_on), CMD_NOTIF as usize, &HSTRING::from(tr("Windows notifications")));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_NOTIF_ACCESS as usize, &HSTRING::from(tr("Notification access...")));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS as usize, w!("Settings"));
-    let _ = AppendMenuW(menu, MF_STRING, CMD_ABOUT as usize, w!("About Hesewake Notch"));
-    let _ = AppendMenuW(menu, MF_STRING, CMD_EXIT as usize, w!("Exit"));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS as usize, &HSTRING::from(tr("Settings")));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_ABOUT as usize, &HSTRING::from(tr("About Hesewake Notch")));
+    let _ = AppendMenuW(menu, MF_STRING, CMD_EXIT as usize, &HSTRING::from(tr("Exit")));
     track(hwnd, menu)
 }
 
@@ -209,11 +209,11 @@ pub(crate) unsafe fn track(hwnd: HWND, menu: HMENU) -> i32 {
 }
 
 pub(crate) unsafe fn about(hwnd: HWND) {
-    let text = format!(
-        "Hesewake Notch {}\nA personal notch for the top of your screen.\n\nBased on Poch by Commonly Works\n(github.com/klawcodes/poch), MIT License.\nLyrics provided by LRCLIB (lrclib.net).\nRomaji: Lindera (IPADIC) and WanaKana.\nFont: Instrument Sans.",
-        env!("CARGO_PKG_VERSION")
+    let text = fill(
+        tr("Hesewake Notch {}\nA personal notch for the top of your screen.\n\nBased on Poch by Commonly Works\n(github.com/klawcodes/poch), MIT License.\nLyrics provided by LRCLIB (lrclib.net).\nRomaji: Lindera (IPADIC) and WanaKana.\nFont: Instrument Sans."),
+        &[&env!("CARGO_PKG_VERSION")],
     );
-    let _ = MessageBoxW(hwnd, &HSTRING::from(text), w!("About Hesewake Notch"), MB_OK | MB_ICONINFORMATION);
+    let _ = MessageBoxW(hwnd, &HSTRING::from(text), &HSTRING::from(tr("About Hesewake Notch")), MB_OK | MB_ICONINFORMATION);
 }
 
 /// Keadaan baterai terperinci (slide System).

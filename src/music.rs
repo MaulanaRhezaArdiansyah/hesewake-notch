@@ -792,7 +792,7 @@ impl App {
             let c = if muted { TEXT_DIM } else { g.acc.main };
             g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(c[0], c[1], c[2], a));
         }
-        let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
+        let txt = if muted { tr("Mute").to_string() } else { format!("{pct}%") };
         let tw = g.width_ex(&txt, 12.0, true);
         g.txtb(&txt, x + w - 12.0 - tw, y + h / 2.0 - 7.0, 12.0, [255, 255, 255], a, 48.0);
     }
@@ -808,11 +808,11 @@ impl App {
                 let line = if g.width_ex(line, 13.0, true) > CW { ellipsize(g, line, 13.0, CW) } else { line.to_string() };
                 g.txt_c(&line, (LX + RX) / 2.0 + ox, 13.0, 13.0, [255, 255, 255], a, CW + 2.0, true);
             }
-            (lyrics::Lyrics::Loading, None) => g.txt("Loading lyrics", LX + ox, 14.0, 12.0, [150, 152, 160], al, 200.0),
-            (lyrics::Lyrics::Unavailable, None) => g.txt("Lyrics not available", LX + ox, 14.0, 12.0, [150, 152, 160], al, 200.0),
+            (lyrics::Lyrics::Loading, None) => g.txt(tr("Loading lyrics"), LX + ox, 14.0, 12.0, [150, 152, 160], al, 200.0),
+            (lyrics::Lyrics::Unavailable, None) => g.txt(tr("Lyrics not available"), LX + ox, 14.0, 12.0, [150, 152, 160], al, 200.0),
             _ => {
                 if self.media.sources > 1 && !self.media.source.is_empty() {
-                    let label = format!("Now Playing \u{b7} {}", self.media.source);
+                    let label = fill(tr("Now Playing \u{b7} {}"), &[&self.media.source]);
                     g.txt(&label, LX + ox, 14.0, 12.0, TEXT_DIM, al, 180.0);
                     // ikon tukar sumber (dua panah) setelah teks
                     let sx = LX + ox + g.width(&label, 12.0) + 10.0;
@@ -822,13 +822,13 @@ impl App {
                     g.line(sx - 4.0, 23.0, sx + 4.0, 23.0, 1.3, &c);
                     g.line(sx - 4.0, 23.0, sx - 1.5, 20.5, 1.3, &c);
                 } else {
-                    g.txt("Now Playing", LX + ox, 14.0, 12.0, TEXT_DIM, al, 200.0);
+                    g.txt(tr("Now Playing"), LX + ox, 14.0, 12.0, TEXT_DIM, al, 200.0);
                 }
             }
         }
         self.clock_side(g, RX + ox, al);
         self.art_at(g, LX + ox, 44.0, 88.0, 12.0, al);
-        let title = if self.media.title.is_empty() { "No media" } else { &self.media.title };
+        let title = if self.media.title.is_empty() { tr("No media") } else { &self.media.title };
         g.txtb(title, MX + ox, 40.0, 17.0, [255, 255, 255], al, MW);
         g.txt(&self.media.artist, MX + ox, 64.0, 13.0, [170, 170, 175], al, MW);
         if self.media.dur > 0 {

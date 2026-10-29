@@ -150,7 +150,7 @@ impl App {
 
         let full = self.shelf_flash.map_or(false, |t| t.elapsed() < Duration::from_millis(1800));
         let label = if full {
-            format!("{} is full", SHELF_NAME)
+            fill(tr("{} is full"), &[&SHELF_NAME])
         } else {
             format!("{}/{}", self.shelf.len(), SHELF_MAX)
         };
@@ -162,7 +162,7 @@ impl App {
 
         if self.shelf.is_empty() {
             g.txt_c(
-                "Drop files or folders here",
+                tr("Drop files or folders here"),
                 CX + ox,
                 SH_Y + SH_H / 2.0 - 9.0,
                 13.0,

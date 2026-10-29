@@ -66,6 +66,7 @@ mod dragdrop;
 mod eye;
 mod gfx;
 mod hotkeys;
+mod i18n;
 mod icon;
 mod icons;
 mod input;
@@ -105,7 +106,8 @@ mod window;
 use accent::Accent;
 use anim::{schedule, target, tick};
 use busy::{is_busy};
-use clock::{CLOCK_FADE_IN, DAYS_S, MONTHS, now_tm, today};
+use clock::{CLOCK_FADE_IN, now_tm, today};
+use i18n::{fill, tr};
 use config::{ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
 use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
@@ -414,6 +416,7 @@ fn main() -> Result<()> {
         if RegisterHotKey(hwnd, HOTKEY_ID, mods, 'H' as u32).is_err() {
             perf::note("hotkey: Ctrl+Alt+H sudah dipakai aplikasi lain (mis. instance lain), tombol pintas jam/mata nonaktif");
         }
+        i18n::set(cfg0.lang);
         hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
         clipboard::listen(hwnd.0 as isize);
         sys::register_display_notifications(hwnd);

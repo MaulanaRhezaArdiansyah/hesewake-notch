@@ -7,6 +7,11 @@ use crate::slides::{self, SlideCfg};
 /// Pilihan "Idle display" di Settings.
 pub(crate) const IDLE_DISPLAY_LABELS: [&str; 3] = ["Cycle", "Clock", "Eyes"];
 
+/// `IDLE_DISPLAY_LABELS[i]` in the UI language.
+pub(crate) fn idle_display_label(i: usize) -> &'static str {
+    [tr("Cycle"), tr("Clock"), tr("Eyes")][i.min(IDLE_DISPLAY_LABELS.len() - 1)]
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Settings {
     /// Mode "Minimal notch": garis tipis saat tidak ada musik.
@@ -44,6 +49,8 @@ pub(crate) struct Settings {
     pub(crate) idle_display: usize,
     /// Index into `accent::ACCENTS` (0 = default blue).
     pub(crate) accent: usize,
+    /// UI language, index into `i18n::LANGS` (0 = English).
+    pub(crate) lang: usize,
     pub(crate) slides: SlideCfg,
 }
 
@@ -72,6 +79,7 @@ impl Default for Settings {
             notch_size: 0,
             idle_display: 0,
             accent: 0,
+            lang: 0,
             slides: slides::default_cfg(),
         }
     }
@@ -118,6 +126,11 @@ impl Settings {
                         s.accent = n.min(crate::accent::ACCENTS.len() - 1);
                     }
                 }
+                "lang" => {
+                    if let Ok(n) = v.parse::<usize>() {
+                        s.lang = if n < crate::i18n::LANGS.len() { n } else { crate::i18n::EN };
+                    }
+                }
                 "notch_size" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.notch_size = n.min(scale::SIZES.len() - 1);
@@ -140,7 +153,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -159,6 +172,7 @@ impl Settings {
             self.notch_size,
             self.idle_display,
             self.accent,
+            self.lang,
             slides::format_slides(&self.slides),
         )
     }
@@ -234,6 +248,16 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).accent, 3);
         assert_eq!(Settings::parse("accent=99").accent, crate::accent::ACCENTS.len() - 1);
         assert_eq!(Settings::parse("accent=x").accent, 0);
+    }
+
+    #[test]
+    fn lang_roundtrip_and_default() {
+        assert_eq!(Settings::parse("minimal=1\n").lang, crate::i18n::EN, "old file = English");
+        let mut s = Settings::default();
+        s.lang = crate::i18n::ID;
+        assert_eq!(Settings::parse(&s.serialize()).lang, crate::i18n::ID);
+        assert_eq!(Settings::parse("lang=99").lang, crate::i18n::EN, "unknown = English");
+        assert_eq!(Settings::parse("lang=x").lang, crate::i18n::EN);
     }
 
     #[test]

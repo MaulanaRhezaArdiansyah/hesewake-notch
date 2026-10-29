@@ -134,7 +134,7 @@ impl App {
         self.art_at(g, LX + ox, 24.0, ART_SZ, 10.0, a);
         let tx = LX + ox + ART_SZ + 12.0;
         let tw = DIV_X - (LX + ART_SZ + 12.0) - 8.0;
-        let title = if self.media.title.is_empty() { "No media" } else { &self.media.title };
+        let title = if self.media.title.is_empty() { tr("No media") } else { &self.media.title };
         let title = if g.width_ex(title, 16.0, true) > tw { ellipsize(g, title, 16.0, tw) } else { title.to_string() };
         g.txtb(&title, tx, 31.0, 16.0, [255, 255, 255], a, tw + 2.0);
         let artist = if g.width(&self.media.artist, 12.0) > tw { ellipsize(g, &self.media.artist, 12.0, tw) } else { self.media.artist.clone() };
@@ -168,9 +168,9 @@ impl App {
         // ---- panel kanan
         g.rect(DIV_X + ox, 22.0, 1.0, 128.0, &paint(255, 255, 255, 0.12 * a));
         let msg = match &self.lyrics {
-            Lyrics::Loading => Some("Loading lyrics"),
-            Lyrics::Unavailable => Some("Lyrics not available"),
-            Lyrics::Plain => Some("Lyrics not synced"),
+            Lyrics::Loading => Some(tr("Loading lyrics")),
+            Lyrics::Unavailable => Some(tr("Lyrics not available")),
+            Lyrics::Plain => Some(tr("Lyrics not synced")),
             Lyrics::None => Some(""),
             Lyrics::Synced(_) => None,
         };

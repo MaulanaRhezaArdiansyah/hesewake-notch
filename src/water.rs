@@ -533,13 +533,15 @@ impl App {
             g.line(cx + 2.0, cy - 5.0, cx - 3.0, cy, 1.8, &ch);
             g.line(cx - 3.0, cy, cx + 2.0, cy + 5.0, 1.8, &ch);
             let x = LX + ox + 36.0;
-            g.txtb("Settings", x, y, 15.0, [255, 255, 255], al, 120.0);
-            (x, g.width_ex("Settings", 15.0, true))
+            g.txtb(tr("Settings"), x, y, 15.0, [255, 255, 255], al, 120.0);
+            (x, g.width_ex(tr("Settings"), 15.0, true))
         } else {
-            g.txtb("Water", LX + ox, y, 15.0, [255, 255, 255], al, 120.0);
-            let w1 = g.width_ex("Water ", 15.0, true);
-            g.txtb("Reminder", LX + ox + w1, y, 15.0, BLUE, al, 120.0);
-            (LX + ox, w1 + g.width_ex("Reminder", 15.0, true))
+            // two-colour title; "|" marks where the blue part starts
+            let (t1, t2) = tr("Water |Reminder").split_once('|').unwrap_or(("", ""));
+            g.txtb(t1, LX + ox, y, 15.0, [255, 255, 255], al, 120.0);
+            let w1 = g.width_ex(t1, 15.0, true);
+            g.txtb(t2, LX + ox + w1, y, 15.0, BLUE, al, 120.0);
+            (LX + ox, w1 + g.width_ex(t2, 15.0, true))
         };
         // Ring progres kecil + tanggal + jam, atau "Time to drink" saat reminder aktif.
         let rx = lead + title_w + 22.0;
@@ -548,10 +550,10 @@ impl App {
         g.ring(rx, y + 9.5, 8.0, frac, 2.6, &paint(255, 255, 255, 0.14 * al), &paint(rc[0], rc[1], rc[2], al));
         let tx = rx + 16.0;
         if self.reminding && !settings {
-            g.txtb("Time to drink", tx, y + 1.0, 13.0, BLUE, al, 140.0);
+            g.txtb(tr("Time to drink"), tx, y + 1.0, 13.0, BLUE, al, 140.0);
         } else {
             let st = now_tm();
-            let date = format!("{} {} {} {}", DAYS_S[(st.wDayOfWeek as usize) % 7], st.wDay, MONTHS[((st.wMonth as usize).max(1) - 1) % 12], st.wYear);
+            let date = format!("{} {} {} {}", clock::day_short(st.wDayOfWeek as usize), st.wDay, clock::month((st.wMonth as usize).max(1) - 1), st.wYear);
             g.txt(&date, tx, y + 1.0, 13.0, [225, 225, 230], al, 150.0);
             let dw = g.width(&date, 13.0);
             g.txtb(&format!("{:02}:{:02}", st.wHour, st.wMinute), tx + dw + 8.0, y + 1.0, 13.0, [255, 255, 255], al, 60.0);
@@ -577,16 +579,16 @@ impl App {
         // "Today · 100% · Goal reached"
         let pct = if wt.goal > 0 { (wt.ml * 100 / wt.goal).min(999) } else { 0 };
         let sy = 84.0;
-        let part1 = "Today \u{b7} ";
+        let part1 = tr("Today \u{b7} ");
         g.txt(part1, LX + ox, sy, 12.0, GREY, al, 120.0);
         let mut x = LX + ox + g.width(part1, 12.0);
         let pc = format!("{}%", pct);
         g.txtb(&pc, x, sy, 12.0, BLUE, al, 80.0);
         x += g.width_ex(&pc, 12.0, true);
         let rest = if wt.ml >= wt.goal {
-            " \u{b7} Goal reached".to_string()
+            tr(" \u{b7} Goal reached").to_string()
         } else {
-            format!(" \u{b7} {} L to go", fmt_l((wt.goal - wt.ml) as f32))
+            fill(tr(" \u{b7} {} L to go"), &[&fmt_l((wt.goal - wt.ml) as f32)])
         };
         g.txt(&rest, x, sy, 12.0, GREY, al, 140.0);
 
@@ -616,16 +618,16 @@ impl App {
             g.ring(ix, iy, r, 0.0, 1.5, &p, &p);
         }
         g.icon_drop(ix, iy, 14.0, &paint(120, 200, 255, al));
-        g.txtb("Drink", dx + 36.0, dy + ty(dh, 14.0), 14.0, [220, 238, 255], al, 60.0);
+        g.txtb(tr("Drink"), dx + 36.0, dy + ty(dh, 14.0), 14.0, [220, 238, 255], al, 60.0);
 
         let (sx, sy2, sw, sh) = (SIDE.0 + ox, SIDE.1, SIDE.2, SIDE.3);
         if self.reminding {
             g.pill(sx, sy2, sw, sh, [255, 255, 255], 0.14 * al, press(1));
-            g.txt_c("Snooze 10 min", sx + sw / 2.0, sy2 + ty(sh, 13.0), 13.0, [225, 230, 240], al, sw, true);
+            g.txt_c(tr("Snooze 10 min"), sx + sw / 2.0, sy2 + ty(sh, 13.0), 13.0, [225, 230, 240], al, sw, true);
         } else {
             g.pill(sx, sy2, sw, sh, [255, 255, 255], 0.10 * al, press(1));
             g.icon_sliders(sx + 20.0, sy2 + sh / 2.0, 14.0, &paint(225, 225, 232, al));
-            g.txtb("Settings", sx + 36.0, sy2 + ty(sh, 13.0), 13.0, [225, 225, 232], al, 64.0);
+            g.txtb(tr("Settings##short"), sx + 36.0, sy2 + ty(sh, 13.0), 13.0, [225, 225, 232], al, 64.0);
         }
 
         // Garis pemisah + grafik per jam.
@@ -689,12 +691,12 @@ impl App {
     fn water_settings(&self, g: &mut Gfx, ox: f32, al: f32) {
         let wt = &self.water;
         let lbl = |g: &mut Gfx, s: &str, x: f32, row: usize| g.txt(s, x + ox, ROW_Y[row] + ty(ROW_H, 12.0), 12.0, GREY, al, LBL_W + 4.0);
-        lbl(g, "Bottle", LX, 0);
-        lbl(g, "Glass", GLASS_X, 0);
-        lbl(g, "Goal", LX, 1);
-        lbl(g, "Remind", LX, 2);
-        lbl(g, "Hours", LX, 3);
-        g.txt("to", HOURS_END_X + LBL_W - 16.0 + ox, ROW_Y[3] + ty(ROW_H, 12.0), 12.0, GREY, al, 20.0);
+        lbl(g, tr("Bottle"), LX, 0);
+        lbl(g, tr("Glass"), GLASS_X, 0);
+        lbl(g, tr("Goal"), LX, 1);
+        lbl(g, tr("Remind"), LX, 2);
+        lbl(g, tr("Hours"), LX, 3);
+        g.txt(tr("to"), HOURS_END_X + LBL_W - 16.0 + ox, ROW_Y[3] + ty(ROW_H, 12.0), 12.0, GREY, al, 20.0);
 
         let val = |g: &mut Gfx, s: &str, cx: f32, row: usize| g.txt_c(s, cx + ox, ROW_Y[row] + ty(ROW_H, 13.0), 13.0, [240, 242, 248], al, VAL_W, true);
         val(g, &format!("{} ml", wt.bottle), stepper_rects(LX, 0.0).2, 0);
@@ -714,12 +716,12 @@ impl App {
                 SetHit::EndUp => Self::round_btn(g, r, true, ox, al, wt.end_h < 24),
                 SetHit::Goal(i) => g.chip(r.0 + ox, r.1, r.2, r.3, &format!("{} L", fmt_l(GOALS[i] as f32)), GOALS[i] == wt.goal, al),
                 SetHit::Remind(i) => {
-                    let label = if REMINDS[i] == 0 { "Off".to_string() } else { format!("{} min", REMINDS[i]) };
+                    let label = if REMINDS[i] == 0 { tr("Off").to_string() } else { fill(tr("{} min"), &[&REMINDS[i]]) };
                     g.chip(r.0 + ox, r.1, r.2, r.3, &label, REMINDS[i] == wt.remind_min, al);
                 }
                 SetHit::Reset => {
                     g.pill(r.0 + ox, r.1, r.2, r.3, [255, 255, 255], 0.10 * al, 1.0);
-                    g.txt_c("Reset today", r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 12.0), 12.0, [225, 228, 236], al, r.2, true);
+                    g.txt_c(tr("Reset today"), r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 12.0), 12.0, [225, 228, 236], al, r.2, true);
                 }
             }
         }
@@ -730,8 +732,8 @@ impl App {
             g.txt_c(&n.to_string(), CARD.0 + ox + CARD.2 / 2.0, y, 19.0, rgb, al, CARD.2, true);
             g.txt_c(cap, CARD.0 + ox + CARD.2 / 2.0, y + 23.0, 11.0, GREY, al, CARD.2, false);
         };
-        stat(g, wt.reminders, "reminders", CARD.1 + 6.0, BLUE);
-        stat(g, wt.refills(), "refills", CARD.1 + 43.0, BLUE);
+        stat(g, wt.reminders, tr("reminders"), CARD.1 + 6.0, BLUE);
+        stat(g, wt.refills(), tr("refills"), CARD.1 + 43.0, BLUE);
     }
 }
 

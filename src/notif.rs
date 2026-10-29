@@ -277,10 +277,10 @@ pub(crate) fn demo_items() -> Vec<NotifItem> {
 pub(crate) fn relative_time(at_unix: u64, now_unix: u64) -> String {
     let d = now_unix.saturating_sub(at_unix);
     match d {
-        0..=59 => "now".to_string(),
+        0..=59 => tr("now").to_string(),
         60..=3599 => format!("{}m", d / 60),
-        3600..=86_399 => format!("{}h", d / 3600),
-        _ => format!("{}d", d / 86_400),
+        3600..=86_399 => fill(tr("{}h"), &[&(d / 3600)]),
+        _ => fill(tr("{}d"), &[&(d / 86_400)]),
     }
 }
 
