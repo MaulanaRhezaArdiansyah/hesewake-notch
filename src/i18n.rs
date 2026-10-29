@@ -114,10 +114,9 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("Clips", "Klip"),
     // Settings tabs and rows
     ("Slides", "Slide"),
-    ("Display", "Tampilan"),
-    ("Features", "Fitur"),
+    ("General", "Umum"),
     ("Alerts", "Indikator"),
-    ("Extras", "Lainnya"),
+    ("Widgets", "Widget"),
     ("Thin line while idle", "Garis tipis saat diam"),
     ("Thin on maximize", "Tipis saat maksimal"),
     ("Off: only on fullscreen", "Mati: hanya layar penuh"),

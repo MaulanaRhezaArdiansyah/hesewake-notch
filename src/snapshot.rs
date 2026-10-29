@@ -297,19 +297,19 @@ fn open_settings_tab(a: &mut App, tab: u8) {
 
 #[test]
 fn snap_settings() {
-    for tab in 0..5u8 {
+    for tab in 0..4u8 {
         shot(&format!("settings-tab{tab}"), 1.0, |a| open_settings_tab(a, tab));
     }
 }
 
-/// Settings › Extras with a long city name: the stepper grows to the left instead of cutting the name.
+/// Settings › Widgets with a long city name: the stepper grows to the left instead of cutting the name.
 #[test]
 fn snap_settings_long_city() {
     for (name, city) in [("settings-city-short", "Jakarta"), ("settings-city-long", "Balikpapan"), ("settings-city-longest", "Bandar Lampung")] {
         let i = weather::CITIES.iter().position(|c| c.0 == city).unwrap();
         shot(name, 1.0, |a| {
             a.cfg.weather_city = i;
-            open_settings_tab(a, 4);
+            open_settings_tab(a, 3);
         });
     }
 }
@@ -537,10 +537,10 @@ fn snap_calendar() {
         a.cal = vec![event("Standup", now_s() + 30 * 3600, 15, None)];
         open_slide(a, SlideId::Agenda);
     });
-    shot("settings-calendar-off", 1.0, |a| open_settings_tab(a, 2));
+    shot("settings-calendar-off", 1.0, |a| open_settings_tab(a, 3));
     shot("settings-calendar-synced", 1.0, |a| {
         with_meetings(a);
-        open_settings_tab(a, 2);
+        open_settings_tab(a, 3);
     });
     shot("settings-slides-scrolled", 1.0, |a| {
         open_settings_tab(a, 0);
@@ -563,20 +563,20 @@ fn snap_calendar() {
     shot("id-settings-calendar", 1.0, |a| {
         id(a);
         with_meetings(a);
-        open_settings_tab(a, 2);
+        open_settings_tab(a, 3);
     });
 }
 
-/// The Calendar row in Settings > Features: Paste reads the clipboard, and every state's text fits, in both languages.
+/// The Calendar row in Settings > Widgets: Paste reads the clipboard, and every state's text fits, in both languages.
 #[test]
 fn calendar_row_pastes_and_fits_in_every_state() {
     let _lang = i18n::restore_on_drop();
     let mut a = test_app(1.0);
-    let row = |a: &App| a.settings_rows(2).into_iter().position(|r| r.label == i18n::tr("Calendar")).expect("Calendar row");
+    let row = |a: &App| a.settings_rows(3).into_iter().position(|r| r.label == i18n::tr("Calendar")).expect("Calendar row");
     let i = row(&a);
     let (cx, cy) = settingsview::cell_pos(i);
     calendar::TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some("https://calendar.google.com/x/basic.ics".into()));
-    a.settings_click_rows(2, cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 30.0, cy + 17.0);
     assert_eq!(a.cal_link.as_deref(), Some("https://calendar.google.com/x/basic.ics"), "Paste took the link from the clipboard");
 
     let mut g = Gfx::new(1.0);
@@ -601,7 +601,7 @@ fn calendar_row_pastes_and_fits_in_every_state() {
         ];
         for (name, set) in states {
             set(&mut a);
-            let r = a.settings_rows(2).swap_remove(row(&a));
+            let r = a.settings_rows(3).swap_remove(row(&a));
             let w = settingsview::text_w(&r.kind);
             assert!(g.width_ex(r.label, 12.0, true) <= w && g.width(r.sub, 11.0) <= w, "lang {lang}, {name}: {:?} / {:?}", r.label, r.sub);
             let settingsview::RowKind::Button(b) = &r.kind else { panic!("{name}: a button") };
@@ -614,10 +614,10 @@ fn calendar_row_pastes_and_fits_in_every_state() {
 #[test]
 fn moved_minus_button_is_still_clickable() {
     let mut a = test_app(1.0);
-    let row = |a: &App| a.settings_rows(4).into_iter().position(|r| r.label == "City").unwrap();
+    let row = |a: &App| a.settings_rows(3).into_iter().position(|r| r.label == "City").unwrap();
     let i = row(&a);
     let minus_x = |a: &mut App| {
-        let r = a.settings_rows(4).swap_remove(i);
+        let r = a.settings_rows(3).swap_remove(i);
         let settingsview::RowKind::Stepper(v) = &r.kind else { unreachable!() };
         settingsview::stepper_fit(a.gfx.as_mut().unwrap(), &r, v).minus_x
     };
@@ -629,10 +629,10 @@ fn moved_minus_button_is_still_clickable() {
     let mx = minus_x(&mut a);
     assert!(mx < settingsview::STEP_PLUS_X - settingsview::STEP_MIN_SPAN, "the - button should move left");
     let (cx, cy) = settingsview::cell_pos(i);
-    a.settings_click_rows(4, cx + mx, cy + 17.0);
+    a.settings_click_rows(3, cx + mx, cy + 17.0);
     assert_eq!(a.cfg.weather_city, long - 1, "clicking the moved - button steps back");
     a.cfg.weather_city = long;
-    a.settings_click_rows(4, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    a.settings_click_rows(3, cx + settingsview::STEP_PLUS_X, cy + 17.0);
     assert_eq!(a.cfg.weather_city, (long + 1) % weather::CITIES.len(), "+ still steps forward");
 }
 
@@ -658,7 +658,7 @@ fn settings_text_fits_cells() {
     let mut g = Gfx::new(1.0);
     for lang in 0..i18n::LANGS.len() {
         i18n::set(lang);
-        for tab in 1..=4u8 {
+        for tab in 1..=3u8 {
             for r in a.settings_rows(tab) {
                 let w = settingsview::text_w(&r.kind);
                 let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));
@@ -684,25 +684,25 @@ fn settings_tabs_fit_next_to_the_title() {
     }
 }
 
-/// The Language row in Settings > Features switches the whole UI right away, and back.
+/// The Language row in Settings > General switches the whole UI right away, and back.
 #[test]
 fn language_row_switches_the_ui() {
     let _lang = i18n::restore_on_drop();
     let mut a = test_app(1.0);
-    let i = a.settings_rows(2).iter().position(|r| r.label == "Language").expect("Language row in Features");
+    let i = a.settings_rows(1).iter().position(|r| r.label == "Language").expect("Language row in General");
     let (cx, cy) = settingsview::cell_pos(i);
-    a.settings_click_rows(2, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    a.settings_click_rows(1, cx + settingsview::STEP_PLUS_X, cy + 17.0);
     assert_eq!(a.cfg.lang, i18n::ID);
     assert_eq!(i18n::current(), i18n::ID, "applied right away");
-    assert_eq!(a.settings_rows(2)[i].label, "Bahasa");
-    assert_eq!(a.settings_rows(4)[1].label, "Kota");
+    assert_eq!(a.settings_rows(1)[i].label, "Bahasa");
+    assert_eq!(a.settings_rows(3)[1].label, "Kota");
     assert_eq!(SlideId::Todo.label(), "Tugas");
     assert_eq!(clock::day_short(1), "Sen");
     assert_eq!(clock::month(4), "Mei");
     assert_eq!(timer::fmt_preset(90 * 60), "1 j 30 mnt");
-    a.settings_click_rows(2, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    a.settings_click_rows(1, cx + settingsview::STEP_PLUS_X, cy + 17.0);
     assert_eq!(a.cfg.lang, i18n::EN);
-    assert_eq!(a.settings_rows(4)[1].label, "City");
+    assert_eq!(a.settings_rows(3)[1].label, "City");
     assert_eq!(clock::day_short(1), "Mon");
     assert_eq!(timer::fmt_preset(90 * 60), "1 h 30 min");
 }
@@ -715,7 +715,7 @@ fn snap_indonesian() {
         a.cfg.lang = i18n::ID;
         i18n::set(i18n::ID);
     };
-    for tab in 0..5u8 {
+    for tab in 0..4u8 {
         shot(&format!("id-settings-tab{tab}"), 1.0, |a| {
             id(a);
             open_settings_tab(a, tab);
@@ -785,7 +785,7 @@ fn snap_prayer() {
         a.tm.start(Instant::now() - Duration::from_secs(61));
     });
     shot("toast-prayer", 1.0, |a| show_toast(a, ToastKind::Prayer { idx: 2, at: 15 * 60 + 12 }));
-    // the "Prayer times" row in Settings > Extras: see settings-tab4
+    // the "Prayer times" row in Settings > Extras: see settings-tab3
 }
 
 #[test]
@@ -794,7 +794,7 @@ fn snap_accents() {
         let n = ac.name.to_lowercase();
         shot(&format!("accent-{n}-settings"), 1.0, |a| {
             a.cfg.accent = i;
-            open_settings_tab(a, 4);
+            open_settings_tab(a, 1);
         });
         shot(&format!("accent-{n}-todo"), 1.0, |a| {
             a.cfg.accent = i;
@@ -830,9 +830,9 @@ fn accent_changes_the_rendered_slide() {
 
 #[test]
 fn snap_slide_hotkeys() {
-    // Settings > Slides with each slide's shortcut, and Features with the "Slide hotkeys" toggle
+    // Settings > Slides with each slide's shortcut, and General with the "Slide hotkeys" toggle
     shot("hotkeys-settings-slides", 1.0, |a| open_settings_tab(a, 0));
-    shot("hotkeys-settings-features", 1.0, |a| open_settings_tab(a, 2));
+    shot("hotkeys-settings-general", 1.0, |a| open_settings_tab(a, 1));
     shot("hotkeys-settings-slides-off", 1.0, |a| {
         a.cfg.slide_hotkeys = false;
         open_settings_tab(a, 0);
@@ -1079,10 +1079,13 @@ fn update_toast_download_opens_the_release() {
 #[test]
 fn update_row_in_alerts() {
     let mut a = test_app(1.0);
-    let i = a.settings_rows(3).iter().position(|r| r.label == "Update notice").expect("Update notice row in Alerts");
-    let (cx, cy) = settingsview::cell_pos(i);
+    let i = a.settings_rows(2).iter().position(|r| r.label == "Update notice").expect("Update notice row in Alerts");
+    open_settings_tab(&mut a, 2);
+    assert!(settingsview::row_cell_visible(i, 0).is_none(), "the 7th row starts below the grid");
+    assert!(a.settings_rows_wheel(true));
+    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("visible after scrolling");
     assert!(a.cfg.update_check, "on by default");
-    a.settings_click_rows(3, cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    a.settings_click_rows(2, cx + settingsview::CELL_W - 30.0, cy + 17.0);
     assert!(!a.cfg.update_check);
 }
 
@@ -1094,7 +1097,39 @@ fn snap_update_toasts() {
         shot(&format!("{prefix}-toast-available"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
         shot(&format!("{prefix}-toast-up-to-date"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::UpToDate)));
         shot(&format!("{prefix}-toast-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Failed)));
-        shot(&format!("{prefix}-settings-alerts"), 1.0, |a| open_settings_tab(a, 3));
+        shot(&format!("{prefix}-settings-alerts"), 1.0, |a| open_settings_tab(a, 2));
     }
     shot("update-toast-available", 1.5, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
+}
+
+/// General has 9 rows: the first six show, the wheel brings the rest into view, and rows keep working there.
+#[test]
+fn rows_tab_scrolls_to_the_last_rows() {
+    let mut a = test_app(1.0);
+    open_settings_tab(&mut a, 1);
+    assert_eq!(a.settings_rows(1).len(), 9);
+    assert!(a.rows_scrollable());
+    assert!(settingsview::row_cell_visible(8, 0).is_none(), "the 9th row starts below the grid");
+    assert!(a.settings_rows_wheel(true));
+    assert!(a.settings_rows_wheel(true));
+    assert_eq!(a.sui.rows_scroll, 2, "9 rows = 5 rows of cells, 3 show");
+    assert!(!a.settings_rows_wheel(true), "nothing left to scroll");
+    assert!(settingsview::row_cell_visible(0, a.sui.rows_scroll).is_none(), "the first row scrolled out");
+    assert!(settingsview::row_cell_visible(8, a.sui.rows_scroll).is_some(), "the last row is in view");
+    let (x, y) = settingsview::row_cell_visible(6, a.sui.rows_scroll).expect("Minimal notch is visible");
+    let was = a.minimal;
+    a.settings_click_rows(1, x + settingsview::CELL_W - 30.0, y + 17.0);
+    assert_eq!(a.minimal, !was, "its toggle works after scrolling");
+    shot("settings-general-scrolled", 1.0, |a| {
+        open_settings_tab(a, 1);
+        a.settings_rows_wheel(true);
+        a.settings_rows_wheel(true);
+    });
+    assert!(a.settings_rows_wheel(false));
+    assert!(a.settings_rows_wheel(false));
+    assert_eq!(a.sui.rows_scroll, 0);
+    // changing tab starts at the top again
+    a.settings_rows_wheel(true);
+    a.settings_set_tab(2);
+    assert_eq!(a.sui.rows_scroll, 0);
 }

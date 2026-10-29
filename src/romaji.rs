@@ -15,7 +15,7 @@ use wana_kana::ConvertJapanese;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Settings > Extras > "Romaji lyrics".
+/// Settings > Widgets > "Romaji lyrics".
 pub(crate) fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
 }

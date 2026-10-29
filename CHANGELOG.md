@@ -2,6 +2,13 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-10-29
+
+### Changed
+- **Settings dirapikan**: tab kini **Slides, General, Alerts, Widgets** (sebelumnya Slides, Display, Features, Alerts, Extras), dikelompokkan menurut tujuan. **General**: Language, Accent, Autostart, Slide hotkeys, Monitor, Notch size, Minimal notch, Thin on maximize, Idle display. **Alerts**: Notifications, Contact photos, Volume HUD, Brightness HUD, Lock keys, Mic / camera dot, Update notice. **Widgets**: Weather, City, Prayer times, Calendar, Lyric timing, Romaji lyrics (dan Delete kamus).
+- **Baris bisa di-scroll**: tab General, Alerts, dan Widgets menampilkan tiga baris sel sekaligus dan sisanya digulir dengan roda mouse (scrollbar tipis di kanan), sehingga tidak ada lagi batas enam pengaturan per tab. Sel kini tersusun kiri ke kanan, atas ke bawah. Pindah tab selalu mulai dari atas.
+- Di kode, klik pengaturan kini dikenali lewat id baris (`Rid`), bukan nomor urut, jadi menambah atau memindah pengaturan tidak lagi menggeser nomor yang lain.
+
 ## [0.9.0] - 2026-10-29
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #30).
