@@ -60,6 +60,7 @@ mod calendar;
 mod cjk;
 mod claude;
 mod claude_hook;
+mod claude_setup;
 mod clipboard;
 mod clock;
 mod config;
