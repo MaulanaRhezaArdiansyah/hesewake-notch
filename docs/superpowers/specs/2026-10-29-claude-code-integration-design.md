@@ -135,8 +135,9 @@ rule below doesn't hide Done toasts. This is a known limit, stated in Settings.
 - **Done:** a toast in green: "Done · 6m 12s", project name, and the first line of the last message (markdown markers
   removed, ellipsized). Normal toast duration. Not shown if that session's window is already in front.
 - **Error:** like Done but in red, "Stopped with an error".
-- **Click on a toast or the chip:** bring the session's window to the front (`SetForegroundWindow`; the notch has just
-  been clicked, so Windows allows it; restore it if minimized).
+- **Click on a toast:** bring the session's window to the front (`SetForegroundWindow`; the notch has just
+  been clicked, so Windows allows it; restore it if minimized). The chip itself is display-only in phase 1, because hovering the collapsed notch
+  already opens it; the Claude slide in phase 2 gets an "Open" button per session.
 - Animations follow `anim::schedule`: the dots animate only while a session is Working and the notch is visible, and
   stop otherwise, so idle CPU doesn't change.
 
