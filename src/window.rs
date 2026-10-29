@@ -373,6 +373,16 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             run_command(hwnd, cmd);
             LRESULT(0)
         }
+        update::WM_UPDATE => {
+            if let Some((manual, release)) = update::take() {
+                with_app(|a| {
+                    a.on_update(manual, release);
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(0)
+        }
         calendar::WM_CALENDAR => {
             with_app(|a| {
                 // ignore a late result for a link that was just removed or replaced
@@ -472,13 +482,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
         sys::WM_TRAY => {
             match (lp.0 & 0xffff) as u32 {
                 WM_RBUTTONUP | WM_CONTEXTMENU => {
-                    let (mut minimal, mut notif_on) = (false, true);
+                    let (mut minimal, mut notif_on, mut update) = (false, true, None);
                     with_app(|a| {
                         a.menu_open = true;
                         minimal = a.minimal;
                         notif_on = a.notif_on;
+                        update = a.update.as_ref().map(|r| r.version.clone());
                     });
-                    let cmd = sys::tray_menu(hwnd, sys::autostart_enabled(), minimal, notif_on);
+                    let cmd = sys::tray_menu(hwnd, sys::autostart_enabled(), minimal, notif_on, update.as_deref());
                     run_command(hwnd, cmd);
                 }
                 WM_LBUTTONUP => {
@@ -635,6 +646,12 @@ unsafe fn run_command(hwnd: HWND, cmd: i32) {
             }
             sys::CMD_ABOUT => show_about = true,
             sys::CMD_SETTINGS => a.open_settings(),
+            sys::CMD_UPDATE_OPEN => {
+                if let Some(r) = &a.update {
+                    sys::open_url(&r.url);
+                }
+            }
+            sys::CMD_UPDATE_CHECK => a.update_check_now(),
             sys::CMD_NOTIF => {
                 a.notif_on = !a.notif_on;
                 notif::set_enabled(a.notif_on);

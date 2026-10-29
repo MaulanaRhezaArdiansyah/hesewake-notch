@@ -51,6 +51,10 @@ pub(crate) struct Settings {
     pub(crate) accent: usize,
     /// UI language, index into `i18n::LANGS` (0 = English).
     pub(crate) lang: usize,
+    /// Look for a newer release at startup and every 24 hours.
+    pub(crate) update_check: bool,
+    /// The newest version the person was already told about (told once per version).
+    pub(crate) update_seen: String,
     pub(crate) slides: SlideCfg,
 }
 
@@ -80,6 +84,8 @@ impl Default for Settings {
             idle_display: 0,
             accent: 0,
             lang: 0,
+            update_check: true,
+            update_seen: String::new(),
             slides: slides::default_cfg(),
         }
     }
@@ -106,6 +112,8 @@ impl Settings {
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
                 "prayer" => s.prayer_on = flag,
+                "update_check" => s.update_check = flag,
+                "update_seen" => s.update_seen = v.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+')).take(32).collect(),
                 "monitor" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.monitor = n.min(32);
@@ -153,7 +161,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -173,6 +181,8 @@ impl Settings {
             self.idle_display,
             self.accent,
             self.lang,
+            self.update_check as u8,
+            self.update_seen,
             slides::format_slides(&self.slides),
         )
     }
@@ -248,6 +258,19 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).accent, 3);
         assert_eq!(Settings::parse("accent=99").accent, crate::accent::ACCENTS.len() - 1);
         assert_eq!(Settings::parse("accent=x").accent, 0);
+    }
+
+    #[test]
+    fn update_settings_roundtrip_and_default() {
+        let s = Settings::parse("minimal=1\n");
+        assert!(s.update_check, "on by default, also for old files");
+        assert_eq!(s.update_seen, "");
+        let mut s = Settings::default();
+        s.update_check = false;
+        s.update_seen = "0.9.0".into();
+        let back = Settings::parse(&s.serialize());
+        assert_eq!((back.update_check, back.update_seen.as_str()), (false, "0.9.0"));
+        assert_eq!(Settings::parse("update_seen=0.9.0\nx\r\n").update_seen, "0.9.0");
     }
 
     #[test]

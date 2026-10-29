@@ -119,6 +119,9 @@ fn test_app(s: f32) -> App {
         cal_paste_err: None,
         cal_confirm: None,
         agenda_scroll: 0,
+        update: None,
+        update_last: None,
+        update_busy: false,
         drop_pulse: None,
         note: String::new(),
         note_mode: false,
@@ -990,4 +993,108 @@ fn thin_line_stays_empty_right_after_a_toast() {
     let g = a.gfx.as_ref().expect("gfx");
     let lit = g.pm.data().chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count();
     assert_eq!(lit, 0, "the thin line shows {lit} coloured pixels");
+}
+
+// ---------------------------------------------------------------- update check
+
+fn release(v: &str) -> update::Release {
+    update::Release { version: v.into(), url: format!("https://github.com/dirgaastya/hesewake-notch/releases/tag/v{v}") }
+}
+
+fn update_note(a: &App) -> Option<update::Note> {
+    match &a.toast {
+        Some(Toast { kind: ToastKind::Update(n), .. }) => Some(n.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn update_toast_once_per_version() {
+    let mut a = test_app(1.0);
+    a.on_update(false, Some(release("99.0.0")));
+    assert_eq!(update_note(&a), Some(update::Note::Available(release("99.0.0"))));
+    assert_eq!(a.cfg.update_seen, "99.0.0");
+    assert_eq!(a.update, Some(release("99.0.0")), "kept for the menu");
+    a.toast = None;
+    a.on_update(false, Some(release("99.0.0")));
+    assert_eq!(update_note(&a), None, "the same version is told once");
+    a.on_update(false, Some(release("99.0.1")));
+    assert_eq!(update_note(&a), Some(update::Note::Available(release("99.0.1"))), "a newer one again");
+}
+
+#[test]
+fn update_quiet_when_current_or_offline() {
+    let mut a = test_app(1.0);
+    a.on_update(false, Some(release(env!("CARGO_PKG_VERSION"))));
+    assert_eq!((update_note(&a), a.update.clone()), (None, None), "same version: nothing");
+    a.on_update(false, Some(release("0.0.1")));
+    assert_eq!(update_note(&a), None, "older: nothing");
+    a.on_update(false, None);
+    assert_eq!(update_note(&a), None, "offline: silent");
+}
+
+#[test]
+fn update_check_from_the_menu_always_answers() {
+    let mut a = test_app(1.0);
+    a.on_update(true, Some(release(env!("CARGO_PKG_VERSION"))));
+    assert_eq!(update_note(&a), Some(update::Note::UpToDate));
+    a.toast = None;
+    a.on_update(true, None);
+    assert_eq!(update_note(&a), Some(update::Note::Failed));
+    a.toast = None;
+    a.cfg.update_seen = "99.0.0".into();
+    a.on_update(true, Some(release("99.0.0")));
+    assert_eq!(update_note(&a), Some(update::Note::Available(release("99.0.0"))), "asked: shown even if seen before");
+}
+
+#[test]
+fn update_checks_daily_and_never_when_off() {
+    let mut a = test_app(1.0);
+    let t0 = Instant::now();
+    a.cfg.update_check = false;
+    assert!(!a.update_tick(t0), "off: no network call");
+    a.cfg.update_check = true;
+    assert!(a.update_tick(t0), "first check");
+    assert!(!a.update_tick(t0 + Duration::from_secs(60)), "still running");
+    a.on_update(false, None);
+    assert!(!a.update_tick(t0 + Duration::from_secs(3600)), "not before 24 hours");
+    assert!(a.update_tick(t0 + update::INTERVAL + Duration::from_secs(1)), "again after 24 hours");
+    assert_eq!(update::fetches(), vec![false, false], "two automatic checks, no manual one");
+}
+
+#[test]
+fn update_toast_download_opens_the_release() {
+    let mut a = test_app(1.0);
+    a.on_update(false, Some(release("99.0.0")));
+    if let Some(t) = a.toast.as_mut() {
+        t.t0 = Instant::now() - Duration::from_millis(1500);
+    }
+    let (bx, by, bw, bh) = update::button_rect(toast::TOAST_UPDATE.0, toast::TOAST_UPDATE.1);
+    let _ = sys::opened();
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), vec![release("99.0.0").url]);
+    assert!(a.toast.is_none());
+}
+
+#[test]
+fn update_row_in_alerts() {
+    let mut a = test_app(1.0);
+    let i = a.settings_rows(3).iter().position(|r| r.label == "Update notice").expect("Update notice row in Alerts");
+    let (cx, cy) = settingsview::cell_pos(i);
+    assert!(a.cfg.update_check, "on by default");
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    assert!(!a.cfg.update_check);
+}
+
+#[test]
+fn snap_update_toasts() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, prefix) in [(i18n::EN, "update"), (i18n::ID, "id-update")] {
+        i18n::set(lang);
+        shot(&format!("{prefix}-toast-available"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
+        shot(&format!("{prefix}-toast-up-to-date"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::UpToDate)));
+        shot(&format!("{prefix}-toast-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Failed)));
+        shot(&format!("{prefix}-settings-alerts"), 1.0, |a| open_settings_tab(a, 3));
+    }
+    shot("update-toast-available", 1.5, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
 }

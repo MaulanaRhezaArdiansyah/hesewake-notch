@@ -62,6 +62,153 @@ pub(crate) fn parse_release(json: &str) -> Option<Release> {
     Some(Release { version: tag.trim_start_matches(['v', 'V']).to_string(), url: url.to_string() })
 }
 
+// ---------------------------------------------------------------- in the app
+
+use super::*;
+use std::sync::Mutex;
+
+pub(crate) const WM_UPDATE: u32 = WM_APP + 12;
+/// Automatic checks run at most this often.
+pub(crate) const INTERVAL: Duration = Duration::from_secs(24 * 3600);
+const CURRENT: &str = env!("CARGO_PKG_VERSION");
+
+/// What an update toast says.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Note {
+    Available(Release),
+    UpToDate,
+    Failed,
+}
+
+/// Result of the last check: (asked from the menu, the latest release or None when the check failed).
+static SLOT: Mutex<Option<(bool, Option<Release>)>> = Mutex::new(None);
+
+#[cfg(test)]
+thread_local! {
+    static FETCHES: std::cell::RefCell<Vec<bool>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Ask GitHub on a background thread; the answer comes back as `WM_UPDATE`.
+pub(crate) fn fetch(hwnd: isize, manual: bool) {
+    #[cfg(test)]
+    {
+        let _ = hwnd;
+        FETCHES.with(|f| f.borrow_mut().push(manual));
+    }
+    #[cfg(not(test))]
+    std::thread::spawn(move || {
+        let latest = weather::http_get(LATEST_URL, MAX_BYTES).and_then(|body| parse_release(&body));
+        if let Ok(mut slot) = SLOT.lock() {
+            *slot = Some((manual, latest));
+        }
+        unsafe {
+            let _ = PostMessageW(HWND(hwnd as *mut c_void), WM_UPDATE, WPARAM(0), LPARAM(0));
+        }
+    });
+}
+
+pub(crate) fn take() -> Option<(bool, Option<Release>)> {
+    SLOT.lock().ok()?.take()
+}
+
+/// The checks started in this test thread (true = from the menu), cleared on read.
+#[cfg(test)]
+pub(crate) fn fetches() -> Vec<bool> {
+    FETCHES.with(|f| std::mem::take(&mut *f.borrow_mut()))
+}
+
+/// The Download button of the "available" toast.
+pub(crate) fn button_rect(w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let (bw, bh) = (88.0, 28.0);
+    (CX + w / 2.0 - 16.0 - bw, h / 2.0 - bh / 2.0, bw, bh)
+}
+
+impl App {
+    /// Called once a minute: start an automatic check when one is due. True if a check started.
+    pub(crate) fn update_tick(&mut self, now: Instant) -> bool {
+        if !self.cfg.update_check || self.update_busy {
+            return false;
+        }
+        if self.update_last.is_some_and(|t| now.saturating_duration_since(t) < INTERVAL) {
+            return false;
+        }
+        self.update_last = Some(now);
+        self.update_busy = true;
+        fetch(self.hwnd, false);
+        true
+    }
+
+    /// "Check for updates" from the menu: always answers with a toast.
+    pub(crate) fn update_check_now(&mut self) {
+        self.update_last = Some(Instant::now());
+        self.update_busy = true;
+        fetch(self.hwnd, true);
+    }
+
+    pub(crate) fn on_update(&mut self, manual: bool, latest: Option<Release>) {
+        self.update_busy = false;
+        match latest {
+            Some(r) if is_newer(&r.version, CURRENT) => {
+                self.update = Some(r.clone());
+                if manual || self.cfg.update_seen != r.version {
+                    self.cfg.update_seen = r.version.clone();
+                    self.save_settings();
+                    self.push_toast(ToastKind::Update(Note::Available(r)));
+                }
+            }
+            Some(_) => {
+                self.update = None;
+                if manual {
+                    self.push_toast(ToastKind::Update(Note::UpToDate));
+                }
+            }
+            None => {
+                if manual {
+                    self.push_toast(ToastKind::Update(Note::Failed));
+                }
+            }
+        }
+        self.last = Instant::now();
+    }
+
+    pub(crate) fn draw_update_toast(&self, g: &mut Gfx, (w, h): (f32, f32), al: f32, t: f32, note: &Note) {
+        let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        let (rgb, title, sub, button) = match note {
+            Note::Available(r) => (g.acc.bright, fill(tr("Version {} is available"), &[&r.version]), tr("Release notes and installer").to_string(), true),
+            Note::UpToDate => ([60, 200, 110], tr("You're up to date").to_string(), fill(tr("Version {}"), &[&CURRENT]), false),
+            Note::Failed => (TEXT_DIM, tr("Couldn't check for updates").to_string(), tr("Check your internet connection").to_string(), false),
+        };
+        let sc = 0.6 + 0.4 * toast::pop(t).clamp(0.0, 1.2);
+        let (icx, r) = (x0 + 34.0, 18.0 * sc);
+        g.circle(icx, cy, r, &paint(rgb[0], rgb[1], rgb[2], 0.22 * al));
+        icon_download(g, icx, cy, 15.0 * sc, &paint(rgb[0], rgb[1], rgb[2], al));
+
+        let k = toast::ss(0.12, 0.4, t);
+        let tx = x0 + 66.0 + (1.0 - k) * 6.0;
+        let right = if button { button_rect(w, h).2 + 16.0 + 10.0 } else { 16.0 };
+        let maxw = x0 + w - right - tx;
+        let title = if g.width_ex(&title, 14.0, true) > maxw { ellipsize(g, &title, 14.0, maxw) } else { title };
+        g.txtb(&title, tx, cy - 19.0, 14.0, [255, 255, 255], al * k, maxw + 2.0);
+        let sub = if g.width(&sub, 12.0) > maxw { ellipsize(g, &sub, 12.0, maxw) } else { sub };
+        g.txt(&sub, tx, cy + 2.0, 12.0, TEXT_DIM, al * k, maxw);
+        if button {
+            let (bx, by, bw, bh) = button_rect(w, h);
+            let over = self.cursor_canvas().is_some_and(|(x, y)| in_rect(x, y, bx, by, bw, bh));
+            g.pill(bx, by, bw, bh, g.acc.deep, if over { 1.0 } else { 0.85 } * al * k, 1.0);
+            g.txt_c(tr("Download"), bx + bw / 2.0, by + ty(bh, 13.0), 13.0, [255, 255, 255], al * k, bw, true);
+        }
+    }
+}
+
+/// A download arrow over a tray line, centred on (cx, cy), `s` tall.
+fn icon_download(g: &mut Gfx, cx: f32, cy: f32, s: f32, p: &Paint<'static>) {
+    let lw = (s * 0.13).max(1.4);
+    g.line(cx, cy - 0.5 * s, cx, cy + 0.18 * s, lw, p);
+    g.line(cx - 0.3 * s, cy - 0.1 * s, cx, cy + 0.2 * s, lw, p);
+    g.line(cx + 0.3 * s, cy - 0.1 * s, cx, cy + 0.2 * s, lw, p);
+    g.rect(cx - 0.45 * s, cy + 0.42 * s - lw / 2.0, 0.9 * s, lw, p);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +232,17 @@ mod tests {
         assert!(!is_newer("0.9.0", "garbage"), "can't tell: say nothing");
         assert!(!is_newer("0.10.0", "0.10.0"));
         assert!(is_newer("0.10.0", "0.9.0"), "numbers, not text");
+    }
+
+    /// The real endpoint (GitHub Actions only, it needs the network): the latest release is found and readable.
+    #[test]
+    fn real_latest_release_is_read() {
+        if std::env::var_os("CI").is_none() {
+            return;
+        }
+        let body = crate::weather::http_get(LATEST_URL, MAX_BYTES).expect("GitHub answers");
+        let r = parse_release(&body).expect("a published release");
+        assert!(parse_version(&r.version).is_some(), "{r:?}");
     }
 
     #[test]
