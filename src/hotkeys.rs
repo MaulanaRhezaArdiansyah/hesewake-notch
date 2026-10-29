@@ -1,23 +1,32 @@
-//! Global hotkeys Ctrl+Alt+1..9: open the notch on the Nth enabled slide (the order in Settings > Slides).
+//! Global hotkeys Ctrl+Alt+1..9 and 0: open the notch on the Nth enabled slide (the order in Settings > Slides).
 //! Pressing the same hotkey again while that slide is showing closes the notch.
 
 use super::*;
 use crate::slides::SlideId;
 use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
 
-/// Number of slide hotkeys (Ctrl+Alt+1 .. Ctrl+Alt+9).
-pub(crate) const SLIDE_KEYS: usize = 9;
-/// Hotkey ids 10..=18; id 1 is Ctrl+Alt+H (eye.rs).
+/// Number of slide hotkeys (Ctrl+Alt+1 .. Ctrl+Alt+9, then Ctrl+Alt+0 for the 10th).
+pub(crate) const SLIDE_KEYS: usize = 10;
+/// Hotkey ids 10..=19; id 1 is Ctrl+Alt+H (eye.rs).
 const FIRST_ID: i32 = 10;
 /// How long the notch stays open after a slide hotkey (longer while hovered).
 const PEEK_SECS: u64 = 8;
+
+/// The number key for slide position `i`: 1..9, then 0 (like the keyboard's number row).
+pub(crate) fn key_of(i: usize) -> char {
+    if i < 9 {
+        char::from(b'1' + i as u8)
+    } else {
+        '0'
+    }
+}
 
 /// Slide position for a `WM_HOTKEY` id, if it is one of the slide hotkeys.
 pub(crate) fn slide_of(id: i32) -> Option<usize> {
     (FIRST_ID..FIRST_ID + SLIDE_KEYS as i32).contains(&id).then(|| (id - FIRST_ID) as usize)
 }
 
-/// Register (or release) Ctrl+Alt+1..9. A key another app already holds is skipped and noted in perf.log.
+/// Register (or release) Ctrl+Alt+1..9 and 0. A key another app already holds is skipped and noted in perf.log.
 pub(crate) fn set_slide_hotkeys(hwnd: isize, on: bool) {
     if cfg!(test) {
         return; // unit tests must not grab global hotkeys (the CI-only test below calls `register` itself)
@@ -27,14 +36,14 @@ pub(crate) fn set_slide_hotkeys(hwnd: isize, on: bool) {
     }
 }
 
-/// Release Ctrl+Alt+1..9 for `hwnd`, then register them again if `on`. Returns the key numbers that failed.
+/// Release Ctrl+Alt+1..9 and 0 for `hwnd`, then register them again if `on`. Returns the key numbers that failed.
 fn register(hwnd: HWND, on: bool) -> Vec<usize> {
     let mods = HOT_KEY_MODIFIERS(MOD_ALT.0 | MOD_CONTROL.0 | MOD_NOREPEAT.0);
     let mut failed = Vec::new();
     for i in 0..SLIDE_KEYS {
         let id = FIRST_ID + i as i32;
         let _ = unsafe { UnregisterHotKey(hwnd, id) };
-        if on && unsafe { RegisterHotKey(hwnd, id, mods, '1' as u32 + i as u32) }.is_err() {
+        if on && unsafe { RegisterHotKey(hwnd, id, mods, key_of(i) as u32) }.is_err() {
             failed.push(i + 1);
         }
     }
@@ -57,7 +66,7 @@ fn action(order: &[SlideId], n: usize, expanded: bool, cur: usize) -> Action {
     }
 }
 
-/// Hotkey number (1..=9) of entry `i` in the slide config, shown in Settings > Slides; None if it has none.
+/// Hotkey number (1..=10; 10 is the 0 key) of entry `i` in the slide config, shown in Settings > Slides; None if it has none.
 pub(crate) fn number(cfg: &[(SlideId, bool)], i: usize) -> Option<usize> {
     if !cfg.get(i)?.1 {
         return None;
@@ -146,6 +155,8 @@ mod tests {
 
         press_ctrl_alt(9);
         assert_eq!(next_hotkey(2000).and_then(slide_of), Some(8), "Ctrl+Alt+9 maps to the ninth slide");
+        press_ctrl_alt(0);
+        assert_eq!(next_hotkey(2000).and_then(slide_of), Some(9), "Ctrl+Alt+0 maps to the tenth slide");
 
         assert_eq!(register(none, false), Vec::<usize>::new());
         press_ctrl_alt(3);
@@ -158,7 +169,9 @@ mod tests {
         assert_eq!(slide_of(1), None, "Ctrl+Alt+H is not a slide hotkey");
         assert_eq!(slide_of(FIRST_ID), Some(0));
         assert_eq!(slide_of(FIRST_ID + 8), Some(8), "Ctrl+Alt+9");
-        assert_eq!(slide_of(FIRST_ID + 9), None);
+        assert_eq!(slide_of(FIRST_ID + 9), Some(9), "Ctrl+Alt+0");
+        assert_eq!(slide_of(FIRST_ID + 10), None);
+        assert_eq!((key_of(0), key_of(8), key_of(9)), ('1', '9', '0'), "the tenth slide is on 0, like the number row");
     }
 
     #[test]
@@ -181,7 +194,7 @@ mod tests {
         assert_eq!(number(&cfg, 3), Some(3));
         assert_eq!(number(&cfg, 9), None);
         let many: Vec<_> = SlideId::USER.iter().map(|&s| (s, true)).chain([(Music, true)]).collect();
-        assert_eq!(number(&many, 8), Some(9));
-        assert_eq!(number(&many, 9), None, "only 9 hotkeys");
+        assert_eq!(number(&many, 9), Some(10));
+        assert_eq!(number(&many, 10), None, "only 10 hotkeys");
     }
 }

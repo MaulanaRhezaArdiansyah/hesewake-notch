@@ -159,7 +159,7 @@ fn run(hwnd: isize, rx: Receiver<Cmd>, mut on: bool, mut lat: f32, mut lon: f32)
             let url = format!(
                 "https://api.open-meteo.com/v1/forecast?latitude={lat:.4}&longitude={lon:.4}&current=temperature_2m,weather_code,is_day&timezone=auto"
             );
-            match http_get(&url).and_then(|b| parse(&b)) {
+            match http_get(&url, 200_000).and_then(|b| parse(&b)) {
                 Some(w) => {
                     *CURRENT.lock().unwrap_or_else(|p| p.into_inner()) = Some(w);
                     save_cache(w, lat, lon);
@@ -193,7 +193,8 @@ fn run(hwnd: isize, rx: Receiver<Cmd>, mut on: bool, mut lat: f32, mut lon: f32)
 }
 
 /// GET lewat WinINet (TLS bawaan sistem). WinRT HttpClient gagal handshake ke api.open-meteo.com (0x80072F8F).
-fn http_get(url: &str) -> Option<String> {
+/// GET `url` as text; None on failure or when the body is bigger than `max` bytes.
+pub(crate) fn http_get(url: &str, max: usize) -> Option<String> {
     use windows::Win32::Networking::WinInet::*;
     unsafe {
         let ses = InternetOpenW(w!("HesewakeNotch"), INTERNET_OPEN_TYPE_PRECONFIG.0, None, None, 0);
@@ -215,7 +216,8 @@ fn http_get(url: &str) -> Option<String> {
                     break;
                 }
                 out.extend_from_slice(&buf[..n as usize]);
-                if out.len() > 200_000 {
+                if out.len() > max {
+                    out.clear();
                     break;
                 }
             }
@@ -224,7 +226,7 @@ fn http_get(url: &str) -> Option<String> {
             perf::note("weather: WinINet gagal membuka URL");
         }
         let _ = InternetCloseHandle(ses);
-        String::from_utf8(out).ok().filter(|s| !s.is_empty())
+        Some(String::from_utf8_lossy(&out).into_owned()).filter(|s| !s.is_empty())
     }
 }
 
@@ -295,7 +297,7 @@ impl App {
             v[1] = Slot::Cond;
             n = 2;
         }
-        if self.prayer_countdown().is_some() {
+        if self.countdown_on() {
             v[n] = Slot::Prayer;
             n += 1;
         }
@@ -333,7 +335,7 @@ impl App {
             return;
         }
         let wx = current();
-        let label = self.prayer_label();
+        let label = self.countdown_text(g);
         // ikut memudar bersama jam saat fase mata selesai
         let fade = ((self.idle_secs() % IDLE_CYCLE_SECS) / CLOCK_FADE_IN).clamp(0.0, 1.0);
         let ca = ca * fade;
@@ -345,14 +347,14 @@ impl App {
             if a <= 0.01 {
                 return;
             }
-            match (st, wx, label.as_deref()) {
+            match (st, wx, label.as_ref()) {
                 (Slot::Temp, Some(wx), _) => {
                     let txt = format!("{:.0}\u{b0}", wx.temp);
                     let col = if wx.hot() { [255, 150, 70] } else { [255, 255, 255] };
                     g.txt_c(&txt, cx, ty(h, 13.0) + dy, 13.0, col, a, 40.0, true);
                 }
                 (Slot::Cond, Some(wx), _) => draw_cond(g, wx, t, cx, cy + dy, 15.0, a),
-                (Slot::Prayer, _, Some(lbl)) => g.txt_c(lbl, cx, ty(h, 12.0) + dy, 12.0, prayer::GOLD, a, 80.0, false),
+                (Slot::Prayer, _, Some((lbl, col))) => g.txt_c(lbl, cx, ty(h, 12.0) + dy, 12.0, *col, a, 80.0, false),
                 _ => {}
             }
         };

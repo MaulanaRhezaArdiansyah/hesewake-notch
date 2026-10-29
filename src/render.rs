@@ -131,7 +131,10 @@ pub(crate) fn draw(a: &mut App) {
     };
     g.fill(&shape, &paint(0, 0, 0, 1.0));
 
-    let ca = if hold { 1.0 } else { (1.0 - p * 2.0).clamp(0.0, 1.0) * ((h - 16.0) / 12.0).clamp(0.0, 1.0) };
+    // Collapsed content only shows once the notch is tall enough for it, also right after a toast, when the notch
+    // may be shrinking back to the thin busy line.
+    let fit = ((h - 16.0) / 12.0).clamp(0.0, 1.0);
+    let ca = if hold { fit } else { (1.0 - p * 2.0).clamp(0.0, 1.0) * fit };
     if ca > 0.03 {
         a.draw_collapsed(&mut g, w, h, ca);
         if a.toast.is_none() {
@@ -172,6 +175,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Timer => a.slide_timer(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
                 SlideId::Clipboard => a.slide_clipboard(&mut g, ox, al),
+                SlideId::Agenda => a.slide_agenda(&mut g, ox, al),
             }
         }
         if !a.lyric_screen() {
@@ -261,9 +265,9 @@ impl App {
             }
             let (rl, mut rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra());
             // Prayer countdown: right-aligned before the bell/equalizer; the title/lyrics make room.
-            if let Some(lbl) = self.prayer_label() {
+            if let Some((lbl, col)) = self.countdown_text(g) {
                 let tw = g.width(&lbl, 12.0);
-                g.txt(&lbl, rr - tw, ty(h, 12.0), 12.0, prayer::GOLD, ca, tw + 2.0);
+                g.txt(&lbl, rr - tw, ty(h, 12.0), 12.0, col, ca, tw + 2.0);
                 rr -= prayer::PLAY_EXTRA;
             }
             let rw = rr - rl;

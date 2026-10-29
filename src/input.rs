@@ -148,6 +148,14 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 present(a);
             }
             SlideId::System => {}
+            SlideId::Agenda => {
+                let (now, off) = (notif::now_unix() as i64, calendar::local_offset());
+                if let Some(calendar::AgendaHit::Join(i)) = a.agenda_hit(x, y, now, off) {
+                    if let Some(link) = a.agenda(now, off).get(i).and_then(|e| e.link.clone()) {
+                        sys::open_url(&link);
+                    }
+                }
+            }
             SlideId::Clipboard => {
                 if let Some(text) = a.clip_hit(x, y).and_then(|hit| a.clip_apply(hit)) {
                     note::clip_set(HWND(a.hwnd as _), &text);

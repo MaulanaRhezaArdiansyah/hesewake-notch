@@ -56,6 +56,7 @@ mod anim;
 mod audio;
 mod bt;
 mod busy;
+mod calendar;
 mod cjk;
 mod clipboard;
 mod clock;
@@ -67,6 +68,7 @@ mod eye;
 mod gfx;
 mod hotkeys;
 mod i18n;
+mod ics;
 mod icon;
 mod icons;
 mod input;
@@ -230,6 +232,15 @@ struct App {
     clips: clipboard::History,
     clip_scroll: usize,
     clip_flash: Option<Instant>,
+    /// Calendar (ICS link): the link, feed status, upcoming events, meetings already announced, the Settings row's
+    /// "no link on the clipboard" / "press again to remove" moments, and the Agenda slide's scroll.
+    cal_link: Option<String>,
+    cal_status: calendar::CalStatus,
+    cal: Vec<ics::Event>,
+    cal_fired: Vec<(i64, String)>,
+    cal_paste_err: Option<Instant>,
+    cal_confirm: Option<Instant>,
+    agenda_scroll: usize,
     drop_pulse: Option<Instant>,
     note: String,
     note_mode: bool,
@@ -419,6 +430,8 @@ fn main() -> Result<()> {
         i18n::set(cfg0.lang);
         hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
         clipboard::listen(hwnd.0 as isize);
+        let cal_link = calendar::load_link();
+        calendar::start(hwnd.0 as isize, cal_link.clone());
         sys::register_display_notifications(hwnd);
         sys::tray_add(hwnd);
 
@@ -570,6 +583,13 @@ fn main() -> Result<()> {
             clips: clipboard::History::default(),
             clip_scroll: 0,
             clip_flash: None,
+            cal_status: if cal_link.is_some() { calendar::CalStatus::Loading } else { calendar::CalStatus::Off },
+            cal_link,
+            cal: Vec::new(),
+            cal_fired: Vec::new(),
+            cal_paste_err: None,
+            cal_confirm: None,
+            agenda_scroll: 0,
             drop_pulse: None,
             note: load_note(),
             note_mode: false,

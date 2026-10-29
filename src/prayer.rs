@@ -104,7 +104,7 @@ pub(crate) fn utc_offset_hours(bias: i32, daylight_bias: i32, daylight: bool) ->
 }
 
 /// The current Windows time zone, so the schedule follows the laptop clock (WIB/WITA/WIT automatically).
-fn local_utc_offset() -> f64 {
+pub(crate) fn local_utc_offset() -> f64 {
     let mut tz = TIME_ZONE_INFORMATION::default();
     // 2 = TIME_ZONE_ID_DAYLIGHT
     let state = unsafe { GetTimeZoneInformation(&mut tz) };
@@ -151,10 +151,6 @@ impl App {
         countdown(now_min(), &self.prayer?.1)
     }
 
-    pub(crate) fn prayer_label(&self) -> Option<String> {
-        self.prayer_countdown().map(|(i, m)| format!("{} {}m", NAMES[i], m))
-    }
-
     /// Extra idle-notch width while the countdown shows without a timer pill (layout in `prayer_slots`). When the
     /// timer pill shows, `timer_extra` already accounts for it (the slot left of the clock is widened there).
     pub(crate) fn prayer_idle_extra(&self) -> f32 {
@@ -162,7 +158,7 @@ impl App {
     }
 
     pub(crate) fn prayer_play_extra(&self) -> f32 {
-        if self.prayer_countdown().is_some() { PLAY_EXTRA } else { 0.0 }
+        if self.countdown_on() { PLAY_EXTRA } else { 0.0 }
     }
 
     /// Called on every minute change: one toast when a prayer time starts. True if a toast was started.

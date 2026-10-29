@@ -112,6 +112,13 @@ fn test_app(s: f32) -> App {
         clips: clipboard::History::default(),
         clip_scroll: 0,
         clip_flash: None,
+        cal_link: None,
+        cal_status: calendar::CalStatus::Off,
+        cal: Vec::new(),
+        cal_fired: Vec::new(),
+        cal_paste_err: None,
+        cal_confirm: None,
+        agenda_scroll: 0,
         drop_pulse: None,
         note: String::new(),
         note_mode: false,
@@ -347,6 +354,255 @@ fn stepper_values_fit_without_cutting() {
         for l in 0..i18n::LANGS.len() {
             a.cfg.lang = l;
             check(&a, 2);
+        }
+    }
+}
+
+// ---------------------------------------------------------------- calendar
+
+/// Jakarta time, UTC+7.
+const WIB: i32 = 7 * 3600;
+
+fn event(title: &str, start: i64, mins: i64, link: Option<&str>) -> ics::Event {
+    ics::Event { summary: title.into(), start, end: start + mins * 60, all_day: false, link: link.map(str::to_string) }
+}
+
+fn now_s() -> i64 {
+    notif::now_unix() as i64
+}
+
+#[test]
+fn meeting_countdown_in_the_last_ten_minutes() {
+    let mut a = test_app(1.0);
+    let now = now_s();
+    a.cal = vec![
+        ics::Event { all_day: true, ..event("Holiday", now + 60, 24 * 60, None) },
+        event("Standup", now + 8 * 60 + 30, 15, Some("https://meet.google.com/abc")),
+        event("Review", now + 9 * 60, 60, None),
+    ];
+    let (e, m) = a.meeting_countdown(now).expect("countdown");
+    assert_eq!((e.summary.as_str(), m), ("Standup", 9), "the soonest timed meeting, minutes rounded up; all-day ignored");
+    a.cal = vec![event("Later", now + 11 * 60, 30, None)];
+    assert!(a.meeting_countdown(now).is_none(), "more than 10 minutes away");
+    a.cal = vec![event("Running", now - 60, 30, None)];
+    assert!(a.meeting_countdown(now).is_none(), "already started");
+}
+
+#[test]
+fn meeting_toast_once_when_it_starts() {
+    let mut a = test_app(1.0);
+    let start = now_s() - 20;
+    a.cal = vec![event("Standup", start, 15, Some("https://meet.google.com/abc")), ics::Event { all_day: true, ..event("Holiday", start, 1440, None) }];
+    assert!(a.meeting_minute(start + 20));
+    let Some(Toast { kind: ToastKind::Meeting { title, at, link }, .. }) = &a.toast else { panic!("meeting toast") };
+    assert_eq!((title.as_str(), *at, link.as_deref()), ("Standup", start, Some("https://meet.google.com/abc")));
+    a.toast = None;
+    assert!(!a.meeting_minute(start + 60), "only once per meeting");
+    assert!(a.toast.is_none() && a.toast_q.is_empty(), "no toast for the all-day event");
+    assert!(!a.meeting_minute(start + 10 * 60), "long after the start: no toast");
+}
+
+#[test]
+fn meeting_toast_join_opens_the_link() {
+    let mut a = test_app(1.0);
+    let link = "https://meet.google.com/abc-defg-hij";
+    show_toast(&mut a, ToastKind::Meeting { title: "Standup".into(), at: now_s(), link: Some(link.into()) });
+    let (w, h) = a.toast_size();
+    let (bx, by, bw, bh) = toast::meeting_join_rect(w, h);
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), [link]);
+    assert!(a.toast.is_none(), "the toast closes");
+}
+
+#[test]
+fn calendar_button_pastes_and_removes_the_link() {
+    let mut a = test_app(1.0);
+    a.cal_button(Some("not a link".into()));
+    assert_eq!(a.cal_link, None);
+    assert!(a.cal_paste_err.is_some(), "tells that the clipboard has no ICS link");
+    a.cal_button(Some(" webcal://calendar.google.com/x/basic.ics ".into()));
+    assert_eq!(a.cal_link.as_deref(), Some("https://calendar.google.com/x/basic.ics"));
+    assert_eq!(a.cal_status, calendar::CalStatus::Loading);
+    a.cal_update(calendar::CalStatus::Ready, vec![event("Standup", now_s() + 600, 15, None)]);
+    assert_eq!(a.cal.len(), 1);
+    a.cal_button(None);
+    assert!(a.cal_link.is_some(), "first press only asks to confirm");
+    a.cal_button(None);
+    assert_eq!(a.cal_link, None, "second press removes it");
+    assert_eq!(a.cal_status, calendar::CalStatus::Off);
+    assert!(a.cal.is_empty());
+}
+
+#[test]
+fn agenda_lists_what_is_left_today_and_join_opens_the_link() {
+    let mut a = test_app(1.0);
+    // 28 Oct 2026 10:00 WIB
+    let now = ics::unix_utc(2026, 10, 28, 3, 0, 0);
+    let at = |h: u32, m: u32| ics::unix_utc(2026, 10, 28, h, m, 0) - WIB as i64;
+    a.cal = vec![
+        event("Done already", at(8, 0), 30, None),
+        event("Design review", at(9, 45), 30, Some("https://zoom.us/j/1")),
+        event("Lunch", at(12, 0), 60, None),
+        event("Sprint planning", at(14, 0), 60, Some("https://meet.google.com/xyz")),
+        event("Tomorrow", at(24 + 9, 0), 30, None),
+        ics::Event { all_day: true, ..event("Company holiday", at(0, 0), 24 * 60, None) },
+    ];
+    let names: Vec<_> = a.agenda(now, WIB).iter().map(|e| e.summary.clone()).collect();
+    assert_eq!(names, ["Company holiday", "Design review", "Lunch", "Sprint planning"], "all-day first, ended and tomorrow left out");
+    open_slide(&mut a, SlideId::Agenda);
+    let (x, y, w, h) = calendar::join_rect(1);
+    assert_eq!(a.agenda_hit(x + w / 2.0, y + h / 2.0, now, WIB), Some(calendar::AgendaHit::Join(1)));
+    let (x, y, w, h) = calendar::join_rect(2);
+    assert_eq!(a.agenda_hit(x + w / 2.0, y + h / 2.0, now, WIB), None, "Lunch has no link, so no button");
+}
+
+#[test]
+fn countdown_shows_whichever_comes_first() {
+    let mut a = test_app(1.0);
+    a.cfg.prayer_on = true;
+    prayer_in(&mut a, 2, 12);
+    a.cal = vec![event("Standup", now_s() + 5 * 60 - 10, 15, None)];
+    assert_eq!(a.upcoming(), Some(calendar::Upcoming::Meeting("Standup".into(), 5)));
+    a.cal = vec![event("Later", now_s() + 14 * 60, 15, None)];
+    assert_eq!(a.upcoming(), Some(calendar::Upcoming::Prayer(2, 12)), "the meeting is not within 10 minutes yet");
+    a.cfg.prayer_on = false;
+    assert_eq!(a.upcoming(), None);
+}
+
+/// Settings > Slides holds 10 slides in rows of 3: the wheel brings the 4th row into view, and its cells work.
+#[test]
+fn slides_grid_scrolls_to_the_tenth_slide() {
+    let mut a = test_app(1.0);
+    open_settings_tab(&mut a, 0);
+    assert_eq!(a.cfg.slides.len(), 10);
+    assert!(settingsview::slide_cells_visible(9, 0).is_none(), "the 10th slide starts below the grid");
+    assert!(a.settings_slides_wheel(true));
+    assert_eq!(a.sui.slides_scroll, 1);
+    assert!(!a.settings_slides_wheel(true), "only one extra row");
+    let (x, y) = settingsview::slide_cells_visible(9, 1).expect("visible after scrolling");
+    assert!(settingsview::slide_cells_visible(0, 1).is_none(), "the first row scrolled out");
+    let was = a.cfg.slides[9].1;
+    a.settings_click(x + settingsview::SC_W - 10.0, y + 10.0);
+    assert_eq!(a.cfg.slides[9].1, !was, "its toggle works");
+    assert!(a.settings_slides_wheel(false));
+    assert_eq!(a.sui.slides_scroll, 0);
+}
+
+/// A day with meetings: one running with a Meet link, then two more today.
+fn with_meetings(a: &mut App) {
+    let now = now_s();
+    a.cal_link = Some("https://calendar.google.com/x/basic.ics".into());
+    a.cal_status = calendar::CalStatus::Ready;
+    a.cal = vec![
+        event("Design review", now - 10 * 60, 45, Some("https://meet.google.com/abc-defg-hij")),
+        event("Lunch with the team", now + 90 * 60, 60, None),
+        event("Sprint planning for the clipboard and calendar work", now + 3 * 3600, 60, Some("https://zoom.us/j/1")),
+    ];
+}
+
+#[test]
+fn snap_calendar() {
+    for s in SCALES {
+        shot("meeting-idle", s, |a| a.cal = vec![event("Standup", now_s() + 8 * 60, 15, None)]);
+    }
+    shot("meeting-playing", 1.0, |a| {
+        a.cal = vec![event("Standup", now_s() + 8 * 60, 15, None)];
+        a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    });
+    shot("toast-meeting", 1.0, |a| {
+        show_toast(a, ToastKind::Meeting { title: "Daily Standup".into(), at: now_s(), link: Some("https://meet.google.com/abc".into()) })
+    });
+    shot("toast-meeting-nolink", 1.0, |a| show_toast(a, ToastKind::Meeting { title: "1:1 with Rina".into(), at: now_s(), link: None }));
+    shot("agenda", 1.0, |a| {
+        with_meetings(a);
+        open_slide(a, SlideId::Agenda);
+    });
+    shot("agenda-no-link", 1.0, |a| open_slide(a, SlideId::Agenda));
+    shot("agenda-loading", 1.0, |a| {
+        a.cal_link = Some("https://x.com/a.ics".into());
+        a.cal_status = calendar::CalStatus::Loading;
+        open_slide(a, SlideId::Agenda);
+    });
+    shot("agenda-failed", 1.0, |a| {
+        a.cal_link = Some("https://x.com/a.ics".into());
+        a.cal_status = calendar::CalStatus::Failed;
+        open_slide(a, SlideId::Agenda);
+    });
+    shot("agenda-done-for-today", 1.0, |a| {
+        a.cal_link = Some("https://x.com/a.ics".into());
+        a.cal_status = calendar::CalStatus::Ready;
+        a.cal = vec![event("Standup", now_s() + 30 * 3600, 15, None)];
+        open_slide(a, SlideId::Agenda);
+    });
+    shot("settings-calendar-off", 1.0, |a| open_settings_tab(a, 2));
+    shot("settings-calendar-synced", 1.0, |a| {
+        with_meetings(a);
+        open_settings_tab(a, 2);
+    });
+    shot("settings-slides-scrolled", 1.0, |a| {
+        open_settings_tab(a, 0);
+        a.sui.slides_scroll = 1;
+    });
+    let id = |a: &mut App| {
+        a.cfg.lang = i18n::ID;
+        i18n::set(i18n::ID);
+    };
+    let _lang = i18n::restore_on_drop();
+    shot("id-agenda", 1.0, |a| {
+        id(a);
+        with_meetings(a);
+        open_slide(a, SlideId::Agenda);
+    });
+    shot("id-toast-meeting", 1.0, |a| {
+        id(a);
+        show_toast(a, ToastKind::Meeting { title: "Daily Standup".into(), at: now_s(), link: Some("https://meet.google.com/abc".into()) })
+    });
+    shot("id-settings-calendar", 1.0, |a| {
+        id(a);
+        with_meetings(a);
+        open_settings_tab(a, 2);
+    });
+}
+
+/// The Calendar row in Settings > Features: Paste reads the clipboard, and every state's text fits, in both languages.
+#[test]
+fn calendar_row_pastes_and_fits_in_every_state() {
+    let _lang = i18n::restore_on_drop();
+    let mut a = test_app(1.0);
+    let row = |a: &App| a.settings_rows(2).into_iter().position(|r| r.label == i18n::tr("Calendar")).expect("Calendar row");
+    let i = row(&a);
+    let (cx, cy) = settingsview::cell_pos(i);
+    calendar::TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some("https://calendar.google.com/x/basic.ics".into()));
+    a.settings_click_rows(2, cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    assert_eq!(a.cal_link.as_deref(), Some("https://calendar.google.com/x/basic.ics"), "Paste took the link from the clipboard");
+
+    let mut g = Gfx::new(1.0);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        let states: [(&str, fn(&mut App)); 6] = [
+            ("no link", |a| a.cal_link = None),
+            ("nothing on the clipboard", |a| {
+                a.cal_link = None;
+                a.cal_paste_err = Some(Instant::now());
+            }),
+            ("loading", |a| {
+                a.cal_link = Some("https://x.com/a.ics".into());
+                a.cal_status = calendar::CalStatus::Loading;
+            }),
+            ("ready", |a| {
+                a.cal_status = calendar::CalStatus::Ready;
+                a.cal = (0..12).map(|k| event("Meeting", now_s() + k * 60, 10, None)).collect();
+            }),
+            ("failed", |a| a.cal_status = calendar::CalStatus::Failed),
+            ("confirm remove", |a| a.cal_confirm = Some(Instant::now())),
+        ];
+        for (name, set) in states {
+            set(&mut a);
+            let r = a.settings_rows(2).swap_remove(row(&a));
+            let w = settingsview::text_w(&r.kind);
+            assert!(g.width_ex(r.label, 12.0, true) <= w && g.width(r.sub, 11.0) <= w, "lang {lang}, {name}: {:?} / {:?}", r.label, r.sub);
+            let settingsview::RowKind::Button(b) = &r.kind else { panic!("{name}: a button") };
+            assert!(g.width_ex(b, 11.0, true) <= 46.0, "lang {lang}, {name}: button {b:?}");
         }
     }
 }
@@ -716,4 +972,22 @@ fn clipboard_is_only_recorded_while_the_slide_is_on() {
     set_slide(&mut a, SlideId::Clipboard, false);
     a.on_clipboard(Some("another".into()), Instant::now());
     assert!(a.clips.is_empty(), "turned off: history forgotten");
+}
+
+/// Busy mode (fullscreen video) with music playing: right after a toast such as the volume HUD closes, the notch
+/// shrinks back to the thin line. The cover and the equalizer must not be drawn into that line, because the timer
+/// can stop before the toast's grace period ends and leave them on screen.
+#[test]
+fn thin_line_stays_empty_right_after_a_toast() {
+    let mut a = test_app(1.0);
+    a.media = Media { title: "Netflix".into(), artist: String::new(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    a.busy = true;
+    a.toast_end = Instant::now();
+    assert!(a.toast_hold(), "still inside the grace period after the toast");
+    (a.w, a.h) = anim::target(&a);
+    assert_eq!((a.w, a.h), THIN);
+    render::draw(&mut a);
+    let g = a.gfx.as_ref().expect("gfx");
+    let lit = g.pm.data().chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count();
+    assert_eq!(lit, 0, "the thin line shows {lit} coloured pixels");
 }

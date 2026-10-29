@@ -379,7 +379,7 @@ impl App {
             return None;
         }
         let wide = self.tm.display_secs(Instant::now()) >= 3600;
-        let weather = self.weather_shown().then(|| if self.prayer_countdown().is_some() { prayer::LABEL_W } else { WEATHER_W });
+        let weather = self.weather_shown().then(|| if self.countdown_on() { prayer::LABEL_W } else { WEATHER_W });
         Some(idle_slots(self.idle_phase() == IdlePhase::Eye, weather, self.bell_pos().is_some(), wide))
     }
 
@@ -390,7 +390,7 @@ impl App {
 
     /// Idle notch layout while the prayer countdown shows without a timer pill; None otherwise.
     pub(crate) fn prayer_slots(&self) -> Option<IdleSlots> {
-        let on = self.timer_slots().is_none() && self.weather_shown() && self.prayer_countdown().is_some();
+        let on = self.timer_slots().is_none() && self.weather_shown() && self.countdown_on();
         on.then(|| prayer_layout(self.bell_pos().is_some()))
     }
 

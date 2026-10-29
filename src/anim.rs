@@ -280,7 +280,8 @@ unsafe fn poll(a: &mut App) {
     // Minute change: prayer schedule (toast when a prayer time starts, countdown ticks down).
     if st.wMinute != a.last_min {
         a.prayer_minute();
-        if a.prayer_countdown().is_some() || a.toast.is_some() {
+        a.meeting_minute(notif::now_unix() as i64);
+        if a.countdown_on() || a.toast.is_some() || (expanded && a.is_slide(SlideId::Agenda)) {
             redraw = true;
         }
     }
