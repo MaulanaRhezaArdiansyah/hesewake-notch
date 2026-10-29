@@ -178,7 +178,7 @@ pub(crate) enum Rid {
     Prayer,
     Accent,
     Romaji,
-    DictDelete,
+    Dictionary,
 }
 
 /// Satu baris pengaturan pada tab General, Alerts, atau Widgets.
@@ -325,25 +325,27 @@ impl App {
                 Row { id: Rid::Prayer, label: tr("Prayer times"), sub: tr("Countdown + toast"), kind: RowKind::Toggle(self.cfg.prayer_on) },
                 Row { id: Rid::Calendar, label: tr("Calendar"), sub: self.cal_sub(), kind: RowKind::Button(self.cal_button_text().into()) },
                 Row { id: Rid::LyricTiming, label: tr("Lyric timing"), sub: tr("Show earlier by"), kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
-                if romaji::available() {
-                    Row { id: Rid::Romaji, label: tr("Romaji lyrics"), sub: tr("Japanese to romaji"), kind: RowKind::Toggle(self.cfg.romaji_lyrics) }
-                } else {
-                    // Kamus belum ada: tombol unduh (lihat dict.rs); setelah selesai baris ini jadi toggle.
-                    match dict::state() {
-                        dict::Dl::Running(p) => Row { id: Rid::Romaji, label: tr("Romaji lyrics"), sub: tr("Downloading dictionary"), kind: RowKind::Button(format!("{p}%")) },
-                        dict::Dl::Failed => Row { id: Rid::Romaji, label: tr("Romaji lyrics"), sub: tr("Download failed"), kind: RowKind::Button(tr("Retry").into()) },
-                        dict::Dl::Idle => Row { id: Rid::Romaji, label: tr("Romaji lyrics"), sub: tr("Needs 10 MB dictionary"), kind: RowKind::Button(tr("Get").into()) },
-                    }
-                },
+                Row { id: Rid::Romaji, label: tr("Romanize lyrics"), sub: tr("Japanese and Korean"), kind: RowKind::Toggle(self.cfg.romaji_lyrics) },
             ]
             .into_iter()
-            // Kamus yang dipakai bisa dihapus (tekan dua kali).
-            .chain(dict::removable().map(|_| Row {
-                id: Rid::DictDelete,
-                label: tr("Romaji dictionary"),
-                sub: tr("47 MB on disk"),
-                kind: RowKind::Button(if self.sui.dict_confirming() { tr("Sure?") } else { tr("Delete") }.into()),
-            }))
+            // Kamus Jepang (hanya Jepang yang butuh; Korea tanpa kamus): tombol unduh bila belum ada, Delete (tekan dua kali) bila
+            // hasil unduhan, tidak ada baris bila kamus datang dari folder lain (lihat dict.rs).
+            .chain(if dict::removable().is_some() {
+                Some(Row {
+                    id: Rid::Dictionary,
+                    label: tr("Japanese dictionary"),
+                    sub: tr("47 MB on disk"),
+                    kind: RowKind::Button(if self.sui.dict_confirming() { tr("Sure?") } else { tr("Delete") }.into()),
+                })
+            } else if !romaji::available() {
+                Some(match dict::state() {
+                    dict::Dl::Running(p) => Row { id: Rid::Dictionary, label: tr("Japanese dictionary"), sub: tr("Downloading dictionary"), kind: RowKind::Button(format!("{p}%")) },
+                    dict::Dl::Failed => Row { id: Rid::Dictionary, label: tr("Japanese dictionary"), sub: tr("Download failed"), kind: RowKind::Button(tr("Retry").into()) },
+                    dict::Dl::Idle => Row { id: Rid::Dictionary, label: tr("Japanese dictionary"), sub: tr("Needs 10 MB dictionary"), kind: RowKind::Button(tr("Get").into()) },
+                })
+            } else {
+                None
+            })
             .collect(),
             _ => Vec::new(),
         }
@@ -617,25 +619,19 @@ impl App {
                     }
                 }
                 Rid::Romaji => {
-                    if romaji::available() {
-                        self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
-                        romaji::set_enabled(self.cfg.romaji_lyrics);
-                        self.romaji_refresh();
-                    } else if right {
-                        dict::start(self.hwnd);
-                    }
+                    self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
+                    romaji::set_enabled(self.cfg.romaji_lyrics);
+                    self.romaji_refresh();
                 }
-                Rid::DictDelete => {
+                Rid::Dictionary => {
                     if right {
-                        if !self.sui.dict_confirming() {
+                        if !dict::removable().is_some() {
+                            dict::start(self.hwnd);
+                        } else if !self.sui.dict_confirming() {
                             self.sui.dict_confirm = Some(Instant::now());
                         } else {
                             self.sui.dict_confirm = None;
-                            if dict::remove() {
-                                self.cfg.romaji_lyrics = false;
-                                romaji::set_enabled(false);
-                                self.romaji_refresh();
-                            }
+                            dict::remove();
                         }
                     }
                 }
