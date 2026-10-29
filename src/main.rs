@@ -102,6 +102,7 @@ mod weather;
 mod todo;
 mod timer;
 mod toast;
+mod update;
 mod water;
 mod window;
 
