@@ -145,13 +145,13 @@ pub(crate) fn project_name(cwd: &str) -> String {
 
 use std::ffi::c_void;
 use std::io::Read;
-use windows::core::{w, PCWSTR};
+use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, WPARAM};
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
-use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::System::Threading::{GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowW, GetWindow, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SendMessageTimeoutW, GW_OWNER, SMTO_ABORTIFHUNG,
+    EnumWindows, FindWindowExW, GetWindow, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SendMessageTimeoutW, GW_OWNER, SMTO_ABORTIFHUNG,
     WM_COPYDATA,
 };
 
@@ -177,9 +177,42 @@ pub(crate) fn run_hook() {
     deliver(notch, &m);
 }
 
-/// The running notch's window (0 if none).
+/// The running notch's window (0 if none). Only a window of this same exe counts, so another program that names
+/// its window class the same way gets nothing.
 pub(crate) fn find_notch() -> isize {
-    unsafe { FindWindowW(w!("HesewakeNotchWindow"), PCWSTR::null()).map_or(0, |h| h.0 as isize) }
+    let mut prev = HWND::default();
+    for _ in 0..16 {
+        let Ok(h) = (unsafe { FindWindowExW(HWND::default(), prev, w!("HesewakeNotchWindow"), PCWSTR::null()) }) else { return 0 };
+        if h.0.is_null() {
+            return 0;
+        }
+        if is_ours(h.0 as isize) {
+            return h.0 as isize;
+        }
+        prev = h;
+    }
+    0
+}
+
+/// Is `hwnd` a window of a process running this same exe?
+pub(crate) fn is_ours(hwnd: isize) -> bool {
+    if hwnd == 0 {
+        return false;
+    }
+    let Ok(me) = std::env::current_exe() else { return false };
+    let mut pid = 0u32;
+    unsafe {
+        GetWindowThreadProcessId(HWND(hwnd as *mut c_void), Some(&mut pid));
+        if pid == 0 {
+            return false;
+        }
+        let Ok(proc) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return false };
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(proc, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(proc);
+        ok && String::from_utf16_lossy(&buf[..len as usize]).eq_ignore_ascii_case(&me.to_string_lossy())
+    }
 }
 
 /// Send `m` to the notch window `hwnd`. False when there is no window or it doesn't answer within 500 ms.
@@ -395,6 +428,19 @@ mod tests {
         let t = std::time::Instant::now();
         assert!(!deliver(0, &m));
         assert!(t.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    /// Only a window owned by this same exe gets the hook's data, not any window that copies the class name.
+    #[test]
+    fn only_our_own_exe_is_the_notch() {
+        let hwnd = test_window();
+        assert!(is_ours(hwnd.0 as isize), "a window of this process");
+        let desktop = unsafe { windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow() };
+        assert!(!is_ours(desktop.0 as isize), "a window of another process");
+        assert!(!is_ours(0));
+        unsafe {
+            let _ = DestroyWindow(hwnd);
+        }
     }
 
     #[test]
