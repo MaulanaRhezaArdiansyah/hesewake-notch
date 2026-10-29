@@ -318,7 +318,7 @@ impl App {
     }
 }
 
-/// `--demo-toast=charging|unplugged|low|bt|bt-off`: tampilkan satu toast setelah start (uji visual tanpa colok kabel).
+/// `--demo-toast=charging|unplugged|low|bt|bt-off|update|...`: tampilkan satu toast setelah start (uji visual tanpa colok kabel).
 const DEMO_NOTIF_ID: u32 = 999_999;
 
 /// `--demo-playing`: lagu palsu sedang diputar (uji tata letak notch kecil tanpa pemutar media sungguhan).
@@ -362,6 +362,7 @@ fn demo_toast() -> Option<ToastKind> {
         "water" => ToastKind::Water,
         "timer" => ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() },
         "pomo" => ToastKind::Timer { title: "Focus #1 done".into(), label: "Short break \u{b7} 5 min".into() },
+        "update" => ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into() })),
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "mic-muted" => ToastKind::Hud { kind: HudKind::Mic(Some(true)), on: false },
