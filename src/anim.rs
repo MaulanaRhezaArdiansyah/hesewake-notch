@@ -12,12 +12,12 @@ pub(crate) fn target(a: &App) -> (f32, f32) {
         THIN
     } else if a.media.playing && a.lyric_w > 0.0 {
         // Lebar menyesuaikan baris lirik (ruang teks = lebar - 88 px untuk ikon dan equalizer, + lonceng).
-        let extra = a.bell_extra() + a.priv_extra() + a.prayer_play_extra();
+        let extra = a.bell_extra() + a.priv_extra() + a.prayer_play_extra() + a.claude_extra();
         ((a.lyric_w + 88.0 + 16.0 + extra).clamp(PLAYING.0 + extra, EXP_W), PLAYING.1)
     } else if a.media.playing {
-        (PLAYING.0 + a.bell_extra() + a.priv_extra() + a.prayer_play_extra(), PLAYING.1)
+        (PLAYING.0 + a.bell_extra() + a.priv_extra() + a.prayer_play_extra() + a.claude_extra(), PLAYING.1)
     } else {
-        (IDLE.0 + a.priv_extra() + a.timer_extra() + a.prayer_idle_extra(), IDLE.1)
+        (IDLE.0 + a.priv_extra() + a.timer_extra() + a.prayer_idle_extra() + a.claude_extra(), IDLE.1)
     }
 }
 
@@ -63,6 +63,8 @@ pub(crate) unsafe fn schedule(a: &mut App) {
     } else {
         0
     };
+    // Working dots in the chip step every 100 ms; nothing faster is needed for them.
+    let want = if a.claude_animating() && (want == 0 || want > claude::DOTS_MS) { claude::DOTS_MS } else { want };
     if want != a.interval {
         let hwnd = HWND(a.hwnd as *mut c_void);
         if want == 0 {

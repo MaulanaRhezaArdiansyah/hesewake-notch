@@ -130,6 +130,9 @@ pub(crate) fn draw(a: &mut App) {
         None => notch_path(w, h),
     };
     g.fill(&shape, &paint(0, 0, 0, 1.0));
+    if a.thin() && !a.expanded() && a.toast.is_none() {
+        a.draw_claude_thin(&mut g, w, h);
+    }
 
     // Collapsed content only shows once the notch is tall enough for it, also right after a toast, when the notch
     // may be shrinking back to the thin busy line.
@@ -139,6 +142,7 @@ pub(crate) fn draw(a: &mut App) {
         a.draw_collapsed(&mut g, w, h, ca);
         if a.toast.is_none() {
             a.draw_privacy_dots(&mut g, w, h, ca);
+            a.draw_claude_chip(&mut g, w, h, ca);
         }
     }
     if p > 0.04 {
@@ -261,9 +265,9 @@ impl App {
             self.collapsed_cover(g, x0 + 14.0, (h - 20.0) / 2.0, 20.0, 5.0, ca);
             for i in 0..4 {
                 let bh = 4.0 + 12.0 * (0.5 + 0.5 * (self.t * 6.0 + i as f32 * 1.7).sin());
-                g.rect(x0 + w - 34.0 - self.priv_extra() + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &g.sacc(ca));
+                g.rect(x0 + w - 34.0 - self.priv_extra() - self.claude_chip_w() + i as f32 * 6.0, h / 2.0 - bh / 2.0, 3.0, bh, &g.sacc(ca));
             }
-            let (rl, mut rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra());
+            let (rl, mut rr) = (x0 + 44.0, x0 + w - 44.0 - self.bell_extra() - self.priv_extra() - self.claude_chip_w());
             // Prayer countdown: right-aligned before the bell/equalizer; the title/lyrics make room.
             if let Some((lbl, col)) = self.countdown_text(g) {
                 let tw = g.width(&lbl, 12.0);

@@ -263,6 +263,81 @@ impl App {
     }
 }
 
+// ---------------------------------------------------------------- chip in the collapsed notch
+
+/// Frame interval while the working dots move.
+pub(crate) const DOTS_MS: u32 = 100;
+/// Chip: a little gap, the `>_` icon, three dots.
+const CHIP_W: f32 = 34.0;
+/// Chip while waiting: the icon only (no dots).
+const CHIP_W_WAITING: f32 = 22.0;
+/// Extra room for a session count ("2") when several sessions are in the same state.
+const COUNT_W: f32 = 12.0;
+
+impl App {
+    /// What the chip shows: (waiting for the person, number of sessions in that state). None when hidden.
+    fn claude_chip(&self) -> Option<(bool, usize)> {
+        if self.expanded() || self.thin() || self.toast.is_some() || self.splash_t().is_some() {
+            return None;
+        }
+        match (self.claude.needing_count(), self.claude.working()) {
+            (0, 0) => None,
+            (0, n) => Some((false, n)),
+            (n, _) => Some((true, n)),
+        }
+    }
+
+    /// Width the chip takes at the right of the collapsed notch.
+    pub(crate) fn claude_chip_w(&self) -> f32 {
+        self.claude_chip().map_or(0.0, |(needs, n)| if needs { CHIP_W_WAITING } else { CHIP_W } + if n > 1 { COUNT_W } else { 0.0 })
+    }
+
+    /// Extra notch width for the chip. The idle content is centred, so it grows on both sides; the playing layout is
+    /// anchored at its edges, so it only needs the chip's own width.
+    pub(crate) fn claude_extra(&self) -> f32 {
+        self.claude_chip_w() * if self.media.playing { 1.0 } else { 2.0 }
+    }
+
+    /// The working dots are on screen, so frames are needed.
+    pub(crate) fn claude_animating(&self) -> bool {
+        !self.display_off && matches!(self.claude_chip(), Some((false, _)))
+    }
+
+    pub(crate) fn draw_claude_chip(&self, g: &mut Gfx, w: f32, h: f32, ca: f32) {
+        let Some((needs, n)) = self.claude_chip() else { return };
+        if ca <= 0.05 {
+            return;
+        }
+        let right = CX + w / 2.0 - 10.0 - self.priv_extra();
+        let left = right - self.claude_chip_w();
+        let cy = h / 2.0;
+        let (icx, rgb, a) = (left + 12.0, if needs { ORANGE } else { [235, 235, 240] }, if needs { ca } else { 0.85 * ca });
+        icon_prompt(g, icx, cy, 13.0, &paint(rgb[0], rgb[1], rgb[2], a));
+        let mut x = icx + 10.0;
+        if !needs {
+            // Three dots filling up one by one.
+            let step = ((self.t * 1000.0 / DOTS_MS as f32) as usize) % 4;
+            for i in 0..3 {
+                let on = if i < step { 0.95 } else { 0.28 };
+                g.circle(x + i as f32 * 5.0, cy + 3.0, 1.4, &paint(255, 255, 255, on * ca));
+            }
+            x += 15.0;
+        }
+        if n > 1 {
+            g.txt(&n.to_string(), x + 1.0, ty(h, 10.0), 10.0, rgb, ca, COUNT_W);
+        }
+    }
+
+    /// The thin busy line: an orange mark while a session waits for the person.
+    pub(crate) fn draw_claude_thin(&self, g: &mut Gfx, w: f32, h: f32) {
+        if self.claude.needing_count() == 0 || h > 12.0 {
+            return;
+        }
+        let x = CX + w / 2.0 - 24.0;
+        g.fill(&rrect(x, 0.0, 16.0, h.max(2.0), 1.5), &paint(ORANGE[0], ORANGE[1], ORANGE[2], 1.0));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

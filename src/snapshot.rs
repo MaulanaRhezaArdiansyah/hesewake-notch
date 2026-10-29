@@ -1054,3 +1054,69 @@ fn snap_claude_toasts() {
         shot(&format!("{prefix}-toast-error"), 1.0, |a| claude_toast(a, error.clone()));
     }
 }
+
+fn claude_working(a: &mut App, session: &str) {
+    a.on_claude(&claude_msg(claude_hook::EventKind::Prompt, session, ""));
+}
+
+fn claude_waiting(a: &mut App, session: &str) {
+    a.on_claude(&claude_msg(claude_hook::EventKind::NeedsYou, session, "Claude needs your permission"));
+    a.toast = None;
+    a.toast_q.clear();
+}
+
+#[test]
+fn snap_claude_chip() {
+    for s in SCALES {
+        shot("claude-chip-working", s, |a| claude_working(a, "s1"));
+    }
+    shot("claude-chip-needs-you", 1.0, |a| claude_waiting(a, "s1"));
+    shot("claude-chip-two-sessions", 1.0, |a| {
+        claude_working(a, "s1");
+        claude_working(a, "s2");
+    });
+    shot("claude-chip-playing", 1.0, |a| {
+        a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+        claude_working(a, "s1");
+    });
+}
+
+#[test]
+fn claude_chip_widens_the_notch() {
+    let mut a = test_app(1.0);
+    let idle = anim::target(&a).0;
+    claude_working(&mut a, "s1");
+    assert!(anim::target(&a).0 > idle, "room for the chip");
+    a.on_claude(&claude_msg(claude_hook::EventKind::Stop, "s1", "done"));
+    a.toast = None;
+    assert_eq!(anim::target(&a).0, idle, "done: the chip goes away");
+}
+
+#[test]
+fn claude_chip_does_not_animate_while_waiting() {
+    let mut a = test_app(1.0);
+    assert!(!a.claude_animating());
+    claude_working(&mut a, "s1");
+    assert!(a.claude_animating(), "dots move while Claude works");
+    claude_waiting(&mut a, "s1");
+    assert!(!a.claude_animating(), "a waiting prompt is static, so the timer can stop");
+}
+
+fn thin_pixels(a: &mut App) -> usize {
+    a.busy = true;
+    (a.w, a.h) = anim::target(a);
+    assert_eq!((a.w, a.h), THIN);
+    render::draw(a);
+    let g = a.gfx.as_ref().expect("gfx");
+    g.pm.data().chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count()
+}
+
+#[test]
+fn thin_line_marks_needs_you() {
+    let mut a = test_app(1.0);
+    claude_working(&mut a, "s1");
+    assert_eq!(thin_pixels(&mut a), 0, "working: the thin line stays plain");
+    let mut a = test_app(1.0);
+    claude_waiting(&mut a, "s1");
+    assert!(thin_pixels(&mut a) > 10, "waiting: an orange mark on the thin line");
+}
