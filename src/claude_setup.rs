@@ -28,7 +28,8 @@ pub(crate) const EVENTS: [(&str, Option<&str>); 8] = [
 ];
 
 pub(crate) const HOOK_ARG: &str = "--claude-hook";
-const EXE_NAME: &str = "hesewake-notch.exe";
+/// Our hook commands run an exe whose name starts with this (also renamed copies and other editions).
+const EXE_PREFIX: &str = "hesewake-notch";
 
 /// Add our hooks for `exe` (any older ones of ours are replaced).
 pub(crate) fn connect(v: &mut Value, exe: &str) {
@@ -60,7 +61,10 @@ pub(crate) fn connect(v: &mut Value, exe: &str) {
 
 /// Is this hook entry one of ours (any path to our exe, with the hook argument)?
 fn is_ours(h: &Value) -> bool {
-    let named = h.get("command").and_then(Value::as_str).and_then(|c| c.rsplit(['\\', '/']).next()).is_some_and(|n| n.eq_ignore_ascii_case(EXE_NAME));
+    let named = h.get("command").and_then(Value::as_str).and_then(|c| c.rsplit(['\\', '/']).next()).is_some_and(|n| {
+        let n = n.to_ascii_lowercase();
+        n.starts_with(EXE_PREFIX) && n.ends_with(".exe")
+    });
     let arg = h.get("args").and_then(Value::as_array).is_some_and(|a| a.iter().any(|x| x == HOOK_ARG));
     named && arg
 }
@@ -268,6 +272,23 @@ mod tests {
         connect(&mut v, EXE);
         assert_eq!(link(&v, EXE), Link::On);
         assert_eq!(ours(&v, "Stop").len(), 1);
+    }
+
+    /// A copy of the exe under another name (a test build, the Office edition) is still recognised: connecting again
+    /// replaces its hooks instead of adding more, and Remove takes them out.
+    #[test]
+    fn renamed_exe_is_still_ours() {
+        let renamed = r"C:\Users\a\Downloads\hesewake-notch-claude.exe";
+        let original = user_file();
+        let mut v = original.clone();
+        connect(&mut v, renamed);
+        assert_eq!(link(&v, renamed), Link::On);
+        connect(&mut v, renamed);
+        assert_eq!(ours(&v, "Stop").len(), 1, "connecting twice adds once");
+        connect(&mut v, EXE);
+        assert_eq!(ours(&v, "Stop").len(), 1, "another copy replaces it");
+        disconnect(&mut v);
+        assert_eq!(v.to_string(), original.to_string());
     }
 
     #[test]
