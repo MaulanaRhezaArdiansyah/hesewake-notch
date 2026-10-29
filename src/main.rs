@@ -74,6 +74,7 @@ mod icons;
 mod input;
 mod keys;
 mod lyricview;
+mod korean;
 mod lyrics;
 mod monitors;
 mod music;

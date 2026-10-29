@@ -58,7 +58,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 |  <img src="https://api.iconify.design/lucide/keyboard.svg?color=%23ff453a" width="22">  | Hotkey         | `Ctrl` + `Alt` + `H` toggles between the clock and the eye.                                                         |
 |   <img src="https://api.iconify.design/lucide/waves.svg?color=%23ff453a" width="22">    | Drop animation | Dropping a file onto the notch makes its bottom edge ripple like water.                                             |
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
-| <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romaji lyrics  | Optional (Settings > Widgets): Japanese  lyrics shown in romaji, using Lindera (IPADIC) and WanaKana.                 |
+| <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romanize lyrics | Optional (Settings > Widgets): Japanese lyrics shown in romaji (Lindera IPADIC and WanaKana) and Korean lyrics in Revised Romanization (no dictionary needed). |
 | <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > General > Language). Applies right away, including the right-click menu.     |
 | <img src="https://api.iconify.design/lucide/download.svg?color=%23ff453a" width="22"> | Update check   | At startup and every 24 hours the app asks GitHub for the latest release and shows a toast once per new version, with **Download** to open the release page. Nothing is installed automatically. Right-click menu: **Check for updates**. Turn it off in Settings > Alerts > Update notice. |
 | <img src="https://api.iconify.design/lucide/calendar-clock.svg?color=%23ff453a" width="22"> | Calendar       | Settings > Widgets > Calendar: copy your calendar's secret ICS address (Google: "Secret address in iCal format", Outlook: "Publish calendar"), then press **Paste**. The notch counts down the last 10 minutes before a meeting and shows a toast with **Join** when it starts. The link is kept in Windows Credential Manager (not in a file) and the feed is refreshed every 10 minutes. |
@@ -83,7 +83,7 @@ cd hesewake-notch
 cargo build --release
 ```
 
-The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics need the Lindera IPADIC dictionary: press **Get** in Settings > Widgets (it goes to `%APPDATA%\hesewake-notch\dict\ipadic`), or for development run `scripts\fetch-dict.ps1` to put it in the repo's `dict\ipadic`. To make a setup installer, open `hesewake-notch.iss` in Inno Setup and compile it.
+The executable is created at `target\release\hesewake-notch.exe`. Japanese romaji needs the Lindera IPADIC dictionary: press **Get** on the "Japanese dictionary" row in Settings > Widgets (it goes to `%APPDATA%\hesewake-notch\dict\ipadic`), or for development run `scripts\fetch-dict.ps1` to put it in the repo's `dict\ipadic`. To make a setup installer, open `hesewake-notch.iss` in Inno Setup and compile it.
 
 ---
 

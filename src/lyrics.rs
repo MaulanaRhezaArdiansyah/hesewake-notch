@@ -494,7 +494,7 @@ impl App {
     /// (hasilnya lewat slot lirik + WM_APP, jalur yang sama dengan fetch), dan baris aktif dihitung ulang.
     pub(crate) fn romaji_refresh(&mut self) {
         if let (true, Lyrics::Synced(lines, src)) = (self.cfg.romaji_lyrics, &self.lyrics) {
-            if lines.iter().all(|l| l.roma.is_empty()) && lines.iter().any(|l| romaji::has_kana(&l.text)) {
+            if lines.iter().all(|l| l.roma.is_empty()) && lines.iter().any(|l| romaji::needs_roma(&l.text)) {
                 let (mut v, src, key, slot, hwnd) = (lines.clone(), *src, self.art_key.clone(), self.lyr_shared.clone(), self.hwnd);
                 std::thread::spawn(move || {
                     romaji::annotate(&mut v);
