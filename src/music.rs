@@ -312,7 +312,7 @@ pub(crate) fn media_thread(
                         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
                     }
                     let mut l = lyrics::fetch(&t, &ar, d);
-                    if let lyrics::Lyrics::Synced(lines) = &mut l {
+                    if let lyrics::Lyrics::Synced(lines, _) = &mut l {
                         romaji::annotate(lines);
                     }
                     *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some((k, l));
@@ -844,7 +844,7 @@ impl App {
         self.net_indicator(g, LX + ox, 148.0, al);
         let cx = MCX + ox;
         let cy = MCY;
-        let has = matches!(self.lyrics, lyrics::Lyrics::Synced(_));
+        let has = matches!(self.lyrics, lyrics::Lyrics::Synced(..));
         if !self.out_list_shown() {
             // the device list reaches up to here
             g.icon_bubble(cx + 92.0, cy, 15.0, &paint(255, 255, 255, if has { 0.9 * al } else { 0.4 * al }), &paint(12, 12, 16, al));

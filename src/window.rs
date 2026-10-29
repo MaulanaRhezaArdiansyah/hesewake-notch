@@ -399,6 +399,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             }
             LRESULT(0)
         }
+        update::WM_UPDATE_DL => {
+            with_app(|a| {
+                a.on_update_dl();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         calendar::WM_CALENDAR => {
             with_app(|a| {
                 // ignore a late result for a link that was just removed or replaced
@@ -452,6 +460,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 if a.cfg.hud_volume {
                     a.push_toast(ToastKind::Hud { kind: HudKind::Volume(pct, muted), on: true });
                 }
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
+        mic::WM_MIC => {
+            with_app(|a| {
+                a.mic_apply(mic::unpack(wp.0));
                 a.last = Instant::now();
                 present(a);
                 schedule(a);
@@ -594,6 +611,13 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             let id = wp.0 as i32;
             if id == HOTKEY_ID {
                 with_app(|a| toggle_idle_phase(a));
+            } else if id == hotkeys::MIC_ID {
+                with_app(|a| {
+                    a.mic_hotkey();
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                });
             } else if let Some(n) = hotkeys::slide_of(id) {
                 with_app(|a| {
                     if a.slide_hotkey(n) {

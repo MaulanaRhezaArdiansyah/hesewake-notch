@@ -9,6 +9,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
 pub(crate) const SLIDE_KEYS: usize = 10;
 /// Hotkey ids 10..=19; id 1 is Ctrl+Alt+H (eye.rs).
 const FIRST_ID: i32 = 10;
+/// Hotkey id of Ctrl+Alt+M, the microphone mute (mic.rs).
+pub(crate) const MIC_ID: i32 = 2;
 /// How long the notch stays open after a slide hotkey (longer while hovered).
 const PEEK_SECS: u64 = 8;
 
@@ -36,9 +38,29 @@ pub(crate) fn set_slide_hotkeys(hwnd: isize, on: bool) {
     }
 }
 
+/// Register (or release) Ctrl+Alt+M, the microphone mute. A key another app already holds is noted in perf.log.
+pub(crate) fn set_mic_hotkey(hwnd: isize, on: bool) {
+    if cfg!(test) {
+        return; // unit tests must not grab global hotkeys (the CI-only test below calls `register_mic` itself)
+    }
+    if !register_mic(HWND(hwnd as _), on) {
+        perf::note("hotkey: Ctrl+Alt+M is already taken by another app; the mic mute hotkey is off");
+    }
+}
+
+fn ctrl_alt() -> HOT_KEY_MODIFIERS {
+    HOT_KEY_MODIFIERS(MOD_ALT.0 | MOD_CONTROL.0 | MOD_NOREPEAT.0)
+}
+
+/// Release Ctrl+Alt+M for `hwnd`, then register it again if `on`. False if registering failed.
+fn register_mic(hwnd: HWND, on: bool) -> bool {
+    let _ = unsafe { UnregisterHotKey(hwnd, MIC_ID) };
+    !on || unsafe { RegisterHotKey(hwnd, MIC_ID, ctrl_alt(), 'M' as u32) }.is_ok()
+}
+
 /// Release Ctrl+Alt+1..9 and 0 for `hwnd`, then register them again if `on`. Returns the key numbers that failed.
 fn register(hwnd: HWND, on: bool) -> Vec<usize> {
-    let mods = HOT_KEY_MODIFIERS(MOD_ALT.0 | MOD_CONTROL.0 | MOD_NOREPEAT.0);
+    let mods = ctrl_alt();
     let mut failed = Vec::new();
     for i in 0..SLIDE_KEYS {
         let id = FIRST_ID + i as i32;
@@ -105,13 +127,18 @@ mod tests {
 
     /// Press and release Ctrl+Alt+`digit` through the OS input queue, like a real keyboard.
     fn press_ctrl_alt(digit: u8) {
+        press_ctrl_alt_key(b'0' + digit);
+    }
+
+    /// Press and release Ctrl+Alt+`vk` (a digit or capital letter) through the OS input queue.
+    fn press_ctrl_alt_key(vk: u8) {
         let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT { wVk: vk, dwFlags: if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) }, ..Default::default() },
             },
         };
-        let d = VIRTUAL_KEY(b'0' as u16 + digit as u16);
+        let d = VIRTUAL_KEY(vk as u16);
         let seq = [key(VK_CONTROL, false), key(VK_MENU, false), key(d, false), key(d, true), key(VK_MENU, true), key(VK_CONTROL, true)];
         let sent = unsafe { SendInput(&seq, std::mem::size_of::<INPUT>() as i32) };
         assert_eq!(sent as usize, seq.len(), "SendInput was blocked (no interactive desktop?)");
@@ -162,6 +189,14 @@ mod tests {
         press_ctrl_alt(3);
         assert_eq!(next_hotkey(500), None, "with the setting off the keys are released");
         eprintln!("after release: no WM_HOTKEY");
+
+        assert!(register_mic(none, true), "Ctrl+Alt+M registers");
+        press_ctrl_alt_key(b'M');
+        assert_eq!(next_hotkey(2000), Some(MIC_ID), "Ctrl+Alt+M is the mic mute hotkey");
+        assert!(register_mic(none, false));
+        press_ctrl_alt_key(b'M');
+        assert_eq!(next_hotkey(500), None, "with the setting off Ctrl+Alt+M is released");
+        eprintln!("Ctrl+Alt+M -> mic mute, released when off");
     }
 
     #[test]
