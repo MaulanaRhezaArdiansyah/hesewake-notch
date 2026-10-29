@@ -13,7 +13,7 @@ use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, S
 use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
 
 /// Message to the window: the playback devices or the default device changed (sent from audio.rs).
-pub(crate) const WM_OUTPUT: u32 = WM_APP + 14;
+pub(crate) const WM_OUTPUT: u32 = WM_APP + 15;
 
 /// An active playback device.
 #[derive(Clone, Debug, PartialEq)]
