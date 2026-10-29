@@ -130,6 +130,7 @@ fn test_app(s: f32) -> App {
         priv_mic: Vec::new(),
         priv_cam: Vec::new(),
         priv_t: past,
+        mic_muted: Some(false),
         vol_t: past,
         bright_seen: false,
         vol_state: (0, false),
@@ -990,4 +991,125 @@ fn thin_line_stays_empty_right_after_a_toast() {
     let g = a.gfx.as_ref().expect("gfx");
     let lit = g.pm.data().chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count();
     assert_eq!(lit, 0, "the thin line shows {lit} coloured pixels");
+}
+
+/// Ctrl+Alt+M mutes every default microphone, the next press unmutes them, and each press shows the HUD.
+#[test]
+fn mic_hotkey_mutes_and_unmutes() {
+    let mut a = test_app(1.0);
+    let hud = |a: &App| match a.toast.as_ref().map(|t| &t.kind) {
+        Some(ToastKind::Hud { kind: HudKind::Mic(s), .. }) => Some(*s),
+        _ => None,
+    };
+    mic::set_fake(&[false, true]);
+    a.mic_hotkey();
+    assert_eq!(mic::fake(), vec![true, true], "one device was still on: mute both");
+    assert_eq!(a.mic_muted, Some(true));
+    assert_eq!(hud(&a), Some(Some(true)), "HUD says muted");
+    a.mic_hotkey();
+    assert_eq!(mic::fake(), vec![false, false], "all muted: unmute");
+    assert_eq!(a.mic_muted, Some(false));
+    assert_eq!(hud(&a), Some(Some(false)), "the HUD is updated in place");
+}
+
+/// Without a microphone the hotkey only says so: no mute state and nothing new in the notch.
+#[test]
+fn no_microphone_changes_nothing() {
+    let mut a = test_app(1.0);
+    mic::set_fake(&[]);
+    let before = anim::target(&a);
+    a.mic_hotkey();
+    assert_eq!(mic::fake(), Vec::<bool>::new());
+    assert_eq!(a.mic_muted, None);
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Hud { kind: HudKind::Mic(None), .. })), "HUD says there is no microphone");
+    a.toast = None;
+    assert_eq!(anim::target(&a), before, "the idle notch keeps its size");
+    a.mic_apply(None);
+    assert_eq!(a.priv_extra(), 0.0);
+}
+
+/// A mute made elsewhere (Windows, a keyboard mic key, another app) shows a crossed-out mic, without a toast.
+#[test]
+fn mute_from_elsewhere_shows_in_the_notch() {
+    let mut a = test_app(1.0);
+    assert_eq!(a.priv_extra(), 0.0, "mic on and unused: nothing");
+    a.mic_apply(Some(true));
+    assert!(a.toast.is_none(), "no toast for a change made elsewhere");
+    let muted = a.priv_extra();
+    assert!(muted > 0.0, "muted while no app uses the mic: the crossed-out mic still shows");
+    a.priv_mic = vec!["Zoom".into()];
+    assert_eq!(a.priv_extra(), muted, "in use and muted: one crossed-out mic, not a dot next to it");
+    a.cfg.privacy_dot = false;
+    assert_eq!(a.priv_extra(), muted, "with the dots off the mute still shows while the hotkey is on");
+    a.cfg.mic_hotkey = false;
+    assert_eq!(a.priv_extra(), 0.0, "both settings off: nothing");
+    a.cfg.privacy_dot = true;
+    a.cfg.mic_hotkey = true;
+    a.mic_apply(Some(false));
+    let dot = a.priv_extra();
+    assert!(dot > 0.0 && dot < muted, "unmuted and in use: the orange dot again ({dot} < {muted})");
+}
+
+/// Settings > Alerts has the "Mic mute key" toggle, on by default.
+#[test]
+fn mic_hotkey_row_in_alerts() {
+    let mut a = test_app(1.0);
+    let rows = a.settings_rows(3);
+    let i = rows.iter().position(|r| r.label == "Mic mute key").expect("row in Alerts");
+    assert!(matches!(rows[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
+    let (cx, cy) = settingsview::cell_pos(i);
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    assert!(!a.cfg.mic_hotkey);
+}
+
+/// The mic HUD's name and state fit side by side in every language.
+#[test]
+fn mic_hud_text_fits() {
+    let _lang = i18n::restore_on_drop();
+    let mut g = Gfx::new(1.0);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        for s in [None, Some(false), Some(true)] {
+            let (label, state) = toast::mic_hud_text(s);
+            let used = g.width_ex(label, 14.0, true) + 8.0 + g.width_ex(state, 14.0, true);
+            let room = toast::TOAST_HUD.0 - 54.0 - 20.0;
+            assert!(used <= room, "lang {lang} {s:?}: {label:?} + {state:?} = {used:.1} px > {room} px");
+        }
+    }
+}
+
+#[test]
+fn snap_mic_mute() {
+    let _lang = i18n::restore_on_drop();
+    for s in SCALES {
+        shot("idle-mic-muted", s, |a| a.mic_muted = Some(true));
+    }
+    shot("idle-mic-in-use", 1.0, |a| a.priv_mic = vec!["Zoom".into()]);
+    shot("idle-mic-muted-in-use", 1.0, |a| {
+        a.mic_muted = Some(true);
+        a.priv_mic = vec!["Zoom".into()];
+    });
+    shot("idle-cam-and-mic-muted", 1.0, |a| {
+        a.mic_muted = Some(true);
+        a.priv_mic = vec!["Zoom".into()];
+        a.priv_cam = vec!["Zoom".into()];
+    });
+    shot("playing-mic-muted", 1.0, |a| {
+        a.mic_muted = Some(true);
+        a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    });
+    shot("toast-mic-in-use-muted", 1.0, |a| {
+        a.mic_muted = Some(true);
+        show_toast(a, ToastKind::Privacy { cam: false, app: "Zoom".into() });
+    });
+    for lang in [i18n::EN, i18n::ID] {
+        let pre = if lang == i18n::ID { "id-" } else { "" };
+        for (name, s) in [("hud-mic-muted", Some(true)), ("hud-mic-on", Some(false)), ("hud-mic-none", None)] {
+            shot(&format!("{pre}{name}"), 1.0, |a| {
+                a.cfg.lang = lang;
+                i18n::set(lang);
+                show_toast(a, ToastKind::Hud { kind: HudKind::Mic(s), on: s == Some(false) });
+            });
+        }
+    }
 }

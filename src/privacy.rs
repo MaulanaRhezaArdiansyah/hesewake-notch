@@ -20,6 +20,29 @@ pub(crate) const WM_PRIVACY: u32 = WM_APP + 5;
 const PRIV_EDGE: f32 = 12.0;
 const PRIV_STEP: f32 = 10.0;
 const PRIV_PAD: f32 = 2.0;
+/// Width taken by the crossed-out mic (mic.rs) in the same row.
+const MIC_OFF_STEP: f32 = 14.0;
+const CAM_RGB: [u8; 3] = [48, 209, 88];
+const MIC_RGB: [u8; 3] = [255, 159, 10];
+/// The crossed-out mic while no app uses the microphone.
+const MUTED_RGB: [u8; 3] = [150, 150, 158];
+
+/// One mark in the row at the right edge of the small notch.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Mark {
+    Dot([u8; 3]),
+    /// The microphone is muted: orange while an app uses it, grey otherwise.
+    MicOff([u8; 3]),
+}
+
+impl Mark {
+    fn width(self) -> f32 {
+        match self {
+            Mark::Dot(_) => PRIV_STEP,
+            Mark::MicOff(_) => MIC_OFF_STEP,
+        }
+    }
+}
 
 const ROOT: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
 /// [0] = mikrofon, [1] = kamera.
@@ -167,25 +190,34 @@ impl App {
     }
 
     pub(crate) fn privacy_animating(&self) -> bool {
-        self.cfg.privacy_dot && self.priv_t.elapsed().as_secs_f32() < 0.5
+        (self.cfg.privacy_dot || self.cfg.mic_hotkey) && self.priv_t.elapsed().as_secs_f32() < 0.5
     }
 
-    /// Jumlah titik yang sedang menyala (kamera dan/atau mikrofon), 0 bila fitur dimatikan.
-    pub(crate) fn priv_dots(&self) -> usize {
-        if !self.cfg.privacy_dot {
-            return 0;
+    /// The marks from right to left: the camera dot, then the microphone (a dot while in use, a crossed-out mic
+    /// while muted). The mute shows with either setting on, so it is never hidden while the hotkey is in use.
+    pub(crate) fn priv_marks(&self) -> Vec<Mark> {
+        let dots = self.cfg.privacy_dot;
+        let mut v = Vec::new();
+        if dots && !self.priv_cam.is_empty() {
+            v.push(Mark::Dot(CAM_RGB));
         }
-        (!self.priv_cam.is_empty()) as usize + (!self.priv_mic.is_empty()) as usize
+        let used = dots && !self.priv_mic.is_empty();
+        if self.mic_muted == Some(true) && (dots || self.cfg.mic_hotkey) {
+            v.push(Mark::MicOff(if used { MIC_RGB } else { MUTED_RGB }));
+        } else if used {
+            v.push(Mark::Dot(MIC_RGB));
+        }
+        v
     }
 
     /// Lebar (px) slot titik di tepi kanan notch kecil. Notch dilebarkan sebesar ini, dan lonceng/equalizer/teks
     /// bergeser ke kiri, supaya titik tidak menimpa elemen lain. 0 bila titik tidak digambar (expanded/toast/tipis).
     pub(crate) fn priv_extra(&self) -> f32 {
-        let n = self.priv_dots();
-        if n == 0 || self.expanded() || self.toast.is_some() || self.thin() {
+        let marks = self.priv_marks();
+        if marks.is_empty() || self.expanded() || self.toast.is_some() || self.thin() {
             0.0
         } else {
-            PRIV_PAD + n as f32 * PRIV_STEP
+            PRIV_PAD + marks.iter().map(|m| m.width()).sum::<f32>()
         }
     }
 
@@ -197,12 +229,15 @@ impl App {
         let e = self.priv_t.elapsed().as_secs_f32();
         let pop = (1.0 - (-9.0 * e).exp() * (16.0 * e).cos()).clamp(0.0, 1.2);
         let x0 = CX - w / 2.0;
-        let mut x = x0 + w - PRIV_EDGE;
-        for (on, rgb) in [(!self.priv_cam.is_empty(), (48u8, 209u8, 88u8)), (!self.priv_mic.is_empty(), (255u8, 159u8, 10u8))] {
-            if on {
-                g.circle(x, h / 2.0, 3.6 * pop.min(1.15), &paint(rgb.0, rgb.1, rgb.2, ca));
-                x -= PRIV_STEP;
+        // right edge of the first slot; each mark is centred in its own slot
+        let mut right = x0 + w - PRIV_EDGE + PRIV_STEP / 2.0;
+        for m in self.priv_marks() {
+            let x = right - m.width() / 2.0;
+            match m {
+                Mark::Dot(c) => g.circle(x, h / 2.0, 3.6 * pop.min(1.15), &paint(c[0], c[1], c[2], ca)),
+                Mark::MicOff(c) => g.icon_mic_off(x, h / 2.0, 10.0 * pop.min(1.15), &paint(c[0], c[1], c[2], ca)),
             }
+            right -= m.width();
         }
     }
 }

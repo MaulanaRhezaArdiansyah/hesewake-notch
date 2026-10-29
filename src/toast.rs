@@ -22,6 +22,8 @@ pub(crate) enum HudKind {
     Volume(u8, bool),
     /// Kecerahan layar (persen).
     Brightness(u8),
+    /// Microphone mute from Ctrl+Alt+M: muted, on, or None when there is no microphone.
+    Mic(Option<bool>),
 }
 
 impl HudKind {
@@ -34,6 +36,7 @@ impl HudKind {
         match self {
             HudKind::Volume(..) => "Volume",
             HudKind::Brightness(..) => tr("Brightness"),
+            HudKind::Mic(..) => tr("Microphone"),
             HudKind::Caps => "Caps Lock",
             HudKind::Num => "Num Lock",
             HudKind::Scroll => "Scroll Lock",
@@ -46,6 +49,7 @@ impl HudKind {
             HudKind::Scroll => "S",
             HudKind::Volume(..) => "V",
             HudKind::Brightness(..) => "B",
+            HudKind::Mic(..) => "M",
         }
     }
 }
@@ -213,7 +217,7 @@ impl App {
             return;
         }
         if let ToastKind::Privacy { cam, app } = &ts.kind {
-            Self::draw_privacy_toast(g, w, h, al, t, *cam, app);
+            Self::draw_privacy_toast(g, (w, h), al, t, *cam, app, !*cam && self.mic_muted == Some(true));
             return;
         }
         if let ToastKind::Water = &ts.kind {
@@ -331,6 +335,10 @@ impl App {
     /// HUD kecil untuk tombol kunci: ikon huruf dalam ring, nama tombol, dan status On/Off berwarna.
     fn draw_hud_toast(g: &mut Gfx, w: f32, h: f32, al: f32, t: f32, kind: HudKind, on: bool) {
         let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        if let HudKind::Mic(s) = kind {
+            Self::draw_mic_hud(g, (w, h), al, t, s);
+            return;
+        }
         let bar = match kind {
             HudKind::Volume(p, m) => Some((p, m, false)),
             HudKind::Brightness(p) => Some((p, false, true)),
@@ -371,6 +379,45 @@ impl App {
         let state = if on { tr("On") } else { tr("Off") };
         let sw = g.width_ex(state, 14.0, true);
         g.txtb(state, x0 + w - 20.0 - sw, cy - 9.0, 14.0, col, al * k, 50.0);
+    }
+}
+
+/// Name and state shown by the mic HUD.
+pub(crate) fn mic_hud_text(s: Option<bool>) -> (&'static str, &'static str) {
+    let state = match s {
+        Some(true) => tr("Muted"),
+        Some(false) => tr("On"),
+        None => tr("Not found"),
+    };
+    (tr("Microphone"), state)
+}
+
+impl App {
+    /// Mic HUD: a mic (crossed out while muted) in a ring, "Microphone", and the state on the right in red
+    /// (muted), the accent color (on) or grey (no microphone).
+    fn draw_mic_hud(g: &mut Gfx, (w, h): (f32, f32), al: f32, t: f32, s: Option<bool>) {
+        let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        let col = match s {
+            Some(true) => ACCENT,
+            Some(false) => g.acc.main,
+            None => GREY,
+        };
+        let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
+        let (rcx, r) = (x0 + 28.0, 14.0 * sc);
+        let sweep = 1.0 - (1.0 - ((t - 0.05) / 0.35).clamp(0.0, 1.0)).powi(3);
+        let frac = if s.is_some() { sweep } else { 0.0 };
+        g.ring(rcx, cy, r, frac, 3.0, &paint(col[0], col[1], col[2], 0.28 * al), &paint(col[0], col[1], col[2], al));
+        let ic = paint(255, 255, 255, al * if s == Some(false) { 1.0 } else { 0.8 });
+        if s == Some(false) {
+            g.icon_mic(rcx, cy, 13.0 * sc, &ic);
+        } else {
+            g.icon_mic_off(rcx, cy, 13.0 * sc, &ic);
+        }
+        let k = ss(0.08, 0.32, t);
+        let (label, state) = mic_hud_text(s);
+        g.txtb(label, x0 + 54.0 + (1.0 - k) * 6.0, cy - 9.0, 14.0, [255, 255, 255], al * k, 120.0);
+        let sw = g.width_ex(state, 14.0, true);
+        g.txtb(state, x0 + w - 20.0 - sw, cy - 9.0, 14.0, col, al * k, sw + 2.0);
     }
 }
 
@@ -486,7 +533,8 @@ impl App {
 
 impl App {
     /// "Microphone in use" / "Camera in use" + nama aplikasi; ikon mic/kamera dalam ring berwarna (oranye / hijau).
-    fn draw_privacy_toast(g: &mut Gfx, w: f32, h: f32, al: f32, t: f32, cam: bool, app: &str) {
+    /// While the microphone is muted its icon is crossed out.
+    fn draw_privacy_toast(g: &mut Gfx, (w, h): (f32, f32), al: f32, t: f32, cam: bool, app: &str, muted: bool) {
         let (x0, cy) = (CX - w / 2.0, h / 2.0);
         let rgb = if cam { [48u8, 209, 88] } else { [255u8, 159, 10] };
         let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
@@ -495,6 +543,8 @@ impl App {
         let ic = paint(rgb[0], rgb[1], rgb[2], al);
         if cam {
             g.icon_camera(rcx, cy, 14.0 * sc, &ic);
+        } else if muted {
+            g.icon_mic_off(rcx, cy, 14.0 * sc, &ic);
         } else {
             g.icon_mic(rcx, cy, 14.0 * sc, &ic);
         }

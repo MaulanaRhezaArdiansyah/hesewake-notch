@@ -268,6 +268,7 @@ impl App {
                 Row { label: tr("Brightness HUD"), sub: tr("Fn keys / slider"), kind: RowKind::Toggle(self.cfg.hud_brightness) },
                 Row { label: tr("Lock keys"), sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
                 Row { label: tr("Mic / camera dot"), sub: tr("When an app uses them"), kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { label: tr("Mic mute key"), sub: tr("Ctrl+Alt+M, all apps"), kind: RowKind::Toggle(self.cfg.mic_hotkey) },
             ],
             4 => vec![
                 Row { label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
@@ -526,6 +527,11 @@ impl App {
                 (3, 3) => {
                     self.cfg.privacy_dot = !self.cfg.privacy_dot;
                     privacy::set_enabled(self.cfg.privacy_dot);
+                    self.priv_t = Instant::now();
+                }
+                (3, 4) => {
+                    self.cfg.mic_hotkey = !self.cfg.mic_hotkey;
+                    hotkeys::set_mic_hotkey(self.hwnd, self.cfg.mic_hotkey);
                     self.priv_t = Instant::now();
                 }
                 (4, 0) => {

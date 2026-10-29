@@ -32,6 +32,8 @@ pub(crate) struct Settings {
     pub(crate) privacy_dot: bool,
     /// Ctrl+Alt+1..8 open the Nth enabled slide (hotkeys.rs).
     pub(crate) slide_hotkeys: bool,
+    /// Ctrl+Alt+M mutes the default microphone for every app (mic.rs).
+    pub(crate) mic_hotkey: bool,
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
@@ -70,6 +72,7 @@ impl Default for Settings {
             lock_toast: true,
             privacy_dot: true,
             slide_hotkeys: true,
+            mic_hotkey: true,
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
@@ -102,6 +105,7 @@ impl Settings {
                 "lock_toast" => s.lock_toast = flag,
                 "privacy_dot" => s.privacy_dot = flag,
                 "slide_hotkeys" => s.slide_hotkeys = flag,
+                "mic_hotkey" => s.mic_hotkey = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
@@ -153,7 +157,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -163,6 +167,7 @@ impl Settings {
             self.lock_toast as u8,
             self.privacy_dot as u8,
             self.slide_hotkeys as u8,
+            self.mic_hotkey as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
             self.weather_on as u8,
@@ -258,6 +263,14 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).lang, crate::i18n::ID);
         assert_eq!(Settings::parse("lang=99").lang, crate::i18n::EN, "unknown = English");
         assert_eq!(Settings::parse("lang=x").lang, crate::i18n::EN);
+    }
+
+    #[test]
+    fn mic_hotkey_roundtrip_and_default() {
+        assert!(Settings::parse("minimal=1\n").mic_hotkey, "old file = on");
+        let mut s = Settings::default();
+        s.mic_hotkey = false;
+        assert!(!Settings::parse(&s.serialize()).mic_hotkey);
     }
 
     #[test]
