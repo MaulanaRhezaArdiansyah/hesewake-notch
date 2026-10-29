@@ -248,6 +248,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     }
                     return;
                 }
+                if vertical && a.is_slide(SlideId::Settings) && a.rows_scrollable() {
+                    if a.last_wheel.elapsed() >= Duration::from_millis(90) {
+                        a.last_wheel = Instant::now();
+                        if a.settings_rows_wheel(d < 0) {
+                            present(a);
+                        }
+                    }
+                    return;
+                }
                 if vertical && a.is_slide(SlideId::Agenda) && a.agenda_scrollable() {
                     if a.last_wheel.elapsed() >= Duration::from_millis(90) {
                         a.last_wheel = Instant::now();
@@ -434,6 +443,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             });
             LRESULT(0)
         }
+        mic::WM_MIC => {
+            with_app(|a| {
+                a.mic_apply(mic::unpack(wp.0));
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         privacy::WM_PRIVACY => {
             with_app(|a| {
                 a.privacy_apply();
@@ -570,6 +588,13 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             let id = wp.0 as i32;
             if id == HOTKEY_ID {
                 with_app(|a| toggle_idle_phase(a));
+            } else if id == hotkeys::MIC_ID {
+                with_app(|a| {
+                    a.mic_hotkey();
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                });
             } else if let Some(n) = hotkeys::slide_of(id) {
                 with_app(|a| {
                     if a.slide_hotkey(n) {

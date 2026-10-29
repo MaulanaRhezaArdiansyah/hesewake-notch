@@ -1,4 +1,4 @@
-//! Pilihan monitor untuk notch: layar utama, mengikuti kursor, atau monitor tertentu (Settings > Display).
+//! Pilihan monitor untuk notch: layar utama, mengikuti kursor, atau monitor tertentu (Settings > General).
 
 use super::*;
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST};

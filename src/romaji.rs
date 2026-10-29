@@ -1,4 +1,4 @@
-//! Lirik Jepang -> romaji. Lindera (kamus IPADIC dari berkas, diunduh lewat tombol di Settings, lihat dict.rs; tidak
+//! Lirik Jepang -> romaji (dan Korea -> romanisasi lewat korean.rs, tanpa kamus). Lindera (kamus IPADIC dari berkas, diunduh lewat tombol di Settings, lihat dict.rs; tidak
 //! ditanam di exe) memberi bacaan
 //! katakana per kata, lalu `wana_kana` mengubahnya ke romaji. Dikerjakan sekali per lagu di thread lirik; kamus
 //! (±47 MB) dimuat hanya bila lirik berisi kana dan langsung dilepas lagi setelah konversi.
@@ -15,7 +15,7 @@ use wana_kana::ConvertJapanese;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Settings > Extras > "Romaji lyrics".
+/// Settings > Widgets > "Romaji lyrics".
 pub(crate) fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
 }
@@ -60,6 +60,11 @@ pub(crate) fn available() -> bool {
     dict_dir().is_some()
 }
 
+/// Baris ini bisa diberi romanisasi: kana (Jepang) atau Hangul (Korea).
+pub(crate) fn needs_roma(s: &str) -> bool {
+    has_kana(s) || korean::has_hangul(s)
+}
+
 /// Ada hiragana/katakana. Lirik tanpa kana (Mandarin: kanji saja) tidak dikonversi dengan bacaan Jepang.
 pub(crate) fn has_kana(s: &str) -> bool {
     s.chars().any(|c| matches!(c as u32, 0x3041..=0x309F | 0x30A1..=0x30FA))
@@ -67,7 +72,12 @@ pub(crate) fn has_kana(s: &str) -> bool {
 
 /// Isi `roma` untuk tiap baris Jepang. Blocking (memuat kamus): panggil dari thread lirik.
 pub(crate) fn annotate(lines: &mut [LyricLine]) {
-    if !enabled() || !lines.iter().any(|l| has_kana(&l.text)) {
+    if !enabled() {
+        return;
+    }
+    // Korea tidak butuh kamus.
+    korean::annotate(lines);
+    if !lines.iter().any(|l| has_kana(&l.text)) {
         return;
     }
     let Some(dir) = dict_dir() else { return };
@@ -82,7 +92,7 @@ pub(crate) fn annotate(lines: &mut [LyricLine]) {
     let seg = Segmenter::new(Mode::Normal, dict, None);
     let t1 = Instant::now();
     let mut n = 0;
-    for l in lines.iter_mut().filter(|l| l.text.chars().any(cjk::is_cjk)) {
+    for l in lines.iter_mut().filter(|l| l.roma.is_empty() && l.text.chars().any(cjk::is_cjk)) {
         l.roma = line(&seg, &l.text);
         n += 1;
     }

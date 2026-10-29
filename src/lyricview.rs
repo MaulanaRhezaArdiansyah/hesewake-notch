@@ -22,6 +22,9 @@ const GAP: f32 = 12.0;
 const SK: f32 = 320.0;
 const SC: f32 = 36.0;
 const GREY: [u8; 3] = [140, 148, 168];
+/// Kredit sumber lirik ("via lrc.red") di pojok kanan bawah panel lirik, dan lebar area kliknya.
+const CREDIT_Y: f32 = 154.0;
+const CREDIT_W: f32 = 72.0;
 
 pub(crate) struct LineBox {
     pub(crate) idx: usize,
@@ -89,7 +92,7 @@ impl App {
 
     /// Posisi tiap baris lirik di sekitar posisi scroll (sama untuk gambar dan hit-test klik).
     pub(crate) fn lyric_layout(&self, g: &mut Gfx) -> Vec<LineBox> {
-        let Lyrics::Synced(lines) = &self.lyrics else { return Vec::new() };
+        let Lyrics::Synced(lines, _) = &self.lyrics else { return Vec::new() };
         if lines.is_empty() {
             return Vec::new();
         }
@@ -172,7 +175,7 @@ impl App {
             Lyrics::Unavailable => Some(tr("Lyrics not available")),
             Lyrics::Plain => Some(tr("Lyrics not synced")),
             Lyrics::None => Some(""),
-            Lyrics::Synced(_) => None,
+            Lyrics::Synced(..) => None,
         };
         if let Some(m) = msg {
             g.txt_c(m, PX + PW / 2.0 + ox + slide, CENTER - 7.0, 13.0, [120, 126, 140], a, PW, false);
@@ -196,6 +199,12 @@ impl App {
                 g.txtb(line, PX + ox + slide, b.top + li as f32 * LH, SIZE, col, alpha, PW + 2.0);
             }
         }
+        // kredit sumber lirik (syarat lrc.red); klik membuka situsnya
+        if let Lyrics::Synced(_, src) = &self.lyrics {
+            let label = fill(tr("via {}"), &[&src.name()]);
+            let w = g.width(&label, 10.0);
+            g.txt(&label, RX - w + ox + slide, CREDIT_Y, 10.0, [165, 171, 186], 0.9 * a, w + 2.0);
+        }
     }
 
     /// Klik pada slide Music saat mode lirik aktif. Mengembalikan true bila klik ditangani.
@@ -209,6 +218,8 @@ impl App {
             let _ = self.tx.send(Cmd::Toggle);
         } else if d(X_NEXT, LM_CY) < 16.0 {
             let _ = self.tx.send(Cmd::Next);
+        } else if let (Lyrics::Synced(_, src), true) = (&self.lyrics, in_rect(x, y, RX - CREDIT_W, CREDIT_Y - 3.0, CREDIT_W, 16.0)) {
+            sys::open_url(src.url());
         } else if self.media.dur > 0 && in_rect(x, y, BAR.0, BAR.1 - 8.0, BAR.2, 20.0) {
             let _ = self.tx.send(Cmd::Seek(((x - BAR.0) / BAR.2).clamp(0.0, 1.0)));
         } else if x >= PX && x <= RX && self.media.dur > 0 {
@@ -216,7 +227,7 @@ impl App {
             let mut gfx = self.gfx.take();
             let boxes = gfx.as_mut().map(|g| self.lyric_layout(g)).unwrap_or_default();
             self.gfx = gfx;
-            if let (Lyrics::Synced(lines), Some(b)) = (&self.lyrics, boxes.iter().find(|b| y >= b.top && y <= b.top + b.h)) {
+            if let (Lyrics::Synced(lines, _), Some(b)) = (&self.lyrics, boxes.iter().find(|b| y >= b.top && y <= b.top + b.h)) {
                 let f = lines[b.idx].at_ms as f32 / 1000.0 / self.media.dur as f32;
                 let _ = self.tx.send(Cmd::Seek(f.clamp(0.0, 1.0)));
             }

@@ -74,6 +74,7 @@ mod icons;
 mod input;
 mod keys;
 mod lyricview;
+mod korean;
 mod lyrics;
 mod monitors;
 mod music;
@@ -86,6 +87,7 @@ mod note;
 mod pace;
 mod perf;
 mod prayer;
+mod mic;
 mod privacy;
 mod render;
 mod romaji;
@@ -261,6 +263,8 @@ struct App {
     priv_mic: Vec<String>,
     priv_cam: Vec<String>,
     priv_t: Instant,
+    /// Mute state of the default microphone(s): None = no microphone (mic.rs).
+    mic_muted: Option<bool>,
     /// Indikator volume di slide Music setelah scroll: waktu terakhir dan (persen, bisu).
     vol_t: Instant,
     /// Peristiwa kecerahan pertama (saat pendaftaran) hanya dicatat, tidak ditampilkan.
@@ -360,6 +364,8 @@ fn demo_toast() -> Option<ToastKind> {
         "pomo" => ToastKind::Timer { title: "Focus #1 done".into(), label: "Short break \u{b7} 5 min".into() },
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
+        "mic-muted" => ToastKind::Hud { kind: HudKind::Mic(Some(true)), on: false },
+        "mic-on" => ToastKind::Hud { kind: HudKind::Mic(Some(false)), on: true },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
         _ => ToastKind::Bluetooth { name: "soundcore R50i".into(), pct: None, connected: true },
     })
@@ -434,6 +440,7 @@ fn main() -> Result<()> {
         }
         i18n::set(cfg0.lang);
         hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
+        hotkeys::set_mic_hotkey(hwnd.0 as isize, cfg0.mic_hotkey);
         clipboard::listen(hwnd.0 as isize);
         let cal_link = calendar::load_link();
         calendar::start(hwnd.0 as isize, cal_link.clone());
@@ -476,6 +483,7 @@ fn main() -> Result<()> {
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
         audio::start_watch(hwnd.0 as isize);
+        mic::start_watch(hwnd.0 as isize);
         {
             let (_, lat, lon) = weather::CITIES[cfg.weather_city];
             weather::start(hwnd.0 as isize, cfg.weather_on, lat, lon);
@@ -609,6 +617,7 @@ fn main() -> Result<()> {
             priv_mic: demo_priv("mic"),
             priv_cam: demo_priv("cam"),
             priv_t: Instant::now() - Duration::from_secs(10),
+            mic_muted: None,
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,
             vol_state: (0, false),

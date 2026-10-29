@@ -170,6 +170,15 @@ impl Gfx {
         self.rect(cx - s * 0.05, cy + s * 0.5, s * 0.1, s * 0.16, p);
     }
 
+    /// Crossed-out microphone. A dark gap around the slash keeps it readable at small sizes.
+    pub(crate) fn icon_mic_off(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
+        self.icon_mic(cx, cy, s, p);
+        let lw = (s * 0.1).max(1.1);
+        let (x1, y1, x2, y2) = (cx - s * 0.46, cy - s * 0.5, cx + s * 0.46, cy + s * 0.6);
+        self.line(x1, y1, x2, y2, lw * 2.4, &paint(0, 0, 0, 1.0));
+        self.line(x1, y1, x2, y2, lw, p);
+    }
+
     /// Kamera: badan + "kepala" lensa segitiga di kanan.
     pub(crate) fn icon_camera(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
         self.fill(&rrect(cx - s * 0.5, cy - s * 0.26, s * 0.66, s * 0.52, s * 0.12), p);

@@ -1,4 +1,4 @@
-//! Slide Settings: tiga tab (Slides, Display, Features). Toggle berpegas, urutan slide bisa digeser dengan tombol
+//! Slide Settings: empat tab (Slides, General, Alerts, Widgets); baris yang lebih dari tiga baris di-scroll dengan roda. Toggle berpegas, urutan slide bisa digeser dengan tombol
 //! naik/turun (dua sel bertukar tempat dengan animasi), pengaturan tersimpan langsung ke `settings.txt`.
 
 use super::*;
@@ -8,8 +8,8 @@ use crate::slides::SlideId;
 const TAB_Y: f32 = 8.0;
 const TAB_H: f32 = 24.0;
 /// Settings tab names, in order.
-fn tab_labels() -> [&'static str; 5] {
-    [tr("Slides"), tr("Display"), tr("Features"), tr("Alerts"), tr("Extras")]
+fn tab_labels() -> [&'static str; 4] {
+    [tr("Slides"), tr("General"), tr("Alerts"), tr("Widgets")]
 }
 /// Padding inside a tab chip, left + right.
 const TAB_PAD: f32 = 14.0;
@@ -40,12 +40,14 @@ pub(crate) struct SettingsUi {
     dict_confirm: Option<Instant>,
     /// Settings > Slides: rows scrolled out of view at the top.
     pub(crate) slides_scroll: usize,
+    /// Settings > General / Alerts / Widgets: rows scrolled out of view at the top.
+    pub(crate) rows_scroll: usize,
 }
 
 impl SettingsUi {
     pub(crate) fn new() -> SettingsUi {
         let old = Instant::now() - Duration::from_secs(10);
-        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false, dict_confirm: None, slides_scroll: 0 }
+        SettingsUi { tab: 0, tab_t0: old, tab_dir: 1.0, knob: [0.0; MAX_ROWS], kvel: [0.0; MAX_ROWS], entered: false, enter_t: old, swap: None, autostart: false, dict_confirm: None, slides_scroll: 0, rows_scroll: 0 }
     }
 
     fn dict_confirming(&self) -> bool {
@@ -125,12 +127,62 @@ impl App {
     }
 }
 
-pub(crate) fn cell_pos(i: usize) -> (f32, f32) {
-    let (col, row) = (i / 3, i % 3);
-    (LX + col as f32 * (CELL_W + GRID_GAP_X), GRID_Y0 + row as f32 * (CELL_H + GRID_GAP_Y))
+/// Rows tabs hold two cells per row, left to right; three rows show at a time and the rest scroll.
+const ROW_COLS: usize = 2;
+const ROW_VIS: usize = 3;
+
+fn row_count(n: usize) -> usize {
+    n.div_ceil(ROW_COLS)
 }
 
-/// Satu baris pengaturan pada tab Display/Features.
+/// Where row `i` is with `scroll` rows scrolled away (may be outside the grid).
+fn row_cell_pos(i: usize, scroll: usize) -> (f32, f32) {
+    let (col, row) = (i % ROW_COLS, i / ROW_COLS);
+    (LX + col as f32 * (CELL_W + GRID_GAP_X), GRID_Y0 + (row as f32 - scroll as f32) * (CELL_H + GRID_GAP_Y))
+}
+
+/// Where row `i` is when it is visible with `scroll` rows scrolled away.
+pub(crate) fn row_cell_visible(i: usize, scroll: usize) -> Option<(f32, f32)> {
+    let row = i / ROW_COLS;
+    (row >= scroll && row < scroll + ROW_VIS).then(|| row_cell_pos(i, scroll))
+}
+
+/// Cell of row `i` with nothing scrolled (the first six rows).
+#[cfg(test)]
+pub(crate) fn cell_pos(i: usize) -> (f32, f32) {
+    row_cell_pos(i, 0)
+}
+
+/// What a settings row changes; clicks are dispatched on this, so rows can move between tabs freely.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Rid {
+    Minimal,
+    ThinMaximized,
+    Monitor,
+    LyricTiming,
+    NotchSize,
+    IdleDisplay,
+    Notifications,
+    ContactPhotos,
+    Autostart,
+    SlideHotkeys,
+    Language,
+    Calendar,
+    HudVolume,
+    HudBrightness,
+    LockKeys,
+    PrivacyDot,
+    UpdateCheck,
+    MicMute,
+    Weather,
+    City,
+    Prayer,
+    Accent,
+    Romaji,
+    Dictionary,
+}
+
+/// Satu baris pengaturan pada tab General, Alerts, atau Widgets.
 pub(crate) enum RowKind {
     Toggle(bool),
     /// Teks nilai + tombol - dan +.
@@ -140,6 +192,7 @@ pub(crate) enum RowKind {
 }
 
 pub(crate) struct Row {
+    pub(crate) id: Rid,
     pub(crate) label: &'static str,
     pub(crate) sub: &'static str,
     pub(crate) kind: RowKind,
@@ -244,58 +297,73 @@ impl App {
         self.expanded() && self.is_slide(SlideId::Settings) && self.h > 100.0
     }
 
-    /// Daftar baris tab Display (1) atau Features (2).
+    /// Daftar baris tab General (1), Alerts (2) atau Widgets (3).
     pub(crate) fn settings_rows(&self, tab: u8) -> Vec<Row> {
         match tab {
             1 => vec![
-                Row { label: tr("Minimal notch"), sub: tr("Thin line while idle"), kind: RowKind::Toggle(self.minimal) },
-                Row { label: tr("Thin on maximize"), sub: tr("Off: only on fullscreen"), kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
-                Row { label: "Monitor", sub: tr("Follow = cursor"), kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
-                Row { label: tr("Lyric timing"), sub: tr("Show earlier by"), kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
-                Row { label: tr("Notch size"), sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
-                Row { label: tr("Idle display"), sub: tr("Cycle: clock/eyes"), kind: RowKind::Stepper(settings::idle_display_label(self.cfg.idle_display).to_string()) },
+                Row { id: Rid::Language, label: tr("Language"), sub: tr("Menus and slides"), kind: RowKind::Stepper(i18n::LANGS[self.cfg.lang.min(i18n::LANGS.len() - 1)].to_string()) },
+                Row { id: Rid::Accent, label: tr("Accent"), sub: tr("Highlight color"), kind: RowKind::Stepper(accent::label(self.cfg.accent).to_string()) },
+                Row { id: Rid::Autostart, label: tr("Autostart"), sub: tr("Start with Windows"), kind: RowKind::Toggle(self.sui.autostart) },
+                Row { id: Rid::SlideHotkeys, label: tr("Slide hotkeys"), sub: tr("Ctrl+Alt + slide no."), kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
+                Row { id: Rid::Monitor, label: "Monitor", sub: tr("Follow = cursor"), kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
+                Row { id: Rid::NotchSize, label: tr("Notch size"), sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
+                Row { id: Rid::Minimal, label: tr("Minimal notch"), sub: tr("Thin line while idle"), kind: RowKind::Toggle(self.minimal) },
+                Row { id: Rid::ThinMaximized, label: tr("Thin on maximize"), sub: tr("Off: only on fullscreen"), kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
+                Row { id: Rid::IdleDisplay, label: tr("Idle display"), sub: tr("Cycle: clock/eyes"), kind: RowKind::Stepper(settings::idle_display_label(self.cfg.idle_display).to_string()) },
             ],
             2 => vec![
-                Row { label: tr("Notifications"), sub: tr("Windows toasts + bell"), kind: RowKind::Toggle(self.notif_on) },
-                Row { label: tr("Contact photos"), sub: tr("In notifications"), kind: RowKind::Toggle(self.cfg.notif_avatar) },
-                Row { label: tr("Autostart"), sub: tr("Start with Windows"), kind: RowKind::Toggle(self.sui.autostart) },
-                Row { label: tr("Slide hotkeys"), sub: tr("Ctrl+Alt + slide no."), kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
-                Row { label: tr("Language"), sub: tr("Menus and slides"), kind: RowKind::Stepper(i18n::LANGS[self.cfg.lang.min(i18n::LANGS.len() - 1)].to_string()) },
-                Row { label: tr("Calendar"), sub: self.cal_sub(), kind: RowKind::Button(self.cal_button_text().into()) },
+                Row { id: Rid::Notifications, label: tr("Notifications"), sub: tr("Windows toasts + bell"), kind: RowKind::Toggle(self.notif_on) },
+                Row { id: Rid::ContactPhotos, label: tr("Contact photos"), sub: tr("In notifications"), kind: RowKind::Toggle(self.cfg.notif_avatar) },
+                Row { id: Rid::HudVolume, label: tr("Volume HUD"), sub: tr("Keys and mixer"), kind: RowKind::Toggle(self.cfg.hud_volume) },
+                Row { id: Rid::HudBrightness, label: tr("Brightness HUD"), sub: tr("Fn keys / slider"), kind: RowKind::Toggle(self.cfg.hud_brightness) },
+                Row { id: Rid::LockKeys, label: tr("Lock keys"), sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
+                Row { id: Rid::PrivacyDot, label: tr("Mic / camera dot"), sub: tr("When an app uses them"), kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { id: Rid::UpdateCheck, label: tr("Update notice"), sub: tr("When a new version is out"), kind: RowKind::Toggle(self.cfg.update_check) },
+                Row { id: Rid::MicMute, label: tr("Mic mute key"), sub: tr("Ctrl+Alt+M, all apps"), kind: RowKind::Toggle(self.cfg.mic_hotkey) },
             ],
             3 => vec![
-                Row { label: tr("Volume HUD"), sub: tr("Keys and mixer"), kind: RowKind::Toggle(self.cfg.hud_volume) },
-                Row { label: tr("Brightness HUD"), sub: tr("Fn keys / slider"), kind: RowKind::Toggle(self.cfg.hud_brightness) },
-                Row { label: tr("Lock keys"), sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
-                Row { label: tr("Mic / camera dot"), sub: tr("When an app uses them"), kind: RowKind::Toggle(self.cfg.privacy_dot) },
-                Row { label: tr("Update notice"), sub: tr("When a new version is out"), kind: RowKind::Toggle(self.cfg.update_check) },
-            ],
-            4 => vec![
-                Row { label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
-                Row { label: tr("City"), sub: tr("Location"), kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
-                Row { label: tr("Prayer times"), sub: tr("Countdown + toast"), kind: RowKind::Toggle(self.cfg.prayer_on) },
-                Row { label: tr("Accent"), sub: tr("Highlight color"), kind: RowKind::Stepper(accent::label(self.cfg.accent).to_string()) },
-                if romaji::available() {
-                    Row { label: tr("Romaji lyrics"), sub: tr("Japanese to romaji"), kind: RowKind::Toggle(self.cfg.romaji_lyrics) }
-                } else {
-                    // Kamus belum ada: tombol unduh (lihat dict.rs); setelah selesai baris ini jadi toggle.
-                    match dict::state() {
-                        dict::Dl::Running(p) => Row { label: tr("Romaji lyrics"), sub: tr("Downloading dictionary"), kind: RowKind::Button(format!("{p}%")) },
-                        dict::Dl::Failed => Row { label: tr("Romaji lyrics"), sub: tr("Download failed"), kind: RowKind::Button(tr("Retry").into()) },
-                        dict::Dl::Idle => Row { label: tr("Romaji lyrics"), sub: tr("Needs 10 MB dictionary"), kind: RowKind::Button(tr("Get").into()) },
-                    }
-                },
+                Row { id: Rid::Weather, label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
+                Row { id: Rid::City, label: tr("City"), sub: tr("Location"), kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
+                Row { id: Rid::Prayer, label: tr("Prayer times"), sub: tr("Countdown + toast"), kind: RowKind::Toggle(self.cfg.prayer_on) },
+                Row { id: Rid::Calendar, label: tr("Calendar"), sub: self.cal_sub(), kind: RowKind::Button(self.cal_button_text().into()) },
+                Row { id: Rid::LyricTiming, label: tr("Lyric timing"), sub: tr("Show earlier by"), kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
+                Row { id: Rid::Romaji, label: tr("Romanize lyrics"), sub: tr("Japanese and Korean"), kind: RowKind::Toggle(self.cfg.romaji_lyrics) },
             ]
             .into_iter()
-            // Kamus yang dipakai bisa dihapus (tekan dua kali).
-            .chain(dict::removable().map(|_| Row {
-                label: tr("Romaji dictionary"),
-                sub: tr("47 MB on disk"),
-                kind: RowKind::Button(if self.sui.dict_confirming() { tr("Sure?") } else { tr("Delete") }.into()),
-            }))
+            // Kamus Jepang (hanya Jepang yang butuh; Korea tanpa kamus): tombol unduh bila belum ada, Delete (tekan dua kali) bila
+            // hasil unduhan, tidak ada baris bila kamus datang dari folder lain (lihat dict.rs).
+            .chain(if dict::removable().is_some() {
+                Some(Row {
+                    id: Rid::Dictionary,
+                    label: tr("Japanese dictionary"),
+                    sub: tr("47 MB on disk"),
+                    kind: RowKind::Button(if self.sui.dict_confirming() { tr("Sure?") } else { tr("Delete") }.into()),
+                })
+            } else if !romaji::available() {
+                Some(match dict::state() {
+                    dict::Dl::Running(p) => Row { id: Rid::Dictionary, label: tr("Japanese dictionary"), sub: tr("Downloading dictionary"), kind: RowKind::Button(format!("{p}%")) },
+                    dict::Dl::Failed => Row { id: Rid::Dictionary, label: tr("Japanese dictionary"), sub: tr("Download failed"), kind: RowKind::Button(tr("Retry").into()) },
+                    dict::Dl::Idle => Row { id: Rid::Dictionary, label: tr("Japanese dictionary"), sub: tr("Needs 10 MB dictionary"), kind: RowKind::Button(tr("Get").into()) },
+                })
+            } else {
+                None
+            })
             .collect(),
             _ => Vec::new(),
         }
+    }
+
+    /// Wheel over Settings > General / Alerts / Widgets. True if it scrolled.
+    pub(crate) fn settings_rows_wheel(&mut self, down: bool) -> bool {
+        let max = row_count(self.settings_rows(self.sui.tab).len()).saturating_sub(ROW_VIS);
+        let old = self.sui.rows_scroll;
+        self.sui.rows_scroll = if down { (old + 1).min(max) } else { old.saturating_sub(1) };
+        self.sui.rows_scroll != old
+    }
+
+    /// This rows tab has more rows than fit (the wheel scrolls it).
+    pub(crate) fn rows_scrollable(&self) -> bool {
+        self.sui.tab != 0 && row_count(self.settings_rows(self.sui.tab).len()) > ROW_VIS
     }
 
     fn settings_row_target(&self, i: usize) -> f32 {
@@ -326,12 +394,13 @@ impl App {
         self.sv = 0.0;
     }
 
-    fn settings_set_tab(&mut self, t: u8) {
+    pub(crate) fn settings_set_tab(&mut self, t: u8) {
         if self.sui.tab != t {
             self.sui.tab_dir = if t > self.sui.tab { 1.0 } else { -1.0 };
             self.sui.tab = t;
+            self.sui.rows_scroll = 0;
             self.sui.tab_t0 = Instant::now();
-            if t == 2 {
+            if t == 1 {
                 self.sui.autostart = sys::autostart_enabled();
             }
         }
@@ -439,7 +508,7 @@ impl App {
     pub(crate) fn settings_click_rows(&mut self, tab: u8, x: f32, y: f32) {
         let rows = self.settings_rows(tab);
         for (i, r) in rows.iter().enumerate() {
-            let (cx, cy) = cell_pos(i);
+            let Some((cx, cy)) = row_cell_visible(i, self.sui.rows_scroll) else { continue };
             if !in_rect(x, y, cx, cy, CELL_W, CELL_H) {
                 continue;
             }
@@ -452,29 +521,29 @@ impl App {
                 }
                 RowKind::Toggle(_) | RowKind::Button(_) => (x > cx + CELL_W - 92.0, x > cx + CELL_W - 46.0),
             };
-            match (tab, i) {
-                (1, 0) => self.minimal = !self.minimal,
-                (1, 1) => self.cfg.busy_on_maximized = !self.cfg.busy_on_maximized,
-                (1, 2) => {
+            match r.id {
+                Rid::Minimal => self.minimal = !self.minimal,
+                Rid::ThinMaximized => self.cfg.busy_on_maximized = !self.cfg.busy_on_maximized,
+                Rid::Monitor => {
                     if right {
                         self.cfg.monitor = monitors::step_mode(self.cfg.monitor, plus);
                         self.place(true);
                     }
                 }
-                (1, 3) => {
+                Rid::LyricTiming => {
                     if right {
                         let d = if plus { LEAD_STEP } else { -LEAD_STEP };
                         self.cfg.lyric_lead_ms = (self.cfg.lyric_lead_ms + d).clamp(LEAD_MIN, LEAD_MAX);
                     }
                 }
-                (1, 4) => {
+                Rid::NotchSize => {
                     if right {
                         let last = scale::SIZES.len() - 1;
                         self.cfg.notch_size = if plus { (self.cfg.notch_size + 1).min(last) } else { self.cfg.notch_size.saturating_sub(1) };
                         self.place(true);
                     }
                 }
-                (1, 5) => {
+                Rid::IdleDisplay => {
                     if right {
                         let last = settings::IDLE_DISPLAY_LABELS.len() - 1;
                         self.cfg.idle_display = if plus { (self.cfg.idle_display + 1).min(last) } else { self.cfg.idle_display.saturating_sub(1) };
@@ -482,7 +551,7 @@ impl App {
                         self.eye = EyeAnim::new();
                     }
                 }
-                (2, 0) => {
+                Rid::Notifications => {
                     self.notif_on = !self.notif_on;
                     notif::set_enabled(self.notif_on);
                     if self.notif_on {
@@ -494,47 +563,52 @@ impl App {
                         self.notifs.clear();
                     }
                 }
-                (2, 1) => {
+                Rid::ContactPhotos => {
                     self.cfg.notif_avatar = !self.cfg.notif_avatar;
                     notif::set_avatar(self.cfg.notif_avatar);
                 }
-                (2, 2) => {
+                Rid::Autostart => {
                     sys::set_autostart(!self.sui.autostart);
                     self.sui.autostart = sys::autostart_enabled();
                 }
-                (2, 3) => {
+                Rid::SlideHotkeys => {
                     self.cfg.slide_hotkeys = !self.cfg.slide_hotkeys;
                     hotkeys::set_slide_hotkeys(self.hwnd, self.cfg.slide_hotkeys);
                 }
-                (2, 4) => {
+                Rid::Language => {
                     if right {
                         self.cfg.lang = i18n::step(self.cfg.lang, plus);
                         i18n::set(self.cfg.lang);
                     }
                 }
-                (2, 5) => {
+                Rid::Calendar => {
                     if right {
                         let clip = calendar::clipboard_text(self.hwnd);
                         self.cal_button(clip);
                     }
                 }
-                (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
-                (3, 1) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
-                (3, 2) => {
+                Rid::HudVolume => self.cfg.hud_volume = !self.cfg.hud_volume,
+                Rid::HudBrightness => self.cfg.hud_brightness = !self.cfg.hud_brightness,
+                Rid::LockKeys => {
                     self.cfg.lock_toast = !self.cfg.lock_toast;
                     keys::set_enabled(self.hwnd, self.cfg.lock_toast);
                 }
-                (3, 3) => {
+                Rid::PrivacyDot => {
                     self.cfg.privacy_dot = !self.cfg.privacy_dot;
                     privacy::set_enabled(self.cfg.privacy_dot);
                     self.priv_t = Instant::now();
                 }
-                (3, 4) => self.cfg.update_check = !self.cfg.update_check,
-                (4, 0) => {
+                Rid::UpdateCheck => self.cfg.update_check = !self.cfg.update_check,
+                Rid::MicMute => {
+                    self.cfg.mic_hotkey = !self.cfg.mic_hotkey;
+                    hotkeys::set_mic_hotkey(self.hwnd, self.cfg.mic_hotkey);
+                    self.priv_t = Instant::now();
+                }
+                Rid::Weather => {
                     self.cfg.weather_on = !self.cfg.weather_on;
                     self.weather_apply();
                 }
-                (4, 1) => {
+                Rid::City => {
                     if right {
                         let n = weather::CITIES.len();
                         self.cfg.weather_city = if plus { (self.cfg.weather_city + 1) % n } else { (self.cfg.weather_city + n - 1) % n };
@@ -542,39 +616,32 @@ impl App {
                         self.prayer_refresh();
                     }
                 }
-                (4, 2) => {
+                Rid::Prayer => {
                     self.cfg.prayer_on = !self.cfg.prayer_on;
                     self.prayer_refresh();
                 }
-                (4, 3) => {
+                Rid::Accent => {
                     if right {
                         self.cfg.accent = accent::step(self.cfg.accent, plus);
                     }
                 }
-                (4, 4) => {
-                    if romaji::available() {
-                        self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
-                        romaji::set_enabled(self.cfg.romaji_lyrics);
-                        self.romaji_refresh();
-                    } else if right {
-                        dict::start(self.hwnd);
-                    }
+                Rid::Romaji => {
+                    self.cfg.romaji_lyrics = !self.cfg.romaji_lyrics;
+                    romaji::set_enabled(self.cfg.romaji_lyrics);
+                    self.romaji_refresh();
                 }
-                (4, 5) => {
+                Rid::Dictionary => {
                     if right {
-                        if !self.sui.dict_confirming() {
+                        if !dict::removable().is_some() {
+                            dict::start(self.hwnd);
+                        } else if !self.sui.dict_confirming() {
                             self.sui.dict_confirm = Some(Instant::now());
                         } else {
                             self.sui.dict_confirm = None;
-                            if dict::remove() {
-                                self.cfg.romaji_lyrics = false;
-                                romaji::set_enabled(false);
-                                self.romaji_refresh();
-                            }
+                            dict::remove();
                         }
                     }
                 }
-                _ => {}
             }
             self.save_settings();
             return;
@@ -657,8 +724,9 @@ impl App {
     }
 
     fn draw_rows_tab(&self, g: &mut Gfx, tab: u8, ox: f32, al: f32, el: f32) {
-        for (i, r) in self.settings_rows(tab).iter().enumerate() {
-            let (x, y) = cell_pos(i);
+        let rows = self.settings_rows(tab);
+        for (i, r) in rows.iter().enumerate() {
+            let Some((x, y)) = row_cell_visible(i, self.sui.rows_scroll) else { continue };
             let enter = ss(0.0, 0.3, el - i as f32 * 0.04);
             let a = al * enter;
             let (x, y) = (x + ox, y + (1.0 - enter) * 8.0);
@@ -689,6 +757,14 @@ impl App {
                     g.txt_c(v, bx + bw / 2.0, cy - 6.0, 11.0, [190, 225, 255], a, bw, true);
                 }
             }
+        }
+        let n = row_count(rows.len());
+        if n > ROW_VIS {
+            let th = ROW_VIS as f32 * (CELL_H + GRID_GAP_Y) - GRID_GAP_Y;
+            let thumb = (th * ROW_VIS as f32 / n as f32).max(14.0);
+            let ty0 = GRID_Y0 + (th - thumb) * self.sui.rows_scroll as f32 / (n - ROW_VIS) as f32;
+            g.fill(&rrect(RX - 4.0 + ox, GRID_Y0, 3.0, th, 1.5), &paint(255, 255, 255, 0.10 * al));
+            g.fill(&rrect(RX - 4.0 + ox, ty0, 3.0, thumb, 1.5), &paint(255, 255, 255, 0.55 * al));
         }
     }
 }
