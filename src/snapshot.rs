@@ -1122,7 +1122,14 @@ fn snap_mic_mute() {
 // ---------------------------------------------------------------- update check
 
 fn release(v: &str) -> update::Release {
-    update::Release { version: v.into(), url: format!("https://github.com/dirgaastya/hesewake-notch/releases/tag/v{v}") }
+    update::Release { version: v.into(), url: format!("https://github.com/dirgaastya/hesewake-notch/releases/tag/v{v}"), installer: None }
+}
+
+/// A release that has an installer and its checksum file (so the toast offers one-click Install).
+fn release_with_installer(v: &str) -> update::Release {
+    let base = format!("https://github.com/dirgaastya/hesewake-notch/releases/download/v{v}");
+    let installer = update::Installer { file: format!("HesewakeNotch-Setup-{v}.exe"), url: format!("{base}/HesewakeNotch-Setup-{v}.exe"), size: 3_300_000, sums_url: format!("{base}/SHA256SUMS") };
+    update::Release { installer: Some(installer), ..release(v) }
 }
 
 fn update_note(a: &App) -> Option<update::Note> {
@@ -1295,4 +1302,48 @@ fn toasts_with_buttons_are_not_cancelled_by_hover() {
     assert!(!a.toast_has_button(), "nothing to press");
     show_toast(&mut a, ToastKind::Charging { pct: 50 });
     assert!(!a.toast_has_button());
+}
+
+/// One click on Install starts the download and turns the toast into a progress toast; a failure falls back to the
+/// release page; without an installer the button still just opens the release page.
+#[test]
+fn update_install_flow() {
+    let mut a = test_app(1.0);
+    let r = release_with_installer("99.0.0");
+    show_toast(&mut a, ToastKind::Update(update::Note::Available(r.clone())));
+    let (w, h) = toast::TOAST_UPDATE;
+    let (bx, by, bw, bh) = update::button_rect(w, h);
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(update::installs(), vec!["HesewakeNotch-Setup-99.0.0.exe".to_string()], "the download started");
+    assert!(sys::opened().is_empty(), "the browser is not opened");
+    assert_eq!(update_note(&a), Some(update::Note::Downloading(0)));
+    assert!(a.toast_has_button(), "hover must not cancel the progress toast");
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0), "clicks are swallowed while downloading");
+    assert!(update::installs().is_empty(), "no second download");
+    assert!(a.toast.is_some());
+
+    // a failed download offers the release page
+    a.update = Some(r.clone());
+    a.set_update_note(update::Note::DownloadFailed(r.clone()));
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), vec![r.url.clone()]);
+    assert!(a.toast.is_none());
+
+    // no installer asset: the old behaviour
+    let plain = release("99.0.0");
+    show_toast(&mut a, ToastKind::Update(update::Note::Available(plain.clone())));
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), vec![plain.url]);
+    assert!(update::installs().is_empty());
+}
+
+#[test]
+fn snap_update_install_toasts() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, prefix) in [(i18n::EN, "update"), (i18n::ID, "id-update")] {
+        i18n::set(lang);
+        shot(&format!("{prefix}-toast-install"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Available(release_with_installer("9.9.9")))));
+        shot(&format!("{prefix}-toast-downloading"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Downloading(63))));
+        shot(&format!("{prefix}-toast-download-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::DownloadFailed(release("9.9.9")))));
+    }
 }

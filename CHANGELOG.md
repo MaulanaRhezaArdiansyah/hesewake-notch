@@ -2,6 +2,11 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.10.2] - 2026-10-29
+
+### Added
+- **Pasang pembaruan dengan satu klik**: pada toast "Version X is available", tombol kini **Install** (bila rilisnya punya installer dan berkas `SHA256SUMS`). Aplikasi mengunduh `HesewakeNotch-Setup-X.exe` dengan progres di toast, memeriksa ukuran dan **SHA-256**-nya terhadap `SHA256SUMS` di rilis yang sama, menyimpannya di folder sementara, lalu menjalankan installer biasa (wizard-nya tetap terlihat; tidak ada instal senyap). Berkas hanya diunduh dari `github.com/dirgaastya/hesewake-notch/releases/download/`, ukurannya harus wajar, dan bila unduhan atau checksum gagal, toast menawarkan halaman rilis. Rilis lama tanpa `SHA256SUMS` tetap membuka halaman rilis seperti sebelumnya. Workflow rilis kini menerbitkan `SHA256SUMS` di setiap rilis. Karena installer belum ditandatangani, PC dengan Smart App Control atau kebijakan Application Control tetap bisa memblokirnya, sama seperti unduhan manual.
+
 ## [0.10.1] - 2026-10-29
 
 ### Fixed
