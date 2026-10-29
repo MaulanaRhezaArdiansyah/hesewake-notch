@@ -2,6 +2,11 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] - 2026-10-29
+
+### Fixed
+- **Tombol Download pada toast pembaruan tidak bisa dipencet**: begitu pointer mendekati toast, notch ikut terbuka dan membuka slide, sehingga toast hilang sebelum tombolnya terklik. Hover di atas toast yang punya tombol (pengingat Water, **Join** pada rapat, **Download** pada pembaruan) kini tidak lagi membuka notch; sebelumnya hanya toast Water yang dikecualikan.
+
 ## [0.10.0] - 2026-10-29
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #32).

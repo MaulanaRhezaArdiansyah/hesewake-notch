@@ -1279,3 +1279,20 @@ fn lyric_mode_credits_the_source() {
         }
     }
 }
+
+/// Toasts with a button must not let the hover open the notch (that cancels the toast before the button is pressed).
+#[test]
+fn toasts_with_buttons_are_not_cancelled_by_hover() {
+    let mut a = test_app(1.0);
+    assert!(!a.toast_has_button(), "no toast");
+    show_toast(&mut a, ToastKind::Water);
+    assert!(a.toast_has_button(), "Snooze / Drank");
+    show_toast(&mut a, ToastKind::Update(update::Note::Available(release("9.9.9"))));
+    assert!(a.toast_has_button(), "Download");
+    show_toast(&mut a, ToastKind::Meeting { title: "Standup".into(), at: now_s(), link: Some("https://meet.google.com/abc-defg-hij".into()) });
+    assert!(a.toast_has_button(), "Join");
+    show_toast(&mut a, ToastKind::Update(update::Note::UpToDate));
+    assert!(!a.toast_has_button(), "nothing to press");
+    show_toast(&mut a, ToastKind::Charging { pct: 50 });
+    assert!(!a.toast_has_button());
+}

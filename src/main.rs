@@ -300,7 +300,7 @@ impl App {
         self.hover
             || self.editing
             // menekan tombol di toast Water (Snooze/Drank) bukan gestur geser: toast tidak boleh dibatalkan sebelum klik selesai
-            || (self.drag.is_some() && !self.water_toast())
+            || (self.drag.is_some() && !self.toast_has_button())
             || self.peek_until.map_or(false, |t| Instant::now() < t)
     }
 
