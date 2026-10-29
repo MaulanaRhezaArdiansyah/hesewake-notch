@@ -58,6 +58,7 @@ mod bt;
 mod busy;
 mod calendar;
 mod cjk;
+mod claude;
 mod claude_hook;
 mod clipboard;
 mod clock;
