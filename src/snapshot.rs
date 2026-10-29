@@ -1006,6 +1006,7 @@ fn claude_msg(kind: claude_hook::EventKind, session: &str, text: &str) -> claude
         text: text.into(),
         hwnd: 0,
         subagent: false,
+        pid: 0,
     }
 }
 

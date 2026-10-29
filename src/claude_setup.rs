@@ -20,7 +20,7 @@ pub(crate) const EVENTS: [(&str, Option<&str>); 8] = [
     ("UserPromptSubmit", None),
     ("PreToolUse", Some("*")),
     ("PostToolUse", Some("*")),
-    ("Notification", Some("permission_prompt|elicitation_dialog|agent_needs_input")),
+    ("Notification", Some("permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input|idle_prompt")),
     ("Stop", None),
     ("StopFailure", None),
     ("SessionStart", None),
@@ -158,10 +158,18 @@ pub(crate) fn apply(on: bool) -> Result<Link, String> {
 pub(crate) fn apply_with(on: bool, exe: &str) -> Result<Link, String> {
     let path = settings_path().ok_or("no settings folder")?;
     let mut v = load()?;
+    if !on && link(&v, exe) == Link::Off {
+        // None of ours: leave Claude Code's file (and folder) exactly as they are.
+        return Ok(Link::Off);
+    }
+    let before = v.clone();
     if on {
         connect(&mut v, exe);
     } else {
         disconnect(&mut v);
+    }
+    if v == before {
+        return Ok(link(&v, exe));
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -291,6 +299,19 @@ mod tests {
         assert!(apply_with(true, EXE).is_err());
         assert_eq!(std::fs::read_to_string(d.file()).unwrap(), "{ not json", "untouched");
         assert_eq!(read_link_with(EXE), Link::Invalid);
+    }
+
+    /// Remove (and the uninstaller) must not touch Claude Code's settings when none of our hooks are there.
+    #[test]
+    fn nothing_to_remove_writes_nothing() {
+        let d = TempDir::new("noop");
+        assert_eq!(apply_with(false, EXE), Ok(Link::Off));
+        assert!(!d.file().exists(), "no settings.json created");
+        let original: &[u8] = b"\xEF\xBB\xBF{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"say done\"}]}]},\"x\":[]}";
+        std::fs::write(d.file(), original).unwrap();
+        assert_eq!(apply_with(false, EXE), Ok(Link::Off));
+        assert_eq!(std::fs::read(d.file()).unwrap(), original, "bytes unchanged");
+        assert!(!d.0.join("settings.json.hesewake-backup").exists(), "no backup either");
     }
 
     #[test]

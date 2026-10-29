@@ -29,6 +29,8 @@ pub(crate) struct Session {
     pub(crate) last: Instant,
     pub(crate) text: String,
     pub(crate) hwnd: isize,
+    /// The Claude Code process (0 = unknown).
+    pub(crate) pid: u32,
 }
 
 /// Something the notch should pop up.
@@ -53,15 +55,15 @@ impl Sessions {
         }
         let i = match self.list.iter().position(|s| s.id == m.session) {
             Some(i) => i,
-            // A subagent alone doesn't create a session.
-            None if m.subagent => return None,
+            // A subagent alone doesn't create a session, unless it needs the person.
+            None if m.subagent && m.kind != EventKind::NeedsYou => return None,
             None => {
                 if self.list.len() >= MAX_SESSIONS {
                     if let Some(old) = self.list.iter().enumerate().min_by_key(|(_, s)| s.last).map(|(i, _)| i) {
                         self.list.remove(old);
                     }
                 }
-                self.list.push(Session { id: m.session.clone(), project: m.project.clone(), state: State::Idle, turn_start: None, last: now, text: String::new(), hwnd: 0 });
+                self.list.push(Session { id: m.session.clone(), project: m.project.clone(), state: State::Idle, turn_start: None, last: now, text: String::new(), hwnd: 0, pid: 0 });
                 self.list.len() - 1
             }
         };
@@ -73,12 +75,23 @@ impl Sessions {
         if !m.project.is_empty() {
             s.project = m.project.clone();
         }
-        // Subagents and background agents keep the session alive but never start or end a turn.
-        if m.subagent {
+        if m.pid != 0 {
+            s.pid = m.pid;
+        }
+        // Subagents and background agents keep the session alive but never start or end a turn. A prompt waiting for
+        // the person counts whoever raised it.
+        if m.subagent && m.kind != EventKind::NeedsYou {
             return None;
         }
         match m.kind {
             EventKind::SessionStart | EventKind::SessionEnd => None,
+            EventKind::Idle => {
+                if matches!(s.state, State::Working | State::Answered) {
+                    s.state = State::Idle;
+                    s.turn_start = None;
+                }
+                None
+            }
             EventKind::Prompt => {
                 s.state = State::Working;
                 s.turn_start = Some(now);
@@ -113,12 +126,13 @@ impl Sessions {
         }
     }
 
-    /// Housekeeping, about once a second. `alive` says whether a window still exists. True if anything changed.
-    pub(crate) fn tick(&mut self, now: Instant, fg: isize, alive: impl Fn(isize) -> bool) -> bool {
+    /// Housekeeping, about once a second. `alive` says whether a window still exists, `running` whether a process
+    /// still runs. True if anything changed.
+    pub(crate) fn tick(&mut self, now: Instant, fg: isize, alive: impl Fn(isize) -> bool, running: impl Fn(u32) -> bool) -> bool {
         let before = self.list.len();
         self.list.retain(|s| {
             let silent = now.saturating_duration_since(s.last) > STALE && matches!(s.state, State::Working | State::Answered);
-            !silent && (s.hwnd == 0 || alive(s.hwnd))
+            !silent && (s.hwnd == 0 || alive(s.hwnd)) && (s.pid == 0 || running(s.pid))
         });
         let mut changed = self.list.len() != before;
         if fg != 0 && self.shares_window(fg) == 1 {
@@ -198,6 +212,22 @@ pub(crate) fn icon_prompt(g: &mut Gfx, cx: f32, cy: f32, s: f32, p: &Paint<'stat
     g.rect(cx + 0.04 * s, cy + 0.32 * s - lw / 2.0, 0.42 * s, lw, p);
 }
 
+/// Is process `pid` still running? A process we may not open (e.g. elevated) counts as running.
+fn process_running(pid: u32) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, E_ACCESSDENIED, WAIT_TIMEOUT};
+    use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+    unsafe {
+        match OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+            Ok(h) => {
+                let alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+                let _ = CloseHandle(h);
+                alive
+            }
+            Err(e) => e.code() == E_ACCESSDENIED,
+        }
+    }
+}
+
 impl App {
     /// A message from a hook (`WM_COPYDATA`).
     pub(crate) fn on_claude(&mut self, m: &Msg) {
@@ -214,7 +244,7 @@ impl App {
             return false;
         }
         let fg = unsafe { GetForegroundWindow() }.0 as isize;
-        self.claude.tick(Instant::now(), fg, |h| unsafe { IsWindow(HWND(h as *mut c_void)).as_bool() })
+        self.claude.tick(Instant::now(), fg, |h| unsafe { IsWindow(HWND(h as *mut c_void)).as_bool() }, process_running)
     }
 
     /// Bring the session's terminal to the front and count the prompt as answered.
@@ -370,7 +400,7 @@ mod tests {
     use crate::claude_hook::VERSION;
 
     fn msg(kind: EventKind, session: &str, hwnd: isize) -> Msg {
-        Msg { v: VERSION, kind, session: session.into(), project: "app".into(), cwd: "C:\\p\\app".into(), text: String::new(), hwnd, subagent: false }
+        Msg { v: VERSION, kind, session: session.into(), project: "app".into(), cwd: "C:\\p\\app".into(), text: String::new(), hwnd, subagent: false, pid: 0 }
     }
 
     fn state(s: &Sessions, id: &str) -> Option<State> {
@@ -409,8 +439,8 @@ mod tests {
         n.text = "Claude needs your permission".into();
         assert_eq!(s.apply(&n, t0, 0), Some(Show::NeedsYou { session: "a".into(), project: "app".into(), text: "Claude needs your permission".into() }));
         assert_eq!(s.needing().map(|x| x.id.as_str()), Some("a"));
-        assert!(!s.tick(t0, 99, |_| true), "another window in front changes nothing");
-        assert!(s.tick(t0, 7, |_| true));
+        assert!(!s.tick(t0, 99, |_| true, |_| true), "another window in front changes nothing");
+        assert!(s.tick(t0, 7, |_| true, |_| true));
         assert_eq!(state(&s, "a"), Some(State::Answered));
         assert!(s.needing().is_none());
         s.apply(&msg(EventKind::Tool, "a", 7), t0, 7);
@@ -424,7 +454,7 @@ mod tests {
         s.apply(&msg(EventKind::Prompt, "a", 7), t0, 0);
         s.apply(&msg(EventKind::Prompt, "b", 7), t0, 0);
         s.apply(&msg(EventKind::NeedsYou, "a", 7), t0, 0);
-        s.tick(t0, 7, |_| true);
+        s.tick(t0, 7, |_| true, |_| true);
         assert_eq!(state(&s, "a"), Some(State::NeedsYou), "window 7 has two sessions: can't tell which tab is in front");
         s.clear_needs("a");
         assert_eq!(state(&s, "a"), Some(State::Answered));
@@ -477,13 +507,58 @@ mod tests {
         s.apply(&msg(EventKind::Prompt, "busy", 7), t0, 0);
         s.apply(&msg(EventKind::NeedsYou, "waiting", 8), t0, 0);
         s.apply(&msg(EventKind::Stop, "done", 9), t0, 0);
-        assert!(!s.tick(t0 + Duration::from_secs(60), 0, |_| true));
-        assert!(s.tick(t0 + STALE + Duration::from_secs(60), 0, |_| true));
+        assert!(!s.tick(t0 + Duration::from_secs(60), 0, |_| true, |_| true));
+        assert!(s.tick(t0 + STALE + Duration::from_secs(60), 0, |_| true, |_| true));
         assert!(s.get("busy").is_none(), "working but silent for 16 min");
         assert!(s.get("waiting").is_some(), "a prompt can wait as long as it likes");
         assert!(s.get("done").is_some());
-        assert!(s.tick(t0, 0, |h| h != 8));
+        assert!(s.tick(t0, 0, |h| h != 8, |_| true));
         assert!(s.get("waiting").is_none(), "its window was closed");
+    }
+
+    /// A permission prompt raised inside a subagent still needs the person.
+    #[test]
+    fn subagent_needs_you_is_shown() {
+        let mut s = Sessions::default();
+        let t0 = Instant::now();
+        s.apply(&msg(EventKind::Prompt, "a", 7), t0, 0);
+        let mut n = msg(EventKind::NeedsYou, "a", 7);
+        n.subagent = true;
+        assert!(matches!(s.apply(&n, t0, 0), Some(Show::NeedsYou { .. })));
+        assert_eq!(state(&s, "a"), Some(State::NeedsYou));
+        let mut fresh = msg(EventKind::NeedsYou, "new", 7);
+        fresh.subagent = true;
+        assert!(s.apply(&fresh, t0, 0).is_some(), "even for a session not seen before");
+    }
+
+    /// Esc / Ctrl+C sends no Stop; Claude's idle notice ends the "working" dots.
+    #[test]
+    fn idle_after_interrupt_stops_the_dots() {
+        let mut s = Sessions::default();
+        let t0 = Instant::now();
+        s.apply(&msg(EventKind::Prompt, "a", 7), t0, 0);
+        assert_eq!(s.apply(&msg(EventKind::Idle, "a", 7), t0, 0), None, "no toast");
+        assert_eq!(state(&s, "a"), Some(State::Idle));
+        assert_eq!(s.working(), 0);
+        s.apply(&msg(EventKind::Stop, "b", 7), t0, 0);
+        s.apply(&msg(EventKind::Idle, "b", 7), t0, 0);
+        assert_eq!(state(&s, "b"), Some(State::Done), "a finished turn stays done");
+        s.apply(&msg(EventKind::NeedsYou, "c", 7), t0, 0);
+        s.apply(&msg(EventKind::Idle, "c", 7), t0, 0);
+        assert_eq!(state(&s, "c"), Some(State::NeedsYou), "a waiting prompt keeps waiting");
+    }
+
+    /// A closed tab (window still open) or a killed Claude: the session goes when its process does.
+    #[test]
+    fn a_closed_claude_process_drops_the_session() {
+        let mut s = Sessions::default();
+        let t0 = Instant::now();
+        let mut m = msg(EventKind::NeedsYou, "a", 7);
+        m.pid = 4242;
+        s.apply(&m, t0, 0);
+        assert!(!s.tick(t0, 0, |_| true, |_| true));
+        assert!(s.tick(t0, 0, |_| true, |p| p != 4242));
+        assert!(s.get("a").is_none());
     }
 
     #[test]

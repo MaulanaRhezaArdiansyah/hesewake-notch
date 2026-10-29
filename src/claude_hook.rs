@@ -19,6 +19,8 @@ pub(crate) enum EventKind {
     Stop,
     /// The turn ended on an API error.
     StopFailure,
+    /// Claude has been idle for a while (`idle_prompt`): nothing runs, e.g. after an interrupt.
+    Idle,
 }
 
 /// One hook call, as sent to the notch.
@@ -35,6 +37,9 @@ pub(crate) struct Msg {
     /// The terminal window to come back to (0 = unknown).
     pub(crate) hwnd: isize,
     pub(crate) subagent: bool,
+    /// The Claude Code process (0 = unknown); when it exits, the session is gone.
+    #[serde(default)]
+    pub(crate) pid: u32,
 }
 
 pub(crate) const VERSION: u8 = 1;
@@ -43,9 +48,9 @@ const MAX_MSG: usize = 16 * 1024;
 /// Characters kept from a notification or Claude's last message.
 const PREVIEW_CHARS: usize = 200;
 
-/// Notification types that mean "Claude is waiting for you". `idle_prompt` is left out on purpose: it fires after
-/// every finished turn nobody answered, and "Done" already covers that.
-const NEEDS_YOU: [&str; 3] = ["permission_prompt", "elicitation_dialog", "agent_needs_input"];
+/// Notification types that mean "Claude is waiting for you". `idle_prompt` is not one of them: it fires after every
+/// finished turn nobody answered ("Done" covers that); it only tells that nothing runs any more (`EventKind::Idle`).
+const NEEDS_YOU: [&str; 4] = ["permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input"];
 
 /// The hook's stdin JSON as a `Msg`, or None when the notch has nothing to show for it.
 pub(crate) fn parse_hook(json: &str) -> Option<Msg> {
@@ -58,6 +63,7 @@ pub(crate) fn parse_hook(json: &str) -> Option<Msg> {
         "UserPromptSubmit" => (EventKind::Prompt, String::new()),
         "PreToolUse" | "PostToolUse" => (EventKind::Tool, String::new()),
         "Notification" if NEEDS_YOU.contains(&field("notification_type")?) => (EventKind::NeedsYou, preview(field("message").unwrap_or(""))),
+        "Notification" if field("notification_type") == Some("idle_prompt") => (EventKind::Idle, String::new()),
         "Stop" => (EventKind::Stop, preview(field("last_assistant_message").unwrap_or(""))),
         "StopFailure" => (EventKind::StopFailure, String::new()),
         _ => return None,
@@ -72,6 +78,7 @@ pub(crate) fn parse_hook(json: &str) -> Option<Msg> {
         text,
         hwnd: 0,
         subagent: v.get("agent_id").is_some_and(|a| !a.is_null()),
+        pid: 0,
     })
 }
 
@@ -154,24 +161,51 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 /// `dwData` of the `WM_COPYDATA` message that carries a `Msg`.
 pub(crate) const COPY_ID: usize = 0x434C_4155;
-/// Most stdin read from one hook call (Claude's last message can be long; the preview needs only the start).
-const MAX_STDIN: u64 = 256 * 1024;
+/// Most stdin read from one hook call. Claude's last message can be long and must not cut the JSON short.
+const MAX_STDIN: u64 = 16 * 1024 * 1024;
 /// How far up the process tree to look for the terminal window.
 const MAX_DEPTH: usize = 12;
 
 /// `--claude-hook`: read the hook JSON from stdin and pass it to the running notch. Never fails, prints nothing.
 pub(crate) fn run_hook() {
-    let mut buf = Vec::new();
-    if std::io::stdin().take(MAX_STDIN).read_to_end(&mut buf).is_err() {
-        return;
-    }
-    let Some(mut m) = parse_hook(&String::from_utf8_lossy(&buf)) else { return };
+    let Some(mut m) = read_hook(std::io::stdin()) else { return };
     let notch = find_notch();
     if notch == 0 {
         return;
     }
-    m.hwnd = terminal_window(&m.project);
+    let chain = ancestors(&parent_map(), unsafe { GetCurrentProcessId() });
+    m.pid = claude_pid(&chain);
+    m.hwnd = terminal_window(&chain, &m.project);
     deliver(notch, &m);
+}
+
+/// The hook JSON from `r` (at most `MAX_STDIN` bytes) as a `Msg`.
+pub(crate) fn read_hook(r: impl Read) -> Option<Msg> {
+    let mut buf = Vec::new();
+    r.take(MAX_STDIN).read_to_end(&mut buf).ok()?;
+    parse_hook(&String::from_utf8_lossy(&buf))
+}
+
+/// The process chain above `start` (parent first) as (pid, exe name), stopping before Explorer (the desktop).
+pub(crate) fn ancestors(map: &[(u32, u32, String)], start: u32) -> Vec<(u32, String)> {
+    let mut chain = Vec::new();
+    let mut pid = start;
+    for _ in 0..MAX_DEPTH {
+        let Some(&(_, parent, _)) = map.iter().find(|(p, ..)| *p == pid) else { break };
+        let Some((_, _, name)) = map.iter().find(|(p, ..)| *p == parent) else { break };
+        if parent == 0 || parent == pid || name.eq_ignore_ascii_case("explorer.exe") {
+            break;
+        }
+        chain.push((parent, name.clone()));
+        pid = parent;
+    }
+    chain
+}
+
+/// The Claude Code process among the ancestors: the first one that isn't a shell.
+pub(crate) fn claude_pid(chain: &[(u32, String)]) -> u32 {
+    const SHELLS: [&str; 6] = ["cmd.exe", "powershell.exe", "pwsh.exe", "bash.exe", "sh.exe", "conhost.exe"];
+    chain.iter().find(|(_, n)| !SHELLS.iter().any(|s| n.eq_ignore_ascii_case(s))).map_or(0, |(p, _)| *p)
 }
 
 /// The running notch's window (0 if none). Only a window of this same exe counts, so another program that names
@@ -228,35 +262,29 @@ pub(crate) fn deliver(hwnd: isize, m: &Msg) -> bool {
 
 /// The terminal (or editor) window this hook runs in: the first ancestor process with a visible top-level window,
 /// preferring a window whose title contains `project`. 0 if none.
-pub(crate) fn terminal_window(project: &str) -> isize {
-    let parents = parent_map();
-    let mut pid = unsafe { GetCurrentProcessId() };
-    for _ in 0..MAX_DEPTH {
-        let Some(&parent) = parents.iter().find(|(p, _)| *p == pid).map(|(_, pp)| pp) else { break };
-        if parent == 0 || parent == pid {
-            break;
-        }
-        pid = parent;
+pub(crate) fn terminal_window(chain: &[(u32, String)], project: &str) -> isize {
+    let want = project.to_lowercase();
+    for &(pid, _) in chain {
         let wins = windows_of(pid);
         if wins.is_empty() {
             continue;
         }
-        let want = project.to_lowercase();
         let best = wins.iter().find(|(_, title)| !want.is_empty() && title.to_lowercase().contains(&want)).or(wins.first());
         return best.map_or(0, |(h, _)| *h);
     }
     0
 }
 
-/// (pid, parent pid) of every running process.
-fn parent_map() -> Vec<(u32, u32)> {
+/// (pid, parent pid, exe name) of every running process.
+pub(crate) fn parent_map() -> Vec<(u32, u32, String)> {
     let mut out = Vec::new();
     unsafe {
         let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return out };
         let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
         let mut ok = Process32FirstW(snap, &mut e).is_ok();
         while ok {
-            out.push((e.th32ProcessID, e.th32ParentProcessID));
+            let n = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+            out.push((e.th32ProcessID, e.th32ParentProcessID, String::from_utf16_lossy(&e.szExeFile[..n])));
             ok = Process32NextW(snap, &mut e).is_ok();
         }
         let _ = CloseHandle(snap);
@@ -311,13 +339,13 @@ mod tests {
         assert_eq!(kind("PostToolUse", r#","tool_name":"Bash""#), Some(EventKind::Tool));
         assert_eq!(kind("Stop", ""), Some(EventKind::Stop));
         assert_eq!(kind("StopFailure", ""), Some(EventKind::StopFailure));
-        for t in ["permission_prompt", "elicitation_dialog", "agent_needs_input"] {
+        for t in ["permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input"] {
             let extra = format!(r#","notification_type":"{t}","message":"Claude needs your permission""#);
             let m = parse_hook(&hook("Notification", &extra)).expect(t);
             assert_eq!(m.kind, EventKind::NeedsYou);
             assert_eq!(m.text, "Claude needs your permission");
         }
-        assert_eq!(kind("Notification", r#","notification_type":"idle_prompt","message":"x""#), None);
+        assert_eq!(kind("Notification", r#","notification_type":"idle_prompt","message":"x""#), Some(EventKind::Idle));
         assert_eq!(kind("Notification", r#","notification_type":"auth_success""#), None);
         assert_eq!(kind("PreCompact", ""), None);
         let m = parse_hook(&hook("PreToolUse", r#","agent_id":"a1""#)).unwrap();
@@ -342,6 +370,33 @@ mod tests {
         assert!(p.chars().count() <= 200);
         let big = "x".repeat(1 << 20);
         assert!(preview(&big).chars().count() <= 200);
+    }
+
+    /// Claude's final reply can be long (and JSON-escaped); the Stop event must still arrive.
+    #[test]
+    fn long_final_message_still_reaches_the_notch() {
+        let reply = "Selesai, ini ringkasannya: é日本🙂 ".repeat(40_000);
+        let json = format!(r#"{{"session_id":"s1","cwd":"C:\\p\\app","hook_event_name":"Stop","last_assistant_message":"{reply}"}}"#);
+        assert!(json.len() > 1_000_000);
+        let m = read_hook(json.as_bytes()).expect("Stop with a 1 MB reply");
+        assert_eq!(m.kind, EventKind::Stop);
+        assert!(m.text.chars().count() <= 200 && m.text.starts_with("Selesai"));
+    }
+
+    #[test]
+    fn the_walk_skips_shells_and_stops_at_explorer() {
+        let map = |rows: &[(u32, u32, &str)]| rows.iter().map(|&(p, pp, n)| (p, pp, n.to_string())).collect::<Vec<_>>();
+        let tree = map(&[(10, 9, "hesewake-notch.exe"), (9, 8, "claude.exe"), (8, 7, "pwsh.exe"), (7, 6, "WindowsTerminal.exe"), (6, 5, "explorer.exe"), (5, 0, "userinit.exe")]);
+        let chain = ancestors(&tree, 10);
+        let names: Vec<&str> = chain.iter().map(|(_, n)| n.as_str()).collect();
+        assert_eq!(names, ["claude.exe", "pwsh.exe", "WindowsTerminal.exe"], "Explorer and above are left out");
+        assert_eq!(claude_pid(&chain), 9);
+        let via_shell = map(&[(10, 9, "hesewake-notch.exe"), (9, 8, "cmd.exe"), (8, 7, "node.exe"), (7, 0, "Code.exe")]);
+        assert_eq!(claude_pid(&ancestors(&via_shell, 10)), 8, "a shell between Claude and the hook is skipped");
+        let looped = map(&[(10, 9, "a.exe"), (9, 10, "b.exe")]);
+        assert!(ancestors(&looped, 10).len() <= 12, "a pid loop ends");
+        assert!(ancestors(&[], 10).is_empty());
+        assert_eq!(claude_pid(&[]), 0);
     }
 
     #[test]
@@ -443,7 +498,8 @@ mod tests {
     #[test]
     fn own_ancestors_are_walked() {
         // The test runner may or may not sit in a terminal window; this must just return.
-        let _ = terminal_window("hesewake-notch");
+        let chain = ancestors(&parent_map(), unsafe { GetCurrentProcessId() });
+        let _ = terminal_window(&chain, "hesewake-notch");
         let _ = find_notch();
     }
 }
