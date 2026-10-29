@@ -131,7 +131,10 @@ pub(crate) fn draw(a: &mut App) {
     };
     g.fill(&shape, &paint(0, 0, 0, 1.0));
 
-    let ca = if hold { 1.0 } else { (1.0 - p * 2.0).clamp(0.0, 1.0) * ((h - 16.0) / 12.0).clamp(0.0, 1.0) };
+    // Collapsed content only shows once the notch is tall enough for it, also right after a toast, when the notch
+    // may be shrinking back to the thin busy line.
+    let fit = ((h - 16.0) / 12.0).clamp(0.0, 1.0);
+    let ca = if hold { fit } else { (1.0 - p * 2.0).clamp(0.0, 1.0) * fit };
     if ca > 0.03 {
         a.draw_collapsed(&mut g, w, h, ca);
         if a.toast.is_none() {
