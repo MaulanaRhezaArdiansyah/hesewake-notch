@@ -2,6 +2,20 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-10-29
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #20, #27).
+
+### Added
+- **Rapat berikutnya dari link ICS** (Settings > Features > "Calendar"): salin alamat rahasia kalender (Google: "Secret address in iCal format", Outlook: "Publish calendar"), lalu tekan **Paste**; link dibaca dari clipboard, diperiksa (https atau webcal), dan disimpan di **Windows Credential Manager** (`HesewakeNotch/calendar-link`), tidak pernah di file. Tekan **Remove** dua kali untuk melepas. Tanpa OAuth dan tanpa API key; kalender diambil di thread latar tiap 10 menit, satu kalender.
+- **Hitung mundur rapat**: 10 menit terakhir sebelum rapat, notch menampilkan "Standup 8m" di tempat yang sama dengan hitung mundur sholat (idle dan di samping lagu); bila keduanya aktif, yang lebih dekat menang. Saat rapat dimulai muncul toast berisi judul dan jam, dengan tombol **Join** bila acara punya link Meet, Zoom, Teams, atau Webex.
+- **Slide Agenda** (opsional, tersembunyi secara default): sisa acara hari ini (acara seharian di atas), rapat yang berjalan diberi "Now", tombol Join, dan bisa di-scroll. Bila kosong, slide menjelaskan sebabnya (belum ada link, memuat, gagal, atau "Nothing else today" beserta acara berikutnya).
+- **Settings > Slides** kini memuat 10 slide: grid tiga per baris sesuai urutan carousel, bisa di-scroll dengan roda mouse dan scrollbar tipis; slide ke-10 mendapat `Ctrl+Alt+0`.
+- Pembaca iCalendar `src/ics.rs`: UTC, `TZID` (dengan `VTIMEZONE` milik feed, termasuk DST), floating, dan seharian; `RRULE` DAILY/WEEKLY/MONTHLY/YEARLY dengan `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY`, `BYMONTHDAY`, `BYMONTH`; `EXDATE`, instance yang dipindah (`RECURRENCE-ID`) dan dibatalkan; `DURATION`. Feed dianggap tidak tepercaya: tidak panik pada input rusak, kerja dibatasi per feed dengan jatah adil per acara, unduhan di atas 10 MB ditolak, dan hanya host Meet/Zoom/Teams/Webex asli yang dianggap link Join (kontribusi @MaulanaRhezaArdiansyah, PR #20).
+
+### Fixed
+- **Garis tipis mode busy** tidak lagi menyisakan potongan sampul album dan equalizer setelah toast (misalnya HUD volume) menutup saat notch menyusut kembali (kontribusi @MaulanaRhezaArdiansyah, PR #27).
+
 ## [0.7.0] - 2026-10-29
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #19).
