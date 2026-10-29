@@ -4,7 +4,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 
 ## [0.10.0] - 2026-10-29
 
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #32).
+
 ### Added
+- **Mute mikrofon** dengan `Ctrl+Alt+M` untuk semua aplikasi (`IAudioEndpointVolume::SetMute` pada perangkat rekam default; bila perangkat untuk peran konsol dan komunikasi berbeda, keduanya di-mute). HUD singkat menampilkan **Muted**, **On**, atau **Not found** bila tidak ada mikrofon. Perubahan mute dari tempat lain (pengaturan Windows, tombol mic di keyboard, aplikasi lain) diikuti langsung tanpa polling. Pil privasi di sisi kanan notch kecil menampilkan mic tercoret selama di-mute, oranye bila ada aplikasi yang masih memakai mic dan abu-abu bila tidak, jadi status mute tidak pernah tersembunyi; toast "Microphone in use" ikut menampilkannya. Bisa dimatikan di Settings > Alerts > "Mic mute key" (kontribusi @MaulanaRhezaArdiansyah, PR #32).
 - **Lirik cadangan dari [lrc.red](https://lrc.red)**: bila LRCLIB tidak punya lirik sinkron untuk sebuah lagu, aplikasi mencari di lrc.red (judul + artis, lalu judul saja). Hasil hanya dipakai bila judulnya sama persis (versi lain seperti "(Acoustic)" tidak ikut), artisnya cocok, dan durasinya selisih paling banyak 3 detik. Penanda waktu per kata (`<00:19.76>`) dibuang supaya baris tampil bersih. Permintaan hanya terjadi sekali per lagu, dan hanya bila LRCLIB tidak punya lirik sinkron. Sesuai syarat lrc.red, permintaan memakai User-Agent yang menyebut aplikasi, tautan, dan email kontak, dan sumber lirik dikreditkan: label kecil "via lrc.red" / "via LRCLIB" (klik membuka situsnya) di pojok panel mode lirik, serta di kotak About.
 - Unison (Better Lyrics) ikut dicoba sebagai sumber lain, tetapi dilewati: tujuh pencarian lagu populer, Jepang, dan Indonesia semuanya tidak ditemukan karena kuncinya video YouTube.
 
