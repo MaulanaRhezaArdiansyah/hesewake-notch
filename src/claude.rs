@@ -1,9 +1,6 @@
 //! Claude Code sessions in the notch: which sessions are working, waiting for the person, or done. The messages come
 //! from `claude_hook` (one per hook call); this module keeps the state and decides what to show.
 
-// Wired up step by step (toasts and chip come next).
-#![allow(dead_code)]
-
 use super::*;
 use crate::claude_hook::{EventKind, Msg};
 
@@ -145,6 +142,7 @@ impl Sessions {
     }
 
     /// The session that has been waiting longest.
+    #[cfg(test)]
     pub(crate) fn needing(&self) -> Option<&Session> {
         self.list.iter().filter(|s| s.state == State::NeedsYou).min_by_key(|s| s.last)
     }
@@ -335,6 +333,34 @@ impl App {
         }
         let x = CX + w / 2.0 - 24.0;
         g.fill(&rrect(x, 0.0, 16.0, h.max(2.0), 1.5), &paint(ORANGE[0], ORANGE[1], ORANGE[2], 1.0));
+    }
+}
+
+// ---------------------------------------------------------------- Settings row
+
+impl App {
+    pub(crate) fn claude_sub(&self) -> &'static str {
+        match self.claude_link {
+            claude_setup::Link::Off => tr("Not connected"),
+            claude_setup::Link::On => tr("Connected"),
+            claude_setup::Link::Moved => tr("Reconnect needed"),
+            claude_setup::Link::Invalid => tr("Bad settings.json"),
+        }
+    }
+
+    pub(crate) fn claude_button_text(&self) -> &'static str {
+        match self.claude_link {
+            claude_setup::Link::Off => tr("Connect"),
+            claude_setup::Link::On => tr("Remove"),
+            claude_setup::Link::Moved => tr("Fix"),
+            claude_setup::Link::Invalid => tr("Retry"),
+        }
+    }
+
+    /// The Settings button: connect, disconnect, or reconnect a moved exe. Applies to new Claude Code sessions.
+    pub(crate) fn claude_button(&mut self) {
+        let on = self.claude_link != claude_setup::Link::On;
+        self.claude_link = claude_setup::apply(on).unwrap_or(claude_setup::Link::Invalid);
     }
 }
 

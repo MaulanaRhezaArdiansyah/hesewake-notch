@@ -207,6 +207,7 @@ impl App {
             self.settings_prev = Some(self.cur_id());
             self.settings_open = true;
             self.order = slides::visible_order(&self.cfg.slides, true);
+            self.claude_link = claude_setup::read_link();
         }
         self.show_id(SlideId::Settings);
         self.peek_until = Some(Instant::now() + Duration::from_secs(8));
@@ -268,6 +269,7 @@ impl App {
                 Row { label: tr("Brightness HUD"), sub: tr("Fn keys / slider"), kind: RowKind::Toggle(self.cfg.hud_brightness) },
                 Row { label: tr("Lock keys"), sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
                 Row { label: tr("Mic / camera dot"), sub: tr("When an app uses them"), kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { label: "Claude Code", sub: self.claude_sub(), kind: RowKind::Button(self.claude_button_text().into()) },
             ],
             4 => vec![
                 Row { label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
@@ -515,6 +517,11 @@ impl App {
                     if right {
                         let clip = calendar::clipboard_text(self.hwnd);
                         self.cal_button(clip);
+                    }
+                }
+                (3, 4) => {
+                    if right {
+                        self.claude_button();
                     }
                 }
                 (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,

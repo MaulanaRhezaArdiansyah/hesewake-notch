@@ -1120,3 +1120,57 @@ fn thin_line_marks_needs_you() {
     claude_waiting(&mut a, "s1");
     assert!(thin_pixels(&mut a) > 10, "waiting: an orange mark on the thin line");
 }
+
+#[test]
+fn claude_row_connects_and_disconnects() {
+    let dir = std::env::temp_dir().join(format!("hesewake-claude-row-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("settings.json"), "{\"model\":\"opus\"}").unwrap();
+    claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = Some(dir.clone()));
+    let read = || std::fs::read_to_string(dir.join("settings.json")).unwrap();
+
+    let mut a = test_app(1.0);
+    a.open_settings();
+    assert_eq!(a.claude_link, claude_setup::Link::Off);
+    let i = a.settings_rows(3).iter().position(|r| r.label == "Claude Code").expect("Claude Code row in Alerts");
+    assert_eq!(a.settings_rows(3)[i].sub, "Not connected");
+    let (cx, cy) = settingsview::cell_pos(i);
+    let button = (cx + settingsview::CELL_W - 30.0, cy + 17.0);
+
+    a.settings_click_rows(3, button.0, button.1);
+    assert_eq!(a.claude_link, claude_setup::Link::On);
+    assert!(read().contains("--claude-hook"), "hooks written");
+    assert!(read().contains("\"model\": \"opus\""), "the rest kept");
+    assert_eq!(a.settings_rows(3)[i].sub, "Connected");
+
+    a.settings_click_rows(3, button.0, button.1);
+    assert_eq!(a.claude_link, claude_setup::Link::Off);
+    assert!(!read().contains("--claude-hook"), "hooks removed");
+
+    std::fs::write(dir.join("settings.json"), "{ broken").unwrap();
+    a.open_settings();
+    a.settings_open = false;
+    a.open_settings();
+    assert_eq!(a.claude_link, claude_setup::Link::Invalid);
+    a.settings_click_rows(3, button.0, button.1);
+    assert_eq!(read(), "{ broken", "an invalid file is never written");
+
+    claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn snap_claude_settings_row() {
+    let _lang = i18n::restore_on_drop();
+    let links = [("off", claude_setup::Link::Off), ("on", claude_setup::Link::On), ("moved", claude_setup::Link::Moved), ("invalid", claude_setup::Link::Invalid)];
+    for (lang, prefix) in [(i18n::EN, "claude"), (i18n::ID, "id-claude")] {
+        i18n::set(lang);
+        for (name, link) in links {
+            shot(&format!("{prefix}-settings-row-{name}"), 1.0, |a| {
+                open_settings_tab(a, 3);
+                a.claude_link = link;
+            });
+        }
+    }
+}

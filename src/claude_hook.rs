@@ -1,9 +1,6 @@
 //! Claude Code hooks: what one hook call tells the notch. Claude Code runs `hesewake-notch.exe --claude-hook` with a
 //! JSON object on stdin; this module turns it into a small `Msg` that is sent to the running notch.
 
-// Wired up step by step (bridge process, then the notch side).
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

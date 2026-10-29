@@ -1,9 +1,6 @@
 //! Connects the notch to Claude Code: adds (or removes) our hooks in Claude Code's user settings
 //! (`~/.claude/settings.json`), keeping everything else in the file as it was.
 
-// Wired up in the Settings row.
-#![allow(dead_code)]
-
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -115,6 +112,10 @@ pub(crate) fn settings_path() -> Option<PathBuf> {
 }
 
 fn current_exe() -> String {
+    // The test binary has another name; tests act as the installed app.
+    if cfg!(test) {
+        return r"C:\Program Files\Hesewake Notch\hesewake-notch.exe".to_string();
+    }
     std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
