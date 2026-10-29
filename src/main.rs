@@ -363,6 +363,12 @@ fn demo_toast() -> Option<ToastKind> {
         "timer" => ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() },
         "pomo" => ToastKind::Timer { title: "Focus #1 done".into(), label: "Short break \u{b7} 5 min".into() },
         "update" => ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into(), installer: None })),
+        // an installer that does not exist: Install starts the download, which fails and offers the release page
+        "update-install" => {
+            let base = "https://github.com/dirgaastya/hesewake-notch/releases/download/v9.9.9";
+            let installer = update::Installer { file: "HesewakeNotch-Setup-9.9.9.exe".into(), url: format!("{base}/HesewakeNotch-Setup-9.9.9.exe"), size: 3_300_000, sums_url: format!("{base}/SHA256SUMS") };
+            ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into(), installer: Some(installer) }))
+        }
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "mic-muted" => ToastKind::Hud { kind: HudKind::Mic(Some(true)), on: false },

@@ -252,6 +252,8 @@ impl App {
             return;
         }
         DL_PCT.store(0, Ordering::Relaxed);
+        // kept so a failed download can offer this release's page
+        self.update.get_or_insert_with(|| r.clone());
         self.set_update_note(Note::Downloading(0));
         #[cfg(test)]
         INSTALLS.with(|f| f.borrow_mut().push(inst.file.clone()));
