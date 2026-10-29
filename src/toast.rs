@@ -409,9 +409,9 @@ impl App {
         g.ring(rcx, cy, r, frac, 3.0, &paint(col[0], col[1], col[2], 0.28 * al), &paint(col[0], col[1], col[2], al));
         let ic = paint(255, 255, 255, al * if s == Some(false) { 1.0 } else { 0.8 });
         if s == Some(false) {
-            g.icon_mic(rcx, cy, 13.0 * sc, &ic);
+            g.icon_mic(rcx, cy, 15.0 * sc, &ic);
         } else {
-            g.icon_mic_off(rcx, cy, 13.0 * sc, &ic);
+            g.icon_mic_off(rcx, cy, 15.0 * sc, &ic);
         }
         let k = ss(0.08, 0.32, t);
         let (label, state) = mic_hud_text(s);

@@ -174,8 +174,8 @@ impl Gfx {
     pub(crate) fn icon_mic_off(&mut self, cx: f32, cy: f32, s: f32, p: &Paint) {
         self.icon_mic(cx, cy, s, p);
         let lw = (s * 0.1).max(1.1);
-        let (x1, y1, x2, y2) = (cx - s * 0.5, cy - s * 0.5, cx + s * 0.5, cy + s * 0.62);
-        self.line(x1, y1, x2, y2, lw * 3.0, &paint(0, 0, 0, 1.0));
+        let (x1, y1, x2, y2) = (cx - s * 0.46, cy - s * 0.5, cx + s * 0.46, cy + s * 0.6);
+        self.line(x1, y1, x2, y2, lw * 2.4, &paint(0, 0, 0, 1.0));
         self.line(x1, y1, x2, y2, lw, p);
     }
 

@@ -21,7 +21,7 @@ const PRIV_EDGE: f32 = 12.0;
 const PRIV_STEP: f32 = 10.0;
 const PRIV_PAD: f32 = 2.0;
 /// Width taken by the crossed-out mic (mic.rs) in the same row.
-const MIC_OFF_STEP: f32 = 14.0;
+const MIC_OFF_STEP: f32 = 16.0;
 const CAM_RGB: [u8; 3] = [48, 209, 88];
 const MIC_RGB: [u8; 3] = [255, 159, 10];
 /// The crossed-out mic while no app uses the microphone.
@@ -235,7 +235,7 @@ impl App {
             let x = right - m.width() / 2.0;
             match m {
                 Mark::Dot(c) => g.circle(x, h / 2.0, 3.6 * pop.min(1.15), &paint(c[0], c[1], c[2], ca)),
-                Mark::MicOff(c) => g.icon_mic_off(x, h / 2.0, 10.0 * pop.min(1.15), &paint(c[0], c[1], c[2], ca)),
+                Mark::MicOff(c) => g.icon_mic_off(x, h / 2.0, 13.0 * pop.min(1.15), &paint(c[0], c[1], c[2], ca)),
             }
             right -= m.width();
         }
