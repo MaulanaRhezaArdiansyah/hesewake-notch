@@ -392,6 +392,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             }
             LRESULT(0)
         }
+        update::WM_UPDATE_DL => {
+            with_app(|a| {
+                a.on_update_dl();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         calendar::WM_CALENDAR => {
             with_app(|a| {
                 // ignore a late result for a link that was just removed or replaced

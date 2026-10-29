@@ -134,13 +134,13 @@ fn download(hwnd: isize) -> Option<Vec<u8>> {
     Some(v)
 }
 
-fn sha256(data: &[u8]) -> Option<[u8; 32]> {
+pub(crate) fn sha256(data: &[u8]) -> Option<[u8; 32]> {
     use windows::Win32::Security::Cryptography::{BCryptHash, BCRYPT_SHA256_ALG_HANDLE};
     let mut out = [0u8; 32];
     unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, None, data, &mut out) }.is_ok().then_some(out)
 }
 
-fn hex(b: &[u8]) -> String {
+pub(crate) fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
 

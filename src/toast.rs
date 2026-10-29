@@ -141,6 +141,8 @@ impl App {
             ToastKind::Timer { .. } => 6.0,
             ToastKind::Meeting { .. } => 15.0,
             ToastKind::Update(update::Note::Available(_)) => 10.0,
+            ToastKind::Update(update::Note::Downloading(_)) => 20.0,
+            ToastKind::Update(update::Note::DownloadFailed(_)) => 12.0,
             ToastKind::Update(_) => 4.0,
             _ => 3.4,
         };
@@ -451,11 +453,15 @@ impl App {
     pub(crate) fn toast_has_button(&self) -> bool {
         matches!(
             self.toast.as_ref().map(|t| &t.kind),
-            Some(ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(update::Note::Available(_)))
+            Some(
+                ToastKind::Water
+                    | ToastKind::Meeting { .. }
+                    | ToastKind::Update(update::Note::Available(_) | update::Note::Downloading(_) | update::Note::DownloadFailed(_))
+            )
         )
     }
 
-    fn end_toast(&mut self) {
+    pub(crate) fn end_toast(&mut self) {
         self.toast = None;
         self.toast_end = Instant::now();
     }
@@ -472,8 +478,16 @@ impl App {
             if !in_rect(x, y, CX - w / 2.0, 0.0, w, h) {
                 return false;
             }
-            if let update::Note::Available(r) = note {
-                sys::open_url(&r.url);
+            match note.clone() {
+                // one click: download the installer, check it and run it (the toast shows the progress)
+                update::Note::Available(r) if r.installer.is_some() => {
+                    self.update_install(&r);
+                    return true;
+                }
+                update::Note::Available(r) | update::Note::DownloadFailed(r) => sys::open_url(&r.url),
+                // nothing to press while downloading
+                update::Note::Downloading(_) => return true,
+                _ => {}
             }
             self.end_toast();
             return true;

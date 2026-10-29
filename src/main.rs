@@ -362,7 +362,7 @@ fn demo_toast() -> Option<ToastKind> {
         "water" => ToastKind::Water,
         "timer" => ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() },
         "pomo" => ToastKind::Timer { title: "Focus #1 done".into(), label: "Short break \u{b7} 5 min".into() },
-        "update" => ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into() })),
+        "update" => ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into(), installer: None })),
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
         "mic-muted" => ToastKind::Hud { kind: HudKind::Mic(Some(true)), on: false },
