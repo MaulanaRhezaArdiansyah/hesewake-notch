@@ -446,9 +446,13 @@ fn water_btns(w: f32, h: f32) -> ((f32, f32, f32, f32), (f32, f32, f32, f32)) {
 }
 
 impl App {
-    /// Toast Water sedang tampil (hover di atasnya tidak boleh membuka notch dan membatalkannya).
-    pub(crate) fn water_toast(&self) -> bool {
-        matches!(self.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Water))
+    /// Toast dengan tombol yang bisa diklik (Water: Snooze/Drank, rapat: Join, pembaruan: Download): hover di atasnya tidak
+    /// boleh membuka notch, karena itu membatalkan toast sebelum tombolnya sempat dipencet.
+    pub(crate) fn toast_has_button(&self) -> bool {
+        matches!(
+            self.toast.as_ref().map(|t| &t.kind),
+            Some(ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(update::Note::Available(_)))
+        )
     }
 
     fn end_toast(&mut self) {
