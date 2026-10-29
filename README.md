@@ -44,6 +44,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 | <img src="https://api.iconify.design/lucide/folder-open.svg?color=%23ff453a" width="22">  | **Ledge** | A shelf for up to 5 files or folders. Drop them in, click to open, drag them back out (copy by default, hold `Shift` to move).                                    |
 | <img src="https://api.iconify.design/lucide/notebook-pen.svg?color=%23ff453a" width="22"> | **Scrap** | Mini notepad, up to 3,333 characters, with caret, selection, clipboard and a live character counter.                                                              |
 | <img src="https://api.iconify.design/lucide/clipboard-list.svg?color=%23ff453a" width="22"> | **Clipboard** | Optional (turn it on in Settings > Slides). The last 10 texts you copied in any app; click one to copy it again. Kept in memory only, and copies that password managers mark as private are skipped. |
+| <img src="https://api.iconify.design/lucide/calendar-days.svg?color=%23ff453a" width="22"> | **Agenda** | Optional. What is left on today's calendar, with a **Join** button for Meet / Zoom / Teams links. Needs the calendar link (see Calendar below). |
 
 ---
 
@@ -59,6 +60,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
 | <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romaji lyrics  | Optional (Settings > Extras): Japanese  lyrics shown in romaji, using Lindera (IPADIC) and WanaKana.                 |
 | <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > Features > Language). Applies right away, including the right-click menu.     |
+| <img src="https://api.iconify.design/lucide/calendar-clock.svg?color=%23ff453a" width="22"> | Calendar       | Settings > Features > Calendar: copy your calendar's secret ICS address (Google: "Secret address in iCal format", Outlook: "Publish calendar"), then press **Paste**. The notch counts down the last 10 minutes before a meeting and shows a toast with **Join** when it starts. The link is kept in Windows Credential Manager (not in a file) and the feed is refreshed every 10 minutes. |
 
 ---
 
@@ -97,6 +99,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics 
 | `water.rs`, `todo.rs`, `shelf.rs`, `note.rs` | Water, To-do, Ledge and Scrap slides                               |
 | `i18n.rs`                                    | UI language: English text as the key, Indonesian table             |
 | `clipboard.rs`                               | Clipboard history slide and clipboard listener                     |
+| `ics.rs`, `calendar.rs`                      | iCalendar reader (time zones, recurring events), calendar feed, Agenda slide |
 | `dragdrop.rs`                                | OLE drag out of the Ledge                                          |
 | `eye.rs`, `busy.rs`, `icon.rs`               | Eye animation, busy detection, app icons                           |
 | `nav.rs`, `input.rs`, `config.rs`, `data.rs` | Carousel, clicks and menu, shared sizes, data storage              |

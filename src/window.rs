@@ -239,6 +239,24 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     present(a);
                     return;
                 }
+                if vertical && a.is_slide(SlideId::Settings) && a.sui.tab == 0 && a.slides_scrollable() {
+                    if a.last_wheel.elapsed() >= Duration::from_millis(90) {
+                        a.last_wheel = Instant::now();
+                        if a.settings_slides_wheel(d < 0) {
+                            present(a);
+                        }
+                    }
+                    return;
+                }
+                if vertical && a.is_slide(SlideId::Agenda) && a.agenda_scrollable() {
+                    if a.last_wheel.elapsed() >= Duration::from_millis(90) {
+                        a.last_wheel = Instant::now();
+                        if a.agenda_wheel(d < 0) {
+                            present(a);
+                        }
+                    }
+                    return;
+                }
                 if vertical && a.is_slide(SlideId::Clipboard) && a.clips.len() > clipboard::ROWS {
                     if a.last_wheel.elapsed() >= Duration::from_millis(90) {
                         a.last_wheel = Instant::now();
@@ -353,6 +371,19 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             });
             let cmd = context_menu(hwnd, sys::autostart_enabled(), minimal, notif_on);
             run_command(hwnd, cmd);
+            LRESULT(0)
+        }
+        calendar::WM_CALENDAR => {
+            with_app(|a| {
+                // ignore a late result for a link that was just removed or replaced
+                if let Some((link, status, events)) = calendar::take().filter(|(l, ..)| Some(l) == a.cal_link.as_ref()) {
+                    let _ = link;
+                    a.cal_update(status, events);
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                }
+            });
             LRESULT(0)
         }
         weather::WM_WEATHER => {
