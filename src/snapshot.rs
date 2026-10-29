@@ -1133,3 +1133,25 @@ fn rows_tab_scrolls_to_the_last_rows() {
     a.settings_set_tab(2);
     assert_eq!(a.sui.rows_scroll, 0);
 }
+
+/// The lyrics mode shows where the lyrics came from ("via lrc.red"), in both languages.
+#[test]
+fn lyric_mode_credits_the_source() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, prefix) in [(i18n::EN, "lyrics"), (i18n::ID, "id-lyrics")] {
+        i18n::set(lang);
+        for (src, name) in [(lyrics::Source::Lrclib, "lrclib"), (lyrics::Source::LrcRed, "lrcred")] {
+            shot(&format!("{prefix}-credit-{name}"), 1.0, |a| {
+                a.media.title = "Song".into();
+                a.media.artist = "Artist".into();
+                a.media.dur = 200;
+                a.media.playing = true;
+                a.lyrics = lyrics::Lyrics::Synced(lyrics::parse_lrc("[00:01.00]First line
+[00:05.00]Second line
+[00:09.00]Third line"), src);
+                a.lyric_mode = true;
+                open_slide(a, SlideId::Music);
+            });
+        }
+    }
+}

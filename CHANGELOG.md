@@ -4,6 +4,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikut
 
 ## [0.10.0] - 2026-10-29
 
+### Added
+- **Lirik cadangan dari [lrc.red](https://lrc.red)**: bila LRCLIB tidak punya lirik sinkron untuk sebuah lagu, aplikasi mencari di lrc.red (judul + artis, lalu judul saja). Hasil hanya dipakai bila judulnya sama persis (versi lain seperti "(Acoustic)" tidak ikut), artisnya cocok, dan durasinya selisih paling banyak 3 detik. Penanda waktu per kata (`<00:19.76>`) dibuang supaya baris tampil bersih. Permintaan hanya terjadi sekali per lagu, dan hanya bila LRCLIB tidak punya lirik sinkron. Sesuai syarat lrc.red, permintaan memakai User-Agent yang menyebut aplikasi, tautan, dan email kontak, dan sumber lirik dikreditkan: label kecil "via lrc.red" / "via LRCLIB" (klik membuka situsnya) di pojok panel mode lirik, serta di kotak About.
+- Unison (Better Lyrics) ikut dicoba sebagai sumber lain, tetapi dilewati: tujuh pencarian lagu populer, Jepang, dan Indonesia semuanya tidak ditemukan karena kuncinya video YouTube.
+
 ### Changed
 - **Settings dirapikan**: tab kini **Slides, General, Alerts, Widgets** (sebelumnya Slides, Display, Features, Alerts, Extras), dikelompokkan menurut tujuan. **General**: Language, Accent, Autostart, Slide hotkeys, Monitor, Notch size, Minimal notch, Thin on maximize, Idle display. **Alerts**: Notifications, Contact photos, Volume HUD, Brightness HUD, Lock keys, Mic / camera dot, Update notice. **Widgets**: Weather, City, Prayer times, Calendar, Lyric timing, Romaji lyrics (dan Delete kamus).
 - **Baris bisa di-scroll**: tab General, Alerts, dan Widgets menampilkan tiga baris sel sekaligus dan sisanya digulir dengan roda mouse (scrollbar tipis di kanan), sehingga tidak ada lagi batas enam pengaturan per tab. Sel kini tersusun kiri ke kanan, atas ke bawah. Pindah tab selalu mulai dari atas.

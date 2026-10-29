@@ -101,8 +101,8 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("About Hesewake Notch", "Tentang Hesewake Notch"),
     ("Exit", "Keluar"),
     (
-        "Hesewake Notch {}\nA personal notch for the top of your screen.\n\nBased on Poch by Commonly Works\n(github.com/klawcodes/poch), MIT License.\nLyrics provided by LRCLIB (lrclib.net).\nRomaji: Lindera (IPADIC) and WanaKana.\nFont: Instrument Sans.",
-        "Hesewake Notch {}\nNotch pribadi di bagian atas layar.\n\nBerdasarkan Poch karya Commonly Works\n(github.com/klawcodes/poch), Lisensi MIT.\nLirik dari LRCLIB (lrclib.net).\nRomaji: Lindera (IPADIC) dan WanaKana.\nFont: Instrument Sans.",
+        "Hesewake Notch {}\nA personal notch for the top of your screen.\n\nBased on Poch by Commonly Works\n(github.com/klawcodes/poch), MIT License.\nLyrics: LRCLIB (lrclib.net) and lrc.red.\nRomaji: Lindera (IPADIC) and WanaKana.\nFont: Instrument Sans.",
+        "Hesewake Notch {}\nNotch pribadi di bagian atas layar.\n\nBerdasarkan Poch karya Commonly Works\n(github.com/klawcodes/poch), Lisensi MIT.\nLirik: LRCLIB (lrclib.net) dan lrc.red.\nRomaji: Lindera (IPADIC) dan WanaKana.\nFont: Instrument Sans.",
     ),
     // slide names
     ("Music", "Musik"),
@@ -290,6 +290,7 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("Turn them on from the menu (right-click the notch).", "Nyalakan dari menu (klik kanan notch)."),
     ("No notifications", "Tidak ada notifikasi"),
     ("No media", "Tidak ada media"),
+    ("via {}", "dari {}"),
     ("Loading lyrics", "Memuat lirik"),
     ("Lyrics not available", "Lirik tidak tersedia"),
     ("Lyrics not synced", "Lirik tidak sinkron"),

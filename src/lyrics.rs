@@ -1,9 +1,35 @@
-//! Lirik sinkron dari LRCLIB (https://lrclib.net): fetch di thread terpisah, parser LRC, pencarian baris aktif.
+//! Lirik sinkron dari LRCLIB (https://lrclib.net), dengan lrc.red (https://lrc.red) sebagai cadangan: fetch di thread
+//! terpisah, parser LRC, pencarian baris aktif.
 
 use super::*;
 use serde::Deserialize;
 
-const UA: &str = concat!("HesewakeNotch/", env!("CARGO_PKG_VERSION"), " (Windows; based on Poch)");
+/// lrc.red mewajibkan User-Agent berisi nama aplikasi, tautan, dan email kontak.
+const UA: &str = concat!("HesewakeNotch/", env!("CARGO_PKG_VERSION"), " (+https://github.com/dirgaastya/hesewake-notch; hesewake@gmail.com)");
+
+/// Dari mana lirik berasal; ditampilkan sebagai kredit di mode lirik.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum Source {
+    #[default]
+    Lrclib,
+    LrcRed,
+}
+
+impl Source {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Source::Lrclib => "LRCLIB",
+            Source::LrcRed => "lrc.red",
+        }
+    }
+
+    pub(crate) fn url(self) -> &'static str {
+        match self {
+            Source::Lrclib => "https://lrclib.net",
+            Source::LrcRed => "https://lrc.red",
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct LyricLine {
@@ -29,7 +55,7 @@ pub(crate) enum Lyrics {
     #[default]
     None,
     Loading,
-    Synced(Vec<LyricLine>),
+    Synced(Vec<LyricLine>, Source),
     /// Hanya ada lirik tanpa timestamp: tidak ditampilkan per baris.
     Plain,
     Unavailable,
@@ -95,8 +121,17 @@ pub(crate) fn skip(source: &str, title: &str, artist: &str, dur_secs: u32) -> bo
     hit(source) || hit(title) || hit(artist) || dur_secs >= MAX_LYRIC_SECS
 }
 
-/// Cari lirik untuk satu lagu. Blocking: panggil dari thread terpisah.
+/// Cari lirik untuk satu lagu: LRCLIB dulu, lalu lrc.red bila LRCLIB tidak punya lirik sinkron. Blocking: panggil dari
+/// thread terpisah.
 pub(crate) fn fetch(title: &str, artist: &str, dur_secs: u32) -> Lyrics {
+    let first = lrclib(title, artist, dur_secs);
+    if matches!(first, Lyrics::Synced(..)) {
+        return first;
+    }
+    lrcred(title, artist, dur_secs).unwrap_or(first)
+}
+
+fn lrclib(title: &str, artist: &str, dur_secs: u32) -> Lyrics {
     let base = format!("track_name={}&artist_name={}", pct(title), pct(artist));
     // 1) Pencocokan tepat (pakai durasi bila ada); 404 -> get_string mengembalikan None.
     let exact = if dur_secs > 0 {
@@ -131,7 +166,7 @@ fn from_entry(e: &Entry) -> Option<Lyrics> {
     if let Some(s) = e.synced_lyrics.as_deref().filter(|s| !s.trim().is_empty()) {
         let lines = parse_lrc(s);
         if !lines.is_empty() {
-            return Some(Lyrics::Synced(lines));
+            return Some(Lyrics::Synced(lines, Source::Lrclib));
         }
     }
     if e.instrumental == Some(true) {
@@ -157,13 +192,108 @@ pub(crate) fn parse_lrc(body: &str) -> Vec<LyricLine> {
             }
             rest = after;
         }
-        let text = rest.trim();
+        let text = strip_word_tags(rest);
         for ms in stamps {
-            out.push(LyricLine { at_ms: ms, text: text.to_string(), roma: String::new() });
+            out.push(LyricLine { at_ms: ms, text: text.clone(), roma: String::new() });
         }
     }
     out.sort_by_key(|l| l.at_ms);
     out
+}
+
+/// Hapus penanda waktu per kata (`<00:19.76>`, "enhanced LRC" dari lrc.red) dan rapikan spasi.
+fn strip_word_tags(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('<') {
+        let (head, tail) = rest.split_at(i);
+        out.push_str(head);
+        match tail.find('>') {
+            Some(j) if tail[1..j].bytes().all(|b| b.is_ascii_digit() || b == b':' || b == b'.') => rest = &tail[j + 1..],
+            _ => {
+                out.push('<');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// ---------------------------------------------------------------- lrc.red
+
+/// Satu hasil pencarian lrc.red (`/search.json`).
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Hit {
+    isrc: String,
+    title: String,
+    artist: String,
+    duration: f64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Hits {
+    hits: Vec<Hit>,
+}
+
+/// Huruf dan angka saja, huruf kecil: "Hati-Hati di Jalan" -> "hatihatidijalan".
+fn norm(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// Hasil yang cocok dengan lagu ini: judul sama persis (versi lain seperti "(Acoustic)" tidak ikut), artis saling
+/// mengandung, dan durasi paling dekat (maksimal 3 detik bila durasi lagu diketahui).
+fn pick_hit<'a>(hits: &'a [Hit], title: &str, artist: &str, dur_secs: u32) -> Option<&'a Hit> {
+    let t = norm(title);
+    if t.is_empty() {
+        return None;
+    }
+    hits.iter()
+        .filter(|h| !h.isrc.is_empty() && norm(&h.title) == t)
+        .filter(|h| artist.trim().is_empty() || same_artist(artist, &h.artist))
+        .filter(|h| dur_secs == 0 || (h.duration - dur_secs as f64).abs() <= 3.0)
+        .min_by(|x, y| {
+            let d = |h: &Hit| (h.duration - dur_secs as f64).abs();
+            d(x).total_cmp(&d(y))
+        })
+}
+
+/// Artis yang sama: satu nama mengandung yang lain, atau berbagi satu kata (urutan nama Jepang bisa terbalik:
+/// "Hata Motohiro" / "Motohiro Hata"). Kata pendek ("the", "feat") tidak dihitung.
+fn same_artist(a: &str, b: &str) -> bool {
+    let (na, nb) = (norm(a), norm(b));
+    if na.is_empty() || nb.is_empty() {
+        return true;
+    }
+    if na.contains(&nb) || nb.contains(&na) {
+        return true;
+    }
+    let words = |s: &str| -> Vec<String> { s.split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 4).map(|w| w.to_lowercase()).collect() };
+    let wb = words(b);
+    words(a).iter().any(|w| wb.contains(w))
+}
+
+/// ISRC dari kode lrc.red hanya huruf dan angka; tolak yang lain sebelum dipakai di URL.
+fn valid_isrc(s: &str) -> bool {
+    s.len() == 12 && s.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// Cari di lrc.red: pencarian judul + artis (lalu judul saja), lalu unduh file LRC lagu yang cocok.
+fn lrcred(title: &str, artist: &str, dur_secs: u32) -> Option<Lyrics> {
+    for q in [format!("{title} {artist}"), title.to_string()] {
+        let body = get_string(&format!("https://lrc.red/search.json?q={}", pct(&q)))?;
+        let hits: Hits = serde_json::from_str(&body).unwrap_or_default();
+        let Some(hit) = pick_hit(&hits.hits, title, artist, dur_secs) else { continue };
+        if !valid_isrc(&hit.isrc) {
+            return None;
+        }
+        let lrc = get_string(&format!("https://lrc.red/s/{}.lrc", hit.isrc))?;
+        let lines = parse_lrc(&lrc);
+        return (!lines.is_empty()).then(|| Lyrics::Synced(lines, Source::LrcRed));
+    }
+    None
 }
 
 fn parse_ts(ts: &str) -> Option<u32> {
@@ -192,6 +322,77 @@ pub(crate) fn current_line(lines: &[LyricLine], pos_ms: u32, lead_ms: i32) -> Op
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn hit(isrc: &str, title: &str, artist: &str, duration: f64) -> Hit {
+        Hit { isrc: isrc.into(), title: title.into(), artist: artist.into(), duration }
+    }
+
+    #[test]
+    fn word_timestamps_are_stripped_from_lrc_lines() {
+        let lines = parse_lrc("[ti:Song]
+[length:03:58]
+
+[00:19.76]<00:19.76>When <00:20.11>you were <00:20.33>here <00:20.61>before <00:21.90>
+[00:24.59]<00:24.59>Couldn't <00:25.03>look");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].text, "When you were here before");
+        assert_eq!(lines[0].at_ms, 19_760);
+        assert_eq!(lines[1].text, "Couldn't look");
+        // text that only looks like a tag stays
+        assert_eq!(strip_word_tags("a <3 b > c <i>x</i>"), "a <3 b > c <i>x</i>");
+        assert_eq!(strip_word_tags("<00:01.00>"), "");
+    }
+
+    #[test]
+    fn lrcred_hit_must_match_title_artist_and_duration() {
+        let hits = vec![
+            hit("GBAYE9300465", "Creep (Acoustic)", "Radiohead", 258.64),
+            hit("GBAYE9200070", "Creep", "Radiohead", 238.64),
+            hit("XXAYE9200070", "Creep", "Someone Else", 238.0),
+            hit("", "Creep", "Radiohead", 238.0),
+        ];
+        let best = pick_hit(&hits, "Creep", "Radiohead", 238).expect("a match");
+        assert_eq!(best.isrc, "GBAYE9200070", "the exact version, not the acoustic one or another artist");
+        assert!(pick_hit(&hits, "Creep", "Radiohead", 300).is_none(), "duration too far off");
+        assert!(pick_hit(&hits, "Creep", "Radiohead", 0).is_some(), "unknown duration still matches by title and artist");
+        assert!(pick_hit(&hits, "Karma Police", "Radiohead", 238).is_none());
+        assert!(pick_hit(&hits, "", "Radiohead", 238).is_none());
+        // "Hati-Hati di Jalan" and "hati hati di jalan" are the same title; the artist may be a longer credit
+        let h2 = vec![hit("IDA012300001", "Hati-Hati di Jalan", "Tulus", 245.0)];
+        assert!(pick_hit(&h2, "hati hati di jalan", "Tulus", 246).is_some());
+        let h3 = vec![hit("JPA012300001", "Himawari no Yakusoku", "Hata Motohiro", 315.0)];
+        assert!(pick_hit(&h3, "Himawari no Yakusoku", "Motohiro Hata, Someone", 315).is_some());
+    }
+
+    #[test]
+    fn isrc_is_checked_before_it_goes_into_a_url() {
+        assert!(valid_isrc("GBAYE9200070"));
+        for bad in ["", "GBAYE920007", "GBAYE92000700", "GBAYE9200/70", "GBAYE9200 70", "../../etc/pw"] {
+            assert!(!valid_isrc(bad), "{bad:?}");
+        }
+    }
+
+    /// Talks to the real lrc.red (run with `cargo test -- --ignored`): the search finds the song and its LRC parses.
+    #[test]
+    #[ignore = "network"]
+    fn real_lrcred_finds_a_song() {
+        let Some(Lyrics::Synced(lines, Source::LrcRed)) = lrcred("Creep", "Radiohead", 238) else { panic!("lrc.red answered with lyrics") };
+        assert!(lines.len() > 20 && lines.iter().all(|l| !l.text.contains('<')), "word tags are gone");
+        assert!(lrcred("zzzz qqqq not a song", "nobody", 100).is_none());
+    }
+
+    #[test]
+    fn sources_have_a_name_and_a_link() {
+        assert_eq!((Source::Lrclib.name(), Source::LrcRed.name()), ("LRCLIB", "lrc.red"));
+        assert!(Source::LrcRed.url().starts_with("https://lrc.red") && Source::Lrclib.url().starts_with("https://lrclib.net"));
+    }
+
+    #[test]
+    fn user_agent_names_the_app_with_a_link_and_contact() {
+        assert!(UA.starts_with("HesewakeNotch/") && UA.contains("https://github.com/dirgaastya/hesewake-notch") && UA.contains("hesewake@gmail.com"));
+    }
+
     #[test]
     fn skips_video_services_and_long_media() {
         assert!(skip("Netflix", "Stranger Things", "", 0));
@@ -201,8 +402,6 @@ mod tests {
         assert!(!skip("Spotify", "Lemon", "Kenshi Yonezu", 255));
         assert!(!skip("Chrome", "One more time, One more chance", "Masayoshi Yamazaki", 0));
     }
-
-    use super::*;
 
     #[test]
     fn parses_basic_and_multi_stamps() {
@@ -261,7 +460,7 @@ impl App {
     /// Hitung ulang baris aktif. True bila berubah (perlu redraw).
     pub(crate) fn lyric_update(&mut self) -> bool {
         let idx = match &self.lyrics {
-            Lyrics::Synced(lines) => current_line(lines, self.lyric_pos_ms(), self.cfg.lyric_lead_ms),
+            Lyrics::Synced(lines, _) => current_line(lines, self.lyric_pos_ms(), self.cfg.lyric_lead_ms),
             _ => None,
         };
         if idx == self.lyric_idx {
@@ -280,13 +479,13 @@ impl App {
 
     /// Lirik sinkron tersedia untuk lagu yang sedang main (menentukan lebar notch kecil).
     pub(crate) fn lyric_synced(&self) -> bool {
-        self.media.playing && matches!(self.lyrics, Lyrics::Synced(_))
+        self.media.playing && matches!(self.lyrics, Lyrics::Synced(..))
     }
 
     /// Teks baris aktif (None sebelum baris pertama atau saat jeda instrumental/baris kosong).
     pub(crate) fn lyric_text(&self) -> Option<&str> {
         match (&self.lyrics, self.lyric_idx) {
-            (Lyrics::Synced(lines), Some(i)) => lines.get(i).map(|l| l.shown(self.cfg.romaji_lyrics)).filter(|t| !t.is_empty()),
+            (Lyrics::Synced(lines, _), Some(i)) => lines.get(i).map(|l| l.shown(self.cfg.romaji_lyrics)).filter(|t| !t.is_empty()),
             _ => None,
         }
     }
@@ -294,15 +493,15 @@ impl App {
     /// Setelah toggle "Romaji lyrics": lirik lagu sekarang yang belum punya romaji dikonversi di thread terpisah
     /// (hasilnya lewat slot lirik + WM_APP, jalur yang sama dengan fetch), dan baris aktif dihitung ulang.
     pub(crate) fn romaji_refresh(&mut self) {
-        if let (true, Lyrics::Synced(lines)) = (self.cfg.romaji_lyrics, &self.lyrics) {
+        if let (true, Lyrics::Synced(lines, src)) = (self.cfg.romaji_lyrics, &self.lyrics) {
             if lines.iter().all(|l| l.roma.is_empty()) && lines.iter().any(|l| romaji::has_kana(&l.text)) {
-                let (mut v, key, slot, hwnd) = (lines.clone(), self.art_key.clone(), self.lyr_shared.clone(), self.hwnd);
+                let (mut v, src, key, slot, hwnd) = (lines.clone(), *src, self.art_key.clone(), self.lyr_shared.clone(), self.hwnd);
                 std::thread::spawn(move || {
                     romaji::annotate(&mut v);
                     let mut s = slot.lock().unwrap_or_else(|p| p.into_inner());
                     // Jangan menimpa hasil fetch lagu berikutnya yang sudah menunggu di slot.
                     if s.as_ref().map_or(true, |(k, _)| *k == key) {
-                        *s = Some((key, Lyrics::Synced(v)));
+                        *s = Some((key, Lyrics::Synced(v, src)));
                     }
                     drop(s);
                     music::post_refresh(hwnd);
