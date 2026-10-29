@@ -66,9 +66,9 @@ impl Phase {
 
     fn name(self) -> &'static str {
         match self {
-            Phase::Focus => "Focus",
-            Phase::Short => "Short break",
-            Phase::Long => "Long break",
+            Phase::Focus => tr("Focus"),
+            Phase::Short => tr("Short break"),
+            Phase::Long => tr("Long break"),
         }
     }
 
@@ -265,8 +265,8 @@ pub(crate) fn fmt_clock(secs: u64) -> String {
 /// Toast title and body when Pomodoro phase `ended` runs out and `next` begins; `done` = finished focus sessions.
 fn pomo_toast(ended: Phase, next: Phase, done: u32) -> (String, String) {
     match ended {
-        Phase::Focus => (format!("Focus #{done} done"), format!("{} \u{b7} {}", next.name(), fmt_preset(next.secs()))),
-        Phase::Short | Phase::Long => ("Break over".into(), format!("Focus \u{b7} {}", fmt_preset(next.secs()))),
+        Phase::Focus => (fill(tr("Focus #{} done"), &[&done]), format!("{} \u{b7} {}", next.name(), fmt_preset(next.secs()))),
+        Phase::Short | Phase::Long => (tr("Break over").into(), fill(tr("Focus \u{b7} {}"), &[&fmt_preset(next.secs())])),
     }
 }
 
@@ -279,9 +279,9 @@ fn pomo_dots(phase: Phase, done: u32) -> u32 {
 pub(crate) fn fmt_preset(secs: u32) -> String {
     let (h, m) = (secs / 3600, (secs % 3600) / 60);
     match (h, m) {
-        (0, m) => format!("{m} min"),
-        (h, 0) => format!("{h} h"),
-        (h, m) => format!("{h} h {m} min"),
+        (0, m) => fill(tr("{} min"), &[&m]),
+        (h, 0) => fill(tr("{} h"), &[&h]),
+        (h, m) => fill(tr("{} h {} min"), &[&h, &m]),
     }
 }
 
@@ -427,9 +427,9 @@ impl App {
                 self.push_toast(toast::ToastKind::Timer { title, label });
                 return true;
             }
-            let label = format!("{} timer", fmt_preset(self.tm.preset));
+            let label = fill(tr("{} timer"), &[&fmt_preset(self.tm.preset)]);
             self.tm.finish();
-            self.push_toast(toast::ToastKind::Timer { title: "Time's up".into(), label });
+            self.push_toast(toast::ToastKind::Timer { title: tr("Time's up").into(), label });
             return true;
         }
         let s = self.tm.display_secs(now);
@@ -476,13 +476,13 @@ impl App {
                 THit::Mode(m) => {
                     let label = match m {
                         TMode::Stopwatch => "Stopwatch",
-                        TMode::Countdown => "Countdown",
+                        TMode::Countdown => tr("Countdown##short"),
                         TMode::Pomodoro => "Pomodoro",
                     };
                     g.chip(r.0 + ox, r.1, r.2, r.3, label, m == tm.mode, al)
                 }
                 THit::Toggle => {
-                    let label = if running { "Pause" } else if tm.elapsed(now) > Duration::ZERO && !tm.finished(now) { "Resume" } else { "Start" };
+                    let label = if running { tr("Pause") } else if tm.elapsed(now) > Duration::ZERO && !tm.finished(now) { tr("Resume") } else { tr("Start") };
                     g.pill(r.0 + ox, r.1, r.2, r.3, if running { [255, 255, 255] } else { g.acc.dark }, if running { 0.14 } else { 0.85 } * al, 1.0);
                     g.txt_c(label, r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 14.0), 14.0, [225, 238, 255], al, r.2, true);
                 }
@@ -495,12 +495,12 @@ impl App {
                     g.chip(r.0 + ox, r.1, r.2, r.3, &label, PRESETS[i] == tm.preset, if running { al * 0.45 } else { al });
                 }
                 THit::Minus | THit::Plus => {
-                    let label = if h == THit::Minus { "\u{2212} 1 min" } else { "+ 1 min" };
+                    let label = if h == THit::Minus { tr("\u{2212} 1 min") } else { tr("+ 1 min") };
                     g.pill(r.0 + ox, r.1, r.2, r.3, [255, 255, 255], 0.10 * al, 1.0);
                     g.txt_c(label, r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 12.0), 12.0, [225, 228, 236], if running { al * 0.45 } else { al }, r.2, true);
                 }
                 THit::Skip => {
-                    let label = if tm.phase == Phase::Focus { "Skip to break" } else { "Skip break" };
+                    let label = if tm.phase == Phase::Focus { tr("Skip to break") } else { tr("Skip break") };
                     g.pill(r.0 + ox, r.1, r.2, r.3, [255, 255, 255], 0.10 * al, 1.0);
                     g.txt_c(label, r.0 + ox + r.2 / 2.0, r.1 + ty(r.3, 12.0), 12.0, [225, 228, 236], al, r.2, true);
                 }
@@ -510,7 +510,7 @@ impl App {
         // Pomodoro: cycle progress dots (4 focus sessions) and finished-session count, in the right column.
         if pomo {
             let filled = pomo_dots(tm.phase, tm.done);
-            g.txt("Sessions", PX + ox, 40.0, 12.0, GREY, al, 120.0);
+            g.txt(tr("Sessions"), PX + ox, 40.0, 12.0, GREY, al, 120.0);
             for i in 0..LONG_EVERY {
                 let (cx, cy) = (PX + ox + 8.0 + i as f32 * 24.0, 74.0);
                 if i < filled {
@@ -523,7 +523,7 @@ impl App {
                     g.circle(cx, cy, 7.0, &paint(255, 255, 255, 0.12 * al));
                 }
             }
-            let total = if tm.done == 1 { "1 done".to_string() } else { format!("{} done", tm.done) };
+            let total = fill(tr("{} done"), &[&tm.done]);
             g.txt(&total, PX + ox + 104.0, ty(0.0, 12.0) + 74.0, 12.0, GREY, al, 84.0);
         }
 
@@ -540,8 +540,8 @@ impl App {
         }
         let sub = match tm.mode {
             TMode::Pomodoro => format!("{} \u{b7} {}", tm.phase.name(), fmt_preset(tm.phase.secs())),
-            TMode::Countdown if done => "Time's up".to_string(),
-            TMode::Countdown => format!("Countdown \u{b7} {}", fmt_preset(tm.preset)),
+            TMode::Countdown if done => tr("Time's up").to_string(),
+            TMode::Countdown => fill(tr("Countdown \u{b7} {}"), &[&fmt_preset(tm.preset)]),
             TMode::Stopwatch => "Stopwatch".to_string(),
         };
         let sub_col = if pomo { tm.phase.color() } else if done { GREEN } else { GREY };

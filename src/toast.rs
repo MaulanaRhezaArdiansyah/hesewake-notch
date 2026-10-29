@@ -32,7 +32,7 @@ impl HudKind {
     fn label(self) -> &'static str {
         match self {
             HudKind::Volume(..) => "Volume",
-            HudKind::Brightness(..) => "Brightness",
+            HudKind::Brightness(..) => tr("Brightness"),
             HudKind::Caps => "Caps Lock",
             HudKind::Num => "Num Lock",
             HudKind::Scroll => "Scroll Lock",
@@ -218,20 +218,20 @@ impl App {
 
         // (warna aksen, judul, subjudul, fraksi ring, teks kanan)
         let (rgb, title, sub, frac, right) = match &ts.kind {
-            ToastKind::Charging { pct } => (GREEN, "Charging".to_string(), "Charger connected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
-            ToastKind::Unplugged { pct } => ([235, 235, 240], "On battery".to_string(), "Charger disconnected".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
-            ToastKind::LowBattery { pct } => (ACCENT, "Battery low".to_string(), "Plug in your charger".to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
+            ToastKind::Charging { pct } => (GREEN, tr("Charging").to_string(), tr("Charger connected").to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
+            ToastKind::Unplugged { pct } => ([235, 235, 240], tr("On battery").to_string(), tr("Charger disconnected").to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
+            ToastKind::LowBattery { pct } => (ACCENT, tr("Battery low").to_string(), tr("Plug in your charger").to_string(), *pct as f32 / 100.0, Some(format!("{}%", pct))),
             ToastKind::Timer { title, label } => ([255, 170, 60], title.clone(), label.clone(), 1.0, None),
             ToastKind::Bluetooth { name, pct, connected } => {
                 let s = match (connected, pct) {
-                    (true, Some(p)) => format!("Connected \u{b7} {}%", p),
-                    (true, None) => "Connected".to_string(),
-                    (false, _) => "Disconnected".to_string(),
+                    (true, Some(p)) => fill(tr("Connected \u{b7} {}%"), &[p]),
+                    (true, None) => tr("Connected").to_string(),
+                    (false, _) => tr("Disconnected").to_string(),
                 };
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
             ToastKind::Prayer { idx, at } => {
-                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), "Prayer time".to_string(), 1.0, Some(prayer::hhmm(*at)))
+                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), tr("Prayer time").to_string(), 1.0, Some(prayer::hhmm(*at)))
             }
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water => unreachable!(),
         };
@@ -342,7 +342,7 @@ impl App {
             if fw > 0.0 {
                 g.fill(&rrect(bx, by, fw, 6.0, 3.0), &paint(col[0], col[1], col[2], al));
             }
-            let txt = if muted { "Mute".to_string() } else { format!("{pct}%") };
+            let txt = if muted { tr("Mute").to_string() } else { format!("{pct}%") };
             let tw = g.width_ex(&txt, 14.0, true);
             g.txtb(&txt, x0 + w - 20.0 - tw, cy - 9.0, 14.0, [255, 255, 255], al * k, 60.0);
             return;
@@ -357,7 +357,7 @@ impl App {
         g.txt_c(kind.glyph(), rcx, cy - 7.0 * sc, 13.0 * sc, [255, 255, 255], al * if on { 1.0 } else { 0.55 }, 20.0, true);
         let k = ss(0.08, 0.32, t);
         g.txtb(kind.label(), x0 + 54.0 + (1.0 - k) * 6.0, cy - 9.0, 14.0, [255, 255, 255], al * k, 120.0);
-        let state = if on { "On" } else { "Off" };
+        let state = if on { tr("On") } else { tr("Off") };
         let sw = g.width_ex(state, 14.0, true);
         g.txtb(state, x0 + w - 20.0 - sw, cy - 9.0, 14.0, col, al * k, 50.0);
     }
@@ -429,9 +429,9 @@ impl App {
 
         let k = ss(0.12, 0.4, t);
         let tx = x0 + 66.0 + (1.0 - k) * 6.0;
-        g.txtb("Time to Drink", tx, cy - 19.0, 14.0, [255, 255, 255], al * k, 150.0);
+        g.txtb(tr("Time to Drink"), tx, cy - 19.0, 14.0, [255, 255, 255], al * k, 150.0);
         let wt = &self.water;
-        let sub = format!("Stay hydrated! \u{b7} {} / {} L", water::fmt_l(wt.ml as f32), water::fmt_l(wt.goal as f32));
+        let sub = fill(tr("Stay hydrated! \u{b7} {} / {} L"), &[&water::fmt_l(wt.ml as f32), &water::fmt_l(wt.goal as f32)]);
         g.txt(&sub, tx, cy + 2.0, 12.0, GREY, al * k, 150.0);
 
         let (sn, dr) = water_btns(w, h);
@@ -439,9 +439,9 @@ impl App {
         let over = |b: (f32, f32, f32, f32)| cur.map_or(false, |(x, y)| in_rect(x, y, b.0, b.1, b.2, b.3));
         let ba = al * k;
         g.pill(sn.0, sn.1, sn.2, sn.3, [255, 255, 255], if over(sn) { 0.24 } else { 0.13 } * ba, 1.0);
-        g.txt_c("Snooze", sn.0 + sn.2 / 2.0, sn.1 + ty(sn.3, 13.0), 13.0, [228, 232, 240], ba, sn.2, true);
+        g.txt_c(tr("Snooze"), sn.0 + sn.2 / 2.0, sn.1 + ty(sn.3, 13.0), 13.0, [228, 232, 240], ba, sn.2, true);
         g.pill(dr.0, dr.1, dr.2, dr.3, [40, 120, 235], if over(dr) { 1.0 } else { 0.85 } * ba, 1.0);
-        g.txt_c("Drank", dr.0 + dr.2 / 2.0, dr.1 + ty(dr.3, 13.0), 13.0, [255, 255, 255], ba, dr.2, true);
+        g.txt_c(tr("Drank"), dr.0 + dr.2 / 2.0, dr.1 + ty(dr.3, 13.0), 13.0, [255, 255, 255], ba, dr.2, true);
     }
 }
 
@@ -460,7 +460,7 @@ impl App {
             g.icon_mic(rcx, cy, 14.0 * sc, &ic);
         }
         let k = ss(0.08, 0.32, t);
-        let label = if cam { "Camera in use" } else { "Microphone in use" };
+        let label = if cam { tr("Camera in use") } else { tr("Microphone in use") };
         g.txtb(label, x0 + 54.0 + (1.0 - k) * 6.0, cy - 9.0, 14.0, [255, 255, 255], al * k, 150.0);
         let name = if g.width(app, 12.0) > 96.0 { ellipsize(g, app, 12.0, 96.0) } else { app.to_string() };
         let nw = g.width(&name, 12.0);

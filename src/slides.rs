@@ -55,24 +55,24 @@ impl SlideId {
 
     pub(crate) fn label(self) -> &'static str {
         match self {
-            SlideId::Music => "Music",
-            SlideId::Water => "Water",
-            SlideId::Todo => "To-do",
+            SlideId::Music => crate::i18n::tr("Music"),
+            SlideId::Water => crate::i18n::tr("Water"),
+            SlideId::Todo => crate::i18n::tr("To-do"),
             SlideId::Ledge => "Ledge",
             SlideId::Scrap => "Scrap",
-            SlideId::Notifications => "Notifications",
-            SlideId::System => "System",
+            SlideId::Notifications => crate::i18n::tr("Notifications"),
+            SlideId::System => crate::i18n::tr("System"),
             SlideId::Timer => "Timer",
             SlideId::Clipboard => "Clipboard",
-            SlideId::Settings => "Settings",
+            SlideId::Settings => crate::i18n::tr("Settings"),
         }
     }
 
     /// Nama ringkas untuk sel sempit di Settings.
     pub(crate) fn short_label(self) -> &'static str {
         match self {
-            SlideId::Notifications => "Notifs",
-            SlideId::Clipboard => "Clips",
+            SlideId::Notifications => crate::i18n::tr("Notifs"),
+            SlideId::Clipboard => crate::i18n::tr("Clips"),
             other => other.label(),
         }
     }

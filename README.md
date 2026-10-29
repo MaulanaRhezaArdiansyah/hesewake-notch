@@ -58,6 +58,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 |   <img src="https://api.iconify.design/lucide/waves.svg?color=%23ff453a" width="22">    | Drop animation | Dropping a file onto the notch makes its bottom edge ripple like water.                                             |
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
 | <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romaji lyrics  | Optional (Settings > Extras): Japanese  lyrics shown in romaji, using Lindera (IPADIC) and WanaKana.                 |
+| <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > Features > Language). Applies right away, including the right-click menu.     |
 
 ---
 
@@ -94,6 +95,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics 
 | `music.rs`                                   | Media thread, artwork and artwork tint, Music slide                |
 | `clock.rs`                                   | Clock and date helpers                                             |
 | `water.rs`, `todo.rs`, `shelf.rs`, `note.rs` | Water, To-do, Ledge and Scrap slides                               |
+| `i18n.rs`                                    | UI language: English text as the key, Indonesian table             |
 | `clipboard.rs`                               | Clipboard history slide and clipboard listener                     |
 | `dragdrop.rs`                                | OLE drag out of the Ledge                                          |
 | `eye.rs`, `busy.rs`, `icon.rs`               | Eye animation, busy detection, app icons                           |

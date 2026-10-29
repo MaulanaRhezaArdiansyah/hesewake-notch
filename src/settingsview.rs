@@ -7,8 +7,14 @@ use crate::slides::SlideId;
 
 const TAB_Y: f32 = 8.0;
 const TAB_H: f32 = 24.0;
-const TABS: [(&str, f32); 5] = [("Slides", 50.0), ("Display", 56.0), ("Features", 62.0), ("Alerts", 50.0), ("Extras", 52.0)];
-const TAB_X0: f32 = LX + 112.0;
+/// Settings tab names, in order.
+fn tab_labels() -> [&'static str; 5] {
+    [tr("Slides"), tr("Display"), tr("Features"), tr("Alerts"), tr("Extras")]
+}
+/// Padding inside a tab chip, left + right.
+const TAB_PAD: f32 = 14.0;
+const TAB_GAP: f32 = 6.0;
+
 const GRID_Y0: f32 = 42.0;
 /// Two columns of cells fill LX..RX exactly (2 x 198 + 8 = 404), like the other slides.
 const CELL_W: f32 = 198.0;
@@ -55,6 +61,19 @@ fn ss(e0: f32, e1: f32, x: f32) -> f32 {
 /// Tab Slides: 3 kolom x 3 baris (sel sempit agar 7+ slide muat).
 const SC_W: f32 = 117.0;
 const SC_GAP: f32 = 6.5;
+
+/// The Settings tabs: (x, width) of each, sized to their names (which depend on the language) and right-aligned.
+pub(crate) fn tab_rects(g: &mut Gfx) -> Vec<(f32, f32)> {
+    let ws: Vec<f32> = tab_labels().iter().map(|l| g.width_ex(l, 12.0, true).ceil() + TAB_PAD).collect();
+    let mut x = RX - ws.iter().sum::<f32>() - TAB_GAP * (ws.len() - 1) as f32;
+    ws.into_iter()
+        .map(|w| {
+            let r = (x, w);
+            x += w + TAB_GAP;
+            r
+        })
+        .collect()
+}
 
 /// Room for a slide's name in its Settings > Slides cell, left of the up/down chevrons.
 pub(crate) const SLIDE_NAME_W: f32 = 48.0;
@@ -187,47 +206,48 @@ impl App {
     pub(crate) fn settings_rows(&self, tab: u8) -> Vec<Row> {
         match tab {
             1 => vec![
-                Row { label: "Minimal notch", sub: "Thin line while idle", kind: RowKind::Toggle(self.minimal) },
-                Row { label: "Thin on maximize", sub: "Off: only on fullscreen", kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
-                Row { label: "Monitor", sub: "Follow = cursor", kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
-                Row { label: "Lyric timing", sub: "Show earlier by", kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
-                Row { label: "Notch size", sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
-                Row { label: "Idle display", sub: "Cycle: clock/eyes", kind: RowKind::Stepper(settings::IDLE_DISPLAY_LABELS[self.cfg.idle_display.min(2)].to_string()) },
+                Row { label: tr("Minimal notch"), sub: tr("Thin line while idle"), kind: RowKind::Toggle(self.minimal) },
+                Row { label: tr("Thin on maximize"), sub: tr("Off: only on fullscreen"), kind: RowKind::Toggle(self.cfg.busy_on_maximized) },
+                Row { label: "Monitor", sub: tr("Follow = cursor"), kind: RowKind::Stepper(monitors::mode_label(self.cfg.monitor.min(monitors::mode_count() - 1))) },
+                Row { label: tr("Lyric timing"), sub: tr("Show earlier by"), kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
+                Row { label: tr("Notch size"), sub: "Auto = Windows", kind: RowKind::Stepper(scale::size_label(self.cfg.notch_size)) },
+                Row { label: tr("Idle display"), sub: tr("Cycle: clock/eyes"), kind: RowKind::Stepper(settings::idle_display_label(self.cfg.idle_display).to_string()) },
             ],
             2 => vec![
-                Row { label: "Notifications", sub: "Windows toasts + bell", kind: RowKind::Toggle(self.notif_on) },
-                Row { label: "Contact photos", sub: "In notifications", kind: RowKind::Toggle(self.cfg.notif_avatar) },
-                Row { label: "Autostart", sub: "Start with Windows", kind: RowKind::Toggle(self.sui.autostart) },
-                Row { label: "Slide hotkeys", sub: "Ctrl+Alt + slide no.", kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
+                Row { label: tr("Notifications"), sub: tr("Windows toasts + bell"), kind: RowKind::Toggle(self.notif_on) },
+                Row { label: tr("Contact photos"), sub: tr("In notifications"), kind: RowKind::Toggle(self.cfg.notif_avatar) },
+                Row { label: tr("Autostart"), sub: tr("Start with Windows"), kind: RowKind::Toggle(self.sui.autostart) },
+                Row { label: tr("Slide hotkeys"), sub: tr("Ctrl+Alt + slide no."), kind: RowKind::Toggle(self.cfg.slide_hotkeys) },
+                Row { label: tr("Language"), sub: tr("Menus and slides"), kind: RowKind::Stepper(i18n::LANGS[self.cfg.lang.min(i18n::LANGS.len() - 1)].to_string()) },
             ],
             3 => vec![
-                Row { label: "Volume HUD", sub: "Keys and mixer", kind: RowKind::Toggle(self.cfg.hud_volume) },
-                Row { label: "Brightness HUD", sub: "Fn keys / slider", kind: RowKind::Toggle(self.cfg.hud_brightness) },
-                Row { label: "Lock keys", sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
-                Row { label: "Mic / camera dot", sub: "When an app uses them", kind: RowKind::Toggle(self.cfg.privacy_dot) },
+                Row { label: tr("Volume HUD"), sub: tr("Keys and mixer"), kind: RowKind::Toggle(self.cfg.hud_volume) },
+                Row { label: tr("Brightness HUD"), sub: tr("Fn keys / slider"), kind: RowKind::Toggle(self.cfg.hud_brightness) },
+                Row { label: tr("Lock keys"), sub: "Caps / Num / Scroll", kind: RowKind::Toggle(self.cfg.lock_toast) },
+                Row { label: tr("Mic / camera dot"), sub: tr("When an app uses them"), kind: RowKind::Toggle(self.cfg.privacy_dot) },
             ],
             4 => vec![
-                Row { label: "Weather", sub: "Left of the clock", kind: RowKind::Toggle(self.cfg.weather_on) },
-                Row { label: "City", sub: "Location", kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
-                Row { label: "Prayer times", sub: "Countdown + toast", kind: RowKind::Toggle(self.cfg.prayer_on) },
-                Row { label: "Accent", sub: "Highlight color", kind: RowKind::Stepper(accent::get(self.cfg.accent).name.to_string()) },
+                Row { label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
+                Row { label: tr("City"), sub: tr("Location"), kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
+                Row { label: tr("Prayer times"), sub: tr("Countdown + toast"), kind: RowKind::Toggle(self.cfg.prayer_on) },
+                Row { label: tr("Accent"), sub: tr("Highlight color"), kind: RowKind::Stepper(accent::label(self.cfg.accent).to_string()) },
                 if romaji::available() {
-                    Row { label: "Romaji lyrics", sub: "Japanese to romaji", kind: RowKind::Toggle(self.cfg.romaji_lyrics) }
+                    Row { label: tr("Romaji lyrics"), sub: tr("Japanese to romaji"), kind: RowKind::Toggle(self.cfg.romaji_lyrics) }
                 } else {
                     // Kamus belum ada: tombol unduh (lihat dict.rs); setelah selesai baris ini jadi toggle.
                     match dict::state() {
-                        dict::Dl::Running(p) => Row { label: "Romaji lyrics", sub: "Downloading dictionary", kind: RowKind::Button(format!("{p}%")) },
-                        dict::Dl::Failed => Row { label: "Romaji lyrics", sub: "Download failed", kind: RowKind::Button("Retry".into()) },
-                        dict::Dl::Idle => Row { label: "Romaji lyrics", sub: "Needs 10 MB dictionary", kind: RowKind::Button("Get".into()) },
+                        dict::Dl::Running(p) => Row { label: tr("Romaji lyrics"), sub: tr("Downloading dictionary"), kind: RowKind::Button(format!("{p}%")) },
+                        dict::Dl::Failed => Row { label: tr("Romaji lyrics"), sub: tr("Download failed"), kind: RowKind::Button(tr("Retry").into()) },
+                        dict::Dl::Idle => Row { label: tr("Romaji lyrics"), sub: tr("Needs 10 MB dictionary"), kind: RowKind::Button(tr("Get").into()) },
                     }
                 },
             ]
             .into_iter()
             // Kamus yang dipakai bisa dihapus (tekan dua kali).
             .chain(dict::removable().map(|_| Row {
-                label: "Romaji dictionary",
-                sub: "47 MB on disk",
-                kind: RowKind::Button(if self.sui.dict_confirming() { "Sure?" } else { "Delete" }.into()),
+                label: tr("Romaji dictionary"),
+                sub: tr("47 MB on disk"),
+                kind: RowKind::Button(if self.sui.dict_confirming() { tr("Sure?") } else { tr("Delete") }.into()),
             }))
             .collect(),
             _ => Vec::new(),
@@ -321,13 +341,12 @@ impl App {
     // ------------------------------------------------------------ klik
     pub(crate) fn settings_click(&mut self, x: f32, y: f32) {
         // tab
-        let mut tx = TAB_X0;
-        for (i, (_, w)) in TABS.iter().enumerate() {
-            if in_rect(x, y, tx, TAB_Y, *w, TAB_H) {
+        let tabs = self.gfx.as_mut().map(tab_rects).unwrap_or_default();
+        for (i, (tx, w)) in tabs.into_iter().enumerate() {
+            if in_rect(x, y, tx, TAB_Y, w, TAB_H) {
                 self.settings_set_tab(i as u8);
                 return;
             }
-            tx += w + 6.0;
         }
         match self.sui.tab {
             0 => self.settings_click_slides(x, y),
@@ -438,6 +457,12 @@ impl App {
                     self.cfg.slide_hotkeys = !self.cfg.slide_hotkeys;
                     hotkeys::set_slide_hotkeys(self.hwnd, self.cfg.slide_hotkeys);
                 }
+                (2, 4) => {
+                    if right {
+                        self.cfg.lang = i18n::step(self.cfg.lang, plus);
+                        i18n::set(self.cfg.lang);
+                    }
+                }
                 (3, 0) => self.cfg.hud_volume = !self.cfg.hud_volume,
                 (3, 1) => self.cfg.hud_brightness = !self.cfg.hud_brightness,
                 (3, 2) => {
@@ -502,11 +527,9 @@ impl App {
 
     // ------------------------------------------------------------ gambar
     pub(crate) fn slide_settings(&self, g: &mut Gfx, ox: f32, al: f32) {
-        g.txtb("Settings", LX + ox, 10.0, 15.0, [255, 255, 255], al, 100.0);
-        let mut tx = TAB_X0 + ox;
-        for (i, (label, w)) in TABS.iter().enumerate() {
-            g.chip(tx, TAB_Y, *w, TAB_H, label, i as u8 == self.sui.tab, al);
-            tx += w + 6.0;
+        g.txtb(tr("Settings"), LX + ox, 10.0, 15.0, [255, 255, 255], al, 100.0);
+        for (i, ((tx, w), label)) in tab_rects(g).into_iter().zip(tab_labels()).enumerate() {
+            g.chip(tx + ox, TAB_Y, w, TAB_H, label, i as u8 == self.sui.tab, al);
         }
 
         // konten tab: geser 16 px + fade saat ganti tab; baris masuk bertahap saat slide dibuka
