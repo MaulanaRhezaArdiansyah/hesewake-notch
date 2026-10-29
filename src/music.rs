@@ -771,7 +771,7 @@ impl App {
     }
 
     pub(crate) fn vol_overlay_active(&self) -> bool {
-        self.expanded() && self.is_slide(SlideId::Music) && self.vol_t.elapsed().as_secs_f32() < 1.5
+        self.expanded() && self.is_slide(SlideId::Music) && self.vol_t.elapsed().min(self.out_t.elapsed()).as_secs_f32() < 1.5
     }
 
     /// Indikator volume yang menimpa baris kontrol: ikon speaker, bar, persen.
@@ -781,7 +781,8 @@ impl App {
             return;
         }
         let (pct, muted) = self.vol_state;
-        let (x, y, w, h) = (MX + ox - 8.0, 110.0, MW + 16.0, 36.0);
+        let (x, y, w, h) = output::OVERLAY;
+        let x = x + ox;
         g.fill(&rrect(x, y, w, h, 14.0), &paint(8, 10, 18, a));
         let level = if muted || pct == 0 { 0 } else if pct < 34 { 1 } else if pct < 67 { 2 } else { 3 };
         g.icon_speaker(x + 20.0, y + h / 2.0, 16.0, level, muted, &paint(255, 255, 255, a));
@@ -844,7 +845,10 @@ impl App {
         let cx = MCX + ox;
         let cy = MCY;
         let has = matches!(self.lyrics, lyrics::Lyrics::Synced(_));
-        g.icon_bubble(cx + 92.0, cy, 15.0, &paint(255, 255, 255, if has { 0.9 * al } else { 0.4 * al }), &paint(12, 12, 16, al));
+        if !self.out_list_shown() {
+            // the device list reaches up to here
+            g.icon_bubble(cx + 92.0, cy, 15.0, &paint(255, 255, 255, if has { 0.9 * al } else { 0.4 * al }), &paint(12, 12, 16, al));
+        }
         let white = paint(255, 255, 255, al);
         let px = cx - 56.0;
         g.poly(&[(px + 6.0, cy - 7.0), (px + 6.0, cy + 7.0), (px - 6.0, cy)], &white);
@@ -860,7 +864,14 @@ impl App {
         } else {
             g.poly(&[(cx - 4.0, cy - 8.0), (cx - 4.0, cy + 8.0), (cx + 8.0, cy)], &blk);
         }
-        self.draw_vol_overlay(g, ox, al);
+        self.draw_out_button(g, ox, al);
+        // the newer of the two overlays (volume, or the output device after a switch)
+        if self.out_t > self.vol_t {
+            self.draw_out_overlay(g, ox, al);
+        } else {
+            self.draw_vol_overlay(g, ox, al);
+        }
+        self.draw_out_list(g, ox, al);
     }
 }
 

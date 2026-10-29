@@ -34,12 +34,14 @@ impl App {
     }
 
     pub(crate) fn step(&mut self, dir: i32) {
+        self.out_close();
         self.slide += dir;
     }
 
     /// Pindah ke slide pada indeks `idx` lewat jalur terpendek.
     pub(crate) fn show(&mut self, idx: usize) {
         let n = self.n_slides() as i32;
+        self.out_close();
         let mut d = (idx as i32 - self.cur() as i32).rem_euclid(n);
         if d > n / 2 {
             d -= n;

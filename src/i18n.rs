@@ -216,6 +216,7 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("Drank", "Sudah"),
     ("Camera in use", "Kamera dipakai"),
     ("Microphone in use", "Mikrofon dipakai"),
+    ("Unknown device", "Perangkat tak dikenal"),
     // Timer
     ("Focus", "Fokus"),
     ("Short break", "Istirahat pendek"),
