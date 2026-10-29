@@ -61,6 +61,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
 | <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romaji lyrics  | Optional (Settings > Extras): Japanese  lyrics shown in romaji, using Lindera (IPADIC) and WanaKana.                 |
 | <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > Features > Language). Applies right away, including the right-click menu.     |
+| <img src="https://api.iconify.design/lucide/download.svg?color=%23ff453a" width="22"> | Update check   | At startup and every 24 hours the app asks GitHub for the latest release and shows a toast once per new version, with **Download** to open the release page. Nothing is installed automatically. Right-click menu: **Check for updates**. Turn it off in Settings > Alerts > Update notice. |
 | <img src="https://api.iconify.design/lucide/calendar-clock.svg?color=%23ff453a" width="22"> | Calendar       | Settings > Features > Calendar: copy your calendar's secret ICS address (Google: "Secret address in iCal format", Outlook: "Publish calendar"), then press **Paste**. The notch counts down the last 10 minutes before a meeting and shows a toast with **Join** when it starts. The link is kept in Windows Credential Manager (not in a file) and the feed is refreshed every 10 minutes. |
 
 ---
@@ -101,6 +102,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics 
 | `i18n.rs`                                    | UI language: English text as the key, Indonesian table             |
 | `clipboard.rs`                               | Clipboard history slide and clipboard listener                     |
 | `ics.rs`, `calendar.rs`                      | iCalendar reader (time zones, recurring events), calendar feed, Agenda slide |
+| `update.rs`                                  | Update check against the latest GitHub release                     |
 | `dragdrop.rs`                                | OLE drag out of the Ledge                                          |
 | `eye.rs`, `busy.rs`, `icon.rs`               | Eye animation, busy detection, app icons                           |
 | `nav.rs`, `input.rs`, `config.rs`, `data.rs` | Carousel, clicks and menu, shared sizes, data storage              |

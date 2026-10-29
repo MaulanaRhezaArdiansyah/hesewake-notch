@@ -248,6 +248,10 @@ unsafe fn poll(a: &mut App) {
             let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
     }
+    // Update check: looked at once a minute, runs at most every 24 hours.
+    if a.tick_n % 600 == 30 {
+        a.update_tick(Instant::now());
+    }
     if a.tick_n % 50 == 0 && a.water.roll() {
         redraw = true;
     }
