@@ -2,6 +2,13 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-10-29
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #19).
+
+### Added
+- **Bahasa UI Indonesia** (Settings > Features > "Language": English / Indonesian). Semua teks antarmuka berganti seketika tanpa restart: slide, Settings, toast, menu klik kanan dan tray, serta kotak About. Disimpan sebagai `lang=` di `settings.txt`; bawaannya tetap English, jadi pengguna lama tidak berubah. Nama produk dan fitur (Hesewake Notch, Ledge, Scrap, Pomodoro, Stopwatch, Timer, HUD), nama kota, dan nama waktu sholat tidak diterjemahkan. Semua teks Indonesia ada di satu tabel di `src/i18n.rs`; sebuah tes memindai setiap `tr("...")` dan gagal bila ada terjemahan yang hilang, tidak terpakai, ganda, atau placeholder-nya tidak cocok. Tes lebar teks Settings kini berjalan untuk kedua bahasa. Tab Settings disesuaikan lebarnya sehingga tab bahasa Inggris tidak lagi melewati tepi notch 2 px (kontribusi @MaulanaRhezaArdiansyah, PR #19).
+
 ## [0.6.0] - 2026-10-28
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #17, #18) dan Dependabot (PR #11).
