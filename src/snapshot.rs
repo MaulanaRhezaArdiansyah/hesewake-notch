@@ -119,6 +119,8 @@ fn test_app(s: f32) -> App {
         cal_paste_err: None,
         cal_confirm: None,
         agenda_scroll: 0,
+        claude: claude::Sessions::default(),
+        claude_link: claude_setup::Link::Off,
         drop_pulse: None,
         note: String::new(),
         note_mode: false,
@@ -990,4 +992,65 @@ fn thin_line_stays_empty_right_after_a_toast() {
     let g = a.gfx.as_ref().expect("gfx");
     let lit = g.pm.data().chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count();
     assert_eq!(lit, 0, "the thin line shows {lit} coloured pixels");
+}
+
+// ---------------------------------------------------------------- Claude Code
+
+fn claude_msg(kind: claude_hook::EventKind, session: &str, text: &str) -> claude_hook::Msg {
+    claude_hook::Msg {
+        v: claude_hook::VERSION,
+        kind,
+        session: session.into(),
+        project: "hesewake-notch".into(),
+        cwd: "C:\\Projects\\hesewake-notch".into(),
+        text: text.into(),
+        hwnd: 0,
+        subagent: false,
+    }
+}
+
+/// A Claude toast whose pop-in animation has finished.
+fn claude_toast(a: &mut App, show: claude::Show) {
+    show_toast(a, ToastKind::Claude(show));
+}
+
+#[test]
+fn claude_message_shows_needs_you_toast() {
+    let mut a = test_app(1.0);
+    a.on_claude(&claude_msg(claude_hook::EventKind::Prompt, "s1", ""));
+    assert!(a.toast.is_none(), "working shows no toast");
+    a.on_claude(&claude_msg(claude_hook::EventKind::NeedsYou, "s1", "Claude needs your permission"));
+    let Some(Toast { kind: ToastKind::Claude(claude::Show::NeedsYou { project, text, .. }), .. }) = &a.toast else { panic!("needs-you toast: {:?}", a.toast.as_ref().map(|t| &t.kind)) };
+    assert_eq!((project.as_str(), text.as_str()), ("hesewake-notch", "Claude needs your permission"));
+}
+
+#[test]
+fn claude_toast_click_focuses_and_clears() {
+    let mut a = test_app(1.0);
+    a.on_claude(&claude_msg(claude_hook::EventKind::NeedsYou, "s1", "Claude needs your permission"));
+    if let Some(t) = a.toast.as_mut() {
+        t.t0 = Instant::now() - Duration::from_millis(1500);
+    }
+    assert!(a.toast_click(CX, 20.0), "a click on the toast is used");
+    assert!(a.toast.is_none());
+    assert_eq!(a.claude.get("s1").map(|s| s.state), Some(claude::State::Answered));
+    assert!(!a.toast_click(CX, 20.0), "nothing left to click");
+}
+
+#[test]
+fn snap_claude_toasts() {
+    let _lang = i18n::restore_on_drop();
+    let needs = claude::Show::NeedsYou { session: "s1".into(), project: "hesewake-notch".into(), text: "Claude needs your permission".into() };
+    let done = claude::Show::Done { session: "s1".into(), project: "hesewake-notch".into(), text: "PR #27 is up: the thin line stays empty after a toast".into(), secs: Some(372) };
+    let done_no_time = claude::Show::Done { session: "s1".into(), project: "hesewake-notch".into(), text: "Done".into(), secs: None };
+    let error = claude::Show::Error { session: "s1".into(), project: "hesewake-notch".into() };
+    for (lang, prefix) in [(i18n::EN, "claude"), (i18n::ID, "id-claude")] {
+        i18n::set(lang);
+        for s in SCALES {
+            shot(&format!("{prefix}-toast-needs-you"), s, |a| claude_toast(a, needs.clone()));
+        }
+        shot(&format!("{prefix}-toast-done"), 1.0, |a| claude_toast(a, done.clone()));
+        shot(&format!("{prefix}-toast-done-no-time"), 1.0, |a| claude_toast(a, done_no_time.clone()));
+        shot(&format!("{prefix}-toast-error"), 1.0, |a| claude_toast(a, error.clone()));
+    }
 }

@@ -248,6 +248,9 @@ unsafe fn poll(a: &mut App) {
             let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
     }
+    if a.tick_n % 10 == 0 && a.claude_tick() {
+        redraw = true;
+    }
     if a.tick_n % 50 == 0 && a.water.roll() {
         redraw = true;
     }

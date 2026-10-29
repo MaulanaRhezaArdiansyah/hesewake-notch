@@ -4,8 +4,8 @@
 // Wired up step by step (toasts and chip come next).
 #![allow(dead_code)]
 
+use super::*;
 use crate::claude_hook::{EventKind, Msg};
-use std::time::{Duration, Instant};
 
 /// A session that sends nothing for this long while it seems busy has most likely crashed or was closed.
 pub(crate) const STALE: Duration = Duration::from_secs(15 * 60);
@@ -164,6 +164,102 @@ impl Sessions {
     /// How many sessions run in window `hwnd` (tabs of one terminal share it).
     fn shares_window(&self, hwnd: isize) -> usize {
         self.list.iter().filter(|s| s.hwnd == hwnd).count()
+    }
+}
+
+// ---------------------------------------------------------------- in the notch
+
+const ORANGE: [u8; 3] = [255, 159, 10];
+const GREEN: [u8; 3] = [60, 200, 110];
+const RED: [u8; 3] = [255, 69, 58];
+
+impl Show {
+    pub(crate) fn session(&self) -> &str {
+        match self {
+            Show::NeedsYou { session, .. } | Show::Done { session, .. } | Show::Error { session, .. } => session,
+        }
+    }
+}
+
+/// "6m 12s", "1h 5m", "40s".
+pub(crate) fn duration_text(secs: u64) -> String {
+    if secs < 60 {
+        fill(tr("{}s"), &[&secs])
+    } else if secs < 3600 {
+        fill(tr("{}m {}s"), &[&(secs / 60), &(secs % 60)])
+    } else {
+        fill(tr("{}h {}m"), &[&(secs / 3600), &(secs % 3600 / 60)])
+    }
+}
+
+/// A terminal prompt `>_`, the neutral Claude Code icon, centred on (cx, cy), `s` wide.
+pub(crate) fn icon_prompt(g: &mut Gfx, cx: f32, cy: f32, s: f32, p: &Paint<'static>) {
+    let lw = (s * 0.14).max(1.4);
+    g.line(cx - 0.45 * s, cy - 0.32 * s, cx - 0.08 * s, cy, lw, p);
+    g.line(cx - 0.08 * s, cy, cx - 0.45 * s, cy + 0.32 * s, lw, p);
+    g.rect(cx + 0.04 * s, cy + 0.32 * s - lw / 2.0, 0.42 * s, lw, p);
+}
+
+impl App {
+    /// A message from a hook (`WM_COPYDATA`).
+    pub(crate) fn on_claude(&mut self, m: &Msg) {
+        let fg = unsafe { GetForegroundWindow() }.0 as isize;
+        if let Some(show) = self.claude.apply(m, Instant::now(), fg) {
+            self.push_toast(ToastKind::Claude(show));
+        }
+        self.last = Instant::now();
+    }
+
+    /// About once a second: drop sessions that went away, notice the person answering. True if anything changed.
+    pub(crate) fn claude_tick(&mut self) -> bool {
+        if self.claude.list.is_empty() {
+            return false;
+        }
+        let fg = unsafe { GetForegroundWindow() }.0 as isize;
+        self.claude.tick(Instant::now(), fg, |h| unsafe { IsWindow(HWND(h as *mut c_void)).as_bool() })
+    }
+
+    /// Bring the session's terminal to the front and count the prompt as answered.
+    pub(crate) fn claude_focus(&mut self, session: &str) {
+        let h = self.claude.window_of(session);
+        if h != 0 {
+            let hwnd = HWND(h as *mut c_void);
+            unsafe {
+                if IsIconic(hwnd).as_bool() {
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                }
+                let _ = SetForegroundWindow(hwnd);
+            }
+        }
+        self.claude.clear_needs(session);
+    }
+
+    pub(crate) fn draw_claude_toast(&self, g: &mut Gfx, (w, h): (f32, f32), al: f32, t: f32, show: &Show) {
+        let (x0, cy) = (CX - w / 2.0, h / 2.0);
+        let join = |project: &str, text: &str| if text.is_empty() { project.to_string() } else { format!("{project} \u{b7} {text}") };
+        let (rgb, title, sub) = match show {
+            Show::NeedsYou { project, text, .. } => (ORANGE, tr("Claude needs you").to_string(), join(project, text)),
+            Show::Done { project, text, secs, .. } => {
+                let title = match secs {
+                    Some(s) => fill(tr("Done \u{b7} {}"), &[&duration_text(*s)]),
+                    None => tr("Done").to_string(),
+                };
+                (GREEN, title, join(project, text))
+            }
+            Show::Error { project, .. } => (RED, tr("Stopped with an error").to_string(), project.clone()),
+        };
+        let sc = 0.6 + 0.4 * toast::pop(t).clamp(0.0, 1.2);
+        let (icx, r) = (x0 + 34.0, 18.0 * sc);
+        g.circle(icx, cy, r, &paint(rgb[0], rgb[1], rgb[2], 0.22 * al));
+        icon_prompt(g, icx, cy, 16.0 * sc, &paint(rgb[0], rgb[1], rgb[2], al));
+
+        let k = toast::ss(0.12, 0.4, t);
+        let tx = x0 + 66.0 + (1.0 - k) * 6.0;
+        let maxw = x0 + w - 16.0 - tx;
+        let title = if g.width_ex(&title, 14.0, true) > maxw { ellipsize(g, &title, 14.0, maxw) } else { title };
+        g.txtb(&title, tx, cy - 19.0, 14.0, [255, 255, 255], al * k, maxw + 2.0);
+        let sub = if g.width(&sub, 12.0) > maxw { ellipsize(g, &sub, 12.0, maxw) } else { sub };
+        g.txt(&sub, tx, cy + 2.0, 12.0, TEXT_DIM, al * k, maxw);
     }
 }
 

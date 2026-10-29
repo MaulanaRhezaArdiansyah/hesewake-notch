@@ -373,6 +373,21 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             run_command(hwnd, cmd);
             LRESULT(0)
         }
+        WM_COPYDATA => {
+            let cds = lp.0 as *const windows::Win32::System::DataExchange::COPYDATASTRUCT;
+            if cds.is_null() || (*cds).dwData != claude_hook::COPY_ID || (*cds).lpData.is_null() {
+                return DefWindowProcW(hwnd, msg, wp, lp);
+            }
+            let bytes = std::slice::from_raw_parts((*cds).lpData as *const u8, (*cds).cbData as usize);
+            if let Some(m) = claude_hook::decode(bytes) {
+                with_app(|a| {
+                    a.on_claude(&m);
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(1)
+        }
         calendar::WM_CALENDAR => {
             with_app(|a| {
                 // ignore a late result for a link that was just removed or replaced

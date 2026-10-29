@@ -244,6 +244,10 @@ struct App {
     cal_paste_err: Option<Instant>,
     cal_confirm: Option<Instant>,
     agenda_scroll: usize,
+    /// Claude Code sessions reported by the hooks.
+    claude: claude::Sessions,
+    /// Whether the hooks are in Claude Code's settings (read when Settings opens).
+    claude_link: claude_setup::Link,
     drop_pulse: Option<Instant>,
     note: String,
     note_mode: bool,
@@ -602,6 +606,8 @@ fn main() -> Result<()> {
             cal_paste_err: None,
             cal_confirm: None,
             agenda_scroll: 0,
+            claude: claude::Sessions::default(),
+            claude_link: claude_setup::Link::Off,
             drop_pulse: None,
             note: load_note(),
             note_mode: false,
