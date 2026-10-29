@@ -141,6 +141,128 @@ pub(crate) fn project_name(cwd: &str) -> String {
     if name.is_empty() { "Claude Code".to_string() } else { name.to_string() }
 }
 
+// ---------------------------------------------------------------- the bridge process
+
+use std::ffi::c_void;
+use std::io::Read;
+use windows::core::{w, PCWSTR};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, WPARAM};
+use windows::Win32::System::DataExchange::COPYDATASTRUCT;
+use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, FindWindowW, GetWindow, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SendMessageTimeoutW, GW_OWNER, SMTO_ABORTIFHUNG,
+    WM_COPYDATA,
+};
+
+/// `dwData` of the `WM_COPYDATA` message that carries a `Msg`.
+pub(crate) const COPY_ID: usize = 0x434C_4155;
+/// Most stdin read from one hook call (Claude's last message can be long; the preview needs only the start).
+const MAX_STDIN: u64 = 256 * 1024;
+/// How far up the process tree to look for the terminal window.
+const MAX_DEPTH: usize = 12;
+
+/// `--claude-hook`: read the hook JSON from stdin and pass it to the running notch. Never fails, prints nothing.
+pub(crate) fn run_hook() {
+    let mut buf = Vec::new();
+    if std::io::stdin().take(MAX_STDIN).read_to_end(&mut buf).is_err() {
+        return;
+    }
+    let Some(mut m) = parse_hook(&String::from_utf8_lossy(&buf)) else { return };
+    let notch = find_notch();
+    if notch == 0 {
+        return;
+    }
+    m.hwnd = terminal_window(&m.project);
+    deliver(notch, &m);
+}
+
+/// The running notch's window (0 if none).
+pub(crate) fn find_notch() -> isize {
+    unsafe { FindWindowW(w!("HesewakeNotchWindow"), PCWSTR::null()).map_or(0, |h| h.0 as isize) }
+}
+
+/// Send `m` to the notch window `hwnd`. False when there is no window or it doesn't answer within 500 ms.
+pub(crate) fn deliver(hwnd: isize, m: &Msg) -> bool {
+    if hwnd == 0 {
+        return false;
+    }
+    let bytes = encode(m);
+    let cds = COPYDATASTRUCT { dwData: COPY_ID, cbData: bytes.len() as u32, lpData: bytes.as_ptr() as *mut c_void };
+    let mut result = 0usize;
+    let sent = unsafe {
+        SendMessageTimeoutW(HWND(hwnd as *mut c_void), WM_COPYDATA, WPARAM(0), LPARAM(&cds as *const _ as isize), SMTO_ABORTIFHUNG, 500, Some(&mut result))
+    };
+    sent.0 != 0
+}
+
+/// The terminal (or editor) window this hook runs in: the first ancestor process with a visible top-level window,
+/// preferring a window whose title contains `project`. 0 if none.
+pub(crate) fn terminal_window(project: &str) -> isize {
+    let parents = parent_map();
+    let mut pid = unsafe { GetCurrentProcessId() };
+    for _ in 0..MAX_DEPTH {
+        let Some(&parent) = parents.iter().find(|(p, _)| *p == pid).map(|(_, pp)| pp) else { break };
+        if parent == 0 || parent == pid {
+            break;
+        }
+        pid = parent;
+        let wins = windows_of(pid);
+        if wins.is_empty() {
+            continue;
+        }
+        let want = project.to_lowercase();
+        let best = wins.iter().find(|(_, title)| !want.is_empty() && title.to_lowercase().contains(&want)).or(wins.first());
+        return best.map_or(0, |(h, _)| *h);
+    }
+    0
+}
+
+/// (pid, parent pid) of every running process.
+fn parent_map() -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return out };
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut ok = Process32FirstW(snap, &mut e).is_ok();
+        while ok {
+            out.push((e.th32ProcessID, e.th32ParentProcessID));
+            ok = Process32NextW(snap, &mut e).is_ok();
+        }
+        let _ = CloseHandle(snap);
+    }
+    out
+}
+
+struct Found {
+    pid: u32,
+    wins: Vec<(isize, String)>,
+}
+
+unsafe extern "system" fn collect(hwnd: HWND, lp: LPARAM) -> BOOL {
+    let f = &mut *(lp.0 as *mut Found);
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    let owned = GetWindow(hwnd, GW_OWNER).is_ok_and(|o| !o.0.is_null());
+    if pid == f.pid && IsWindowVisible(hwnd).as_bool() && !owned {
+        let mut buf = [0u16; 256];
+        let n = GetWindowTextW(hwnd, &mut buf).max(0) as usize;
+        if n > 0 {
+            f.wins.push((hwnd.0 as isize, String::from_utf16_lossy(&buf[..n])));
+        }
+    }
+    BOOL(1)
+}
+
+/// Visible, titled, unowned top-level windows of process `pid`.
+fn windows_of(pid: u32) -> Vec<(isize, String)> {
+    let mut f = Found { pid, wins: Vec::new() };
+    unsafe {
+        let _ = EnumWindows(Some(collect), LPARAM(&mut f as *mut Found as isize));
+    }
+    f.wins
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +339,68 @@ mod tests {
         newer.v = 2;
         assert_eq!(decode(&encode(&newer)), None);
         assert_eq!(decode(b"garbage"), None);
+    }
+
+    // ---- the bridge process
+
+    use std::cell::RefCell;
+    use windows::core::w;
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::System::DataExchange::COPYDATASTRUCT;
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_COPYDATA, WNDCLASSW};
+
+    thread_local! {
+        static GOT: RefCell<Option<Msg>> = const { RefCell::new(None) };
+    }
+
+    unsafe extern "system" fn catcher(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        if msg == WM_COPYDATA {
+            let cds = &*(lp.0 as *const COPYDATASTRUCT);
+            if cds.dwData == COPY_ID {
+                let bytes = std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize);
+                GOT.with(|g| *g.borrow_mut() = decode(bytes));
+                return LRESULT(1);
+            }
+        }
+        DefWindowProcW(hwnd, msg, wp, lp)
+    }
+
+    /// A message-only window standing in for the notch.
+    fn test_window() -> HWND {
+        unsafe {
+            let hinst = GetModuleHandleW(None).unwrap();
+            let class = w!("HesewakeClaudeHookTest");
+            let wc = WNDCLASSW { lpfnWndProc: Some(catcher), hInstance: hinst.into(), lpszClassName: class, ..Default::default() };
+            RegisterClassW(&wc);
+            CreateWindowExW(WINDOW_EX_STYLE(0), class, w!(""), WINDOW_STYLE(0), 0, 0, 0, 0, HWND_MESSAGE, None, hinst, None).unwrap()
+        }
+    }
+
+    #[test]
+    fn deliver_reaches_a_window() {
+        let hwnd = test_window();
+        let mut m = parse_hook(&hook("Stop", r#","last_assistant_message":"All done""#)).unwrap();
+        m.hwnd = 42;
+        assert!(deliver(hwnd.0 as isize, &m));
+        assert_eq!(GOT.with(|g| g.borrow_mut().take()), Some(m));
+        unsafe {
+            let _ = DestroyWindow(hwnd);
+        }
+    }
+
+    #[test]
+    fn deliver_without_notch_is_quick() {
+        let m = parse_hook(&hook("Stop", "")).unwrap();
+        let t = std::time::Instant::now();
+        assert!(!deliver(0, &m));
+        assert!(t.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn own_ancestors_are_walked() {
+        // The test runner may or may not sit in a terminal window; this must just return.
+        let _ = terminal_window("hesewake-notch");
+        let _ = find_notch();
     }
 }

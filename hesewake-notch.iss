@@ -54,6 +54,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+; Remove the Claude Code hooks (if connected) so they don't point at a missing exe.
+Filename: "{app}\{#AppExe}"; Parameters: "--claude-disconnect"; Flags: runhidden waituntilterminated; RunOnceId: "ClaudeDisconnect"
+
 [Code]
 procedure StopApp();
 var

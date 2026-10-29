@@ -364,6 +364,15 @@ fn demo_toast() -> Option<ToastKind> {
 }
 
 fn main() -> Result<()> {
+    // Claude Code hooks start the exe with these: no window, no single-instance check, nothing printed.
+    if std::env::args().any(|a| a == claude_setup::HOOK_ARG) {
+        claude_hook::run_hook();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == "--claude-disconnect") {
+        let _ = claude_setup::apply(false);
+        return Ok(());
+    }
     // Karena windows_subsystem = "windows", panic tidak terlihat. Catat ke file supaya penyebab crash bisa dilacak.
     std::panic::set_hook(Box::new(|info| {
         let line = format!("{:?} | {}\n", std::time::SystemTime::now(), info);
