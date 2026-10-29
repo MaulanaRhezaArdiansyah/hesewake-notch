@@ -2,6 +2,15 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-10-29
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #30).
+
+### Added
+- **Pemberitahuan pembaruan** (Settings > Alerts > "Update notice", default nyala): sekitar semenit setelah aplikasi mulai, lalu tiap 24 jam, aplikasi menanyakan rilis terbaru ke GitHub (`releases/latest`) di thread latar. Bila ada versi yang lebih baru, muncul toast "Version X is available" dengan tombol **Download** yang membuka halaman rilis, sekali per versi (versi yang sudah dilihat disimpan sebagai `update_seen` di `settings.txt`). Tidak ada unduhan atau instal otomatis. Bila setting dimatikan, tidak ada permintaan otomatis.
+- **Menu klik kanan**: **Check for updates** selalu menjawab dengan toast (ada versi baru, "You're up to date", atau gagal), dan **Update available (X)...** muncul selama ada versi yang lebih baru.
+- Hanya halaman di `github.com/dirgaastya/hesewake-notch/releases/` yang dibuka; draft, pre-release, dan tag non-versi diabaikan; versi dibandingkan secara numerik. Kegagalan (offline, rate limit) diam saat pengecekan otomatis (kontribusi @MaulanaRhezaArdiansyah, PR #30).
+
 ## [0.8.0] - 2026-10-29
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #20, #27).
