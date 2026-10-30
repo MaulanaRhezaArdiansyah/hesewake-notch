@@ -213,6 +213,16 @@ const USAGE_X: f32 = LX + 288.0;
 const USAGE_W: f32 = RX - USAGE_X;
 const OPEN_W: f32 = 50.0;
 
+/// "just now", "5m ago", "2h ago", "3d ago".
+pub(crate) fn ago_text(secs: u64) -> String {
+    match secs {
+        0..=59 => tr("just now").to_string(),
+        60..=3599 => fill(tr("{}m ago"), &[&(secs / 60)]),
+        3600..=86_399 => fill(tr("{}h ago"), &[&(secs / 3600)]),
+        _ => fill(tr("{}d ago"), &[&(secs / 86_400)]),
+    }
+}
+
 /// Top-left of session (or New session list) row `i`.
 pub(crate) fn row_pos(i: usize) -> (f32, f32) {
     (LIST.0, LIST.1 + i as f32 * ROW_H)
@@ -254,16 +264,19 @@ fn fit(g: &mut Gfx, s: &str, size: f32, bold: bool, maxw: f32) -> String {
 
 impl App {
     /// "Working · 3m", "Needs you", "Done", "Error", "Idle".
+    /// The line under the project: the state, and what tells two sessions of one project apart (Claude's question or
+    /// last reply, how long it has worked, or how long it has been quiet): "Working · 3m 5s", "Needs you · Allow
+    /// Bash?", "Done · PR is up", "Idle · 5m ago".
     pub(crate) fn claude_state_text(s: &claude::Session, now: Instant) -> String {
+        let since = |t: Instant| now.saturating_duration_since(t).as_secs();
+        let with = |state: &str, detail: String| if detail.is_empty() { state.to_string() } else { format!("{state} \u{b7} {detail}") };
         match s.state {
-            State::Working => {
-                let secs = s.turn_start.map_or(0, |t| now.saturating_duration_since(t).as_secs());
-                fill(tr("Working \u{b7} {}"), &[&claude::duration_text(secs)])
-            }
-            State::NeedsYou => tr("Needs you").to_string(),
-            State::Done => tr("Done").to_string(),
+            State::Working => with(tr("Working"), claude::duration_text(s.turn_start.map_or(0, since))),
+            State::NeedsYou => with(tr("Needs you"), s.text.clone()),
+            State::Done if !s.text.is_empty() => with(tr("Done"), s.text.clone()),
+            State::Done => with(tr("Done"), ago_text(since(s.last))),
             State::Error => tr("Error").to_string(),
-            State::Idle | State::Answered => tr("Idle").to_string(),
+            State::Idle | State::Answered => with(tr("Idle"), ago_text(since(s.last))),
         }
     }
 
@@ -422,8 +435,12 @@ impl App {
         let wins = [("5h", self.claude_window(false, now)), ("7d", self.claude_window(true, now))];
         if wins.iter().all(|(_, w)| w.is_none()) {
             let why = if self.claude_status == claude_setup::StatusLink::On { tr("After Claude's first reply") } else { tr("Turn on in Settings") };
-            let why = fit(g, why, 11.0, false, USAGE_W);
-            g.txt(&why, x, LIST.1 + 22.0, 11.0, TEXT_DIM, al, USAGE_W + 2.0);
+            // the column is narrow: up to two lines
+            let lines = wrap_lines(g, why, 11.0, USAGE_W);
+            for (i, l) in lines.iter().take(2).enumerate() {
+                let l = if i == 1 && lines.len() > 2 { fit(g, &format!("{l}\u{2026}"), 11.0, false, USAGE_W) } else { l.clone() };
+                g.txt(&l, x, LIST.1 + 22.0 + i as f32 * 15.0, 11.0, TEXT_DIM, al, USAGE_W + 2.0);
+            }
             return;
         }
         for (k, (name, w)) in wins.iter().enumerate() {
