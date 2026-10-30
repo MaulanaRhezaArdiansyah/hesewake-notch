@@ -1442,7 +1442,7 @@ fn ledge_rows_show_the_download_in_its_folder() {
 
 #[test]
 fn download_rows_in_alerts() {
-    let mut a = test_app(1.0);
+    let a = test_app(1.0);
     let i = a.settings_rows(2).iter().position(|r| r.label == "Download progress").expect("row in Alerts");
     assert!(matches!(a.settings_rows(2)[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
 }
