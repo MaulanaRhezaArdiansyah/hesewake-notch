@@ -74,6 +74,22 @@ pub(crate) fn find_on_path(path_var: &str, pathext: &str, name: &str) -> Option<
     None
 }
 
+/// Variables a running Claude Code session sets for the programs it starts. The notch inherits them when it was
+/// itself started from inside a Claude Code session; a new session must not, or it thinks it is that session's child
+/// (no transcripts, the parent's messaging socket). The person's own settings (`CLAUDE_CONFIG_DIR`,
+/// `CLAUDE_CODE_USE_BEDROCK`, ...) are not in this list and stay.
+pub(crate) const PARENT_SESSION_VARS: [&str; 9] = [
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+];
+
 /// Windows Terminal treats `;` as a command separator in its arguments.
 fn wt_escape(s: &str) -> String {
     s.replace(';', "\\;")
@@ -126,6 +142,10 @@ fn launch(dir: &str) {
         let claude = native.or_else(|| find_on_path(&path, ".CMD;.BAT", "claude")).map(|p| p.to_string_lossy().into_owned());
         // children we start never look for programs in their working folder (the project)
         std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
+        // a new session is a session of its own, even when the notch was started from inside Claude Code
+        for k in PARENT_SESSION_VARS {
+            std::env::remove_var(k);
+        }
         for (exe, args, cwd) in launch_plan(dir, claude.as_deref(), shim && claude.is_some(), &env("SystemRoot"), &env("LOCALAPPDATA")) {
             if std::path::Path::new(&exe).is_file() && shell_open(&exe, &args, &cwd) {
                 return;
@@ -464,6 +484,15 @@ mod tests {
         let plan = launch_plan("C:\\p", Some(shim), true, "C:\\Windows", "C:\\Users\\me\\AppData\\Local");
         assert_eq!(plan.len(), 1, "an npm shim runs in our own console only");
         assert_eq!(plan[0].0, "C:\\Windows\\System32\\cmd.exe");
+    }
+
+    #[test]
+    fn only_the_parent_session_markers_are_dropped() {
+        assert!(PARENT_SESSION_VARS.contains(&"CLAUDE_CODE_CHILD_SESSION"));
+        assert!(PARENT_SESSION_VARS.contains(&"CLAUDECODE"));
+        for own in ["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_API_KEY", "PATH"] {
+            assert!(!PARENT_SESSION_VARS.contains(&own), "{own} is the person's own setting");
+        }
     }
 
     /// `claude` is only looked up in absolute PATH folders: a `claude.cmd` in `.` or a relative folder is never used.
