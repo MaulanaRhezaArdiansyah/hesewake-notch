@@ -79,9 +79,25 @@ pub(crate) fn status_line(s: &Status, offset: i32) -> String {
         parts.push(format!("5h {:.0}% (reset {})", w.pct, calendar::hhmm(w.resets_at, offset)));
     }
     if let Some(w) = s.usage.seven {
-        parts.push(format!("7d {:.0}%", w.pct));
+        parts.push(format!("7d {:.0}% (reset {})", w.pct, when(w.resets_at, s.usage.at, offset)));
     }
     parts.join(" \u{b7} ")
+}
+
+/// Day of the week of `t` (unix seconds) at `offset`. 1 January 1970 was a Thursday.
+fn weekday(t: i64, offset: i32) -> &'static str {
+    const DAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    DAYS[(t + offset as i64).div_euclid(86_400).rem_euclid(7) as usize]
+}
+
+/// "18:10" when `t` is today, else "Thu 18:10".
+fn when(t: i64, now: i64, offset: i32) -> String {
+    let day = |x: i64| (x + offset as i64).div_euclid(86_400);
+    if day(t) == day(now) {
+        calendar::hhmm(t, offset)
+    } else {
+        format!("{} {}", weekday(t, offset), calendar::hhmm(t, offset))
+    }
 }
 
 pub(crate) fn encode(u: &Usage) -> Vec<u8> {
@@ -219,10 +235,19 @@ mod tests {
     fn the_line_has_what_is_known() {
         let s = parse_status(&full(), NOW).unwrap();
         let reset = calendar::hhmm(NOW + 3600, 7 * 3600);
-        assert_eq!(status_line(&s, 7 * 3600), format!("Opus 4.7 \u{b7} ctx 42% \u{b7} 5h 41% (reset {reset}) \u{b7} 7d 18%"));
+        // NOW + 3 days at UTC+7 is Thursday 14:33
+        assert_eq!(status_line(&s, 7 * 3600), format!("Opus 4.7 \u{b7} ctx 42% \u{b7} 5h 41% (reset {reset}) \u{b7} 7d 18% (reset Thu 14:33)"));
         let s = parse_status(r#"{"model":{"display_name":"Haiku"}}"#, NOW).unwrap();
         assert_eq!(status_line(&s, 0), "Haiku");
         assert_eq!(status_line(&Status::default(), 0), "");
+    }
+
+    #[test]
+    fn weekly_reset_shows_the_day_unless_it_is_today() {
+        assert_eq!(weekday(0, 0), "Thu", "1 January 1970");
+        assert_eq!(weekday(4 * 86_400, 0), "Mon");
+        assert_eq!(weekday(86_400 - 1, 7 * 3600), "Fri", "the local day, not UTC");
+        assert_eq!(when(NOW + 60, NOW, 0), calendar::hhmm(NOW + 60, 0), "today: just the time");
     }
 
     #[test]
