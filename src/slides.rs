@@ -17,13 +17,15 @@ pub(crate) enum SlideId {
     Clipboard,
     /// What's left on today's calendar. Hidden by default.
     Agenda,
+    /// Today's prayer times (prayer.rs). Only in the carousel while "Prayer times" is on.
+    Prayer,
     /// Hanya muncul (di akhir) selama dibuka lewat item menu "Settings"; tidak ada di carousel saat tertutup.
     Settings,
 }
 
 impl SlideId {
     /// Slide yang bisa diatur pengguna (urutan bawaan).
-    pub(crate) const USER: [SlideId; 10] = [
+    pub(crate) const USER: [SlideId; 11] = [
         SlideId::Music,
         SlideId::Water,
         SlideId::Todo,
@@ -34,6 +36,7 @@ impl SlideId {
         SlideId::Timer,
         SlideId::Clipboard,
         SlideId::Agenda,
+        SlideId::Prayer,
     ];
 
     /// Aktif secara bawaan? (slide opsional dimulai tersembunyi)
@@ -53,6 +56,7 @@ impl SlideId {
             SlideId::Timer => "timer",
             SlideId::Clipboard => "clipboard",
             SlideId::Agenda => "agenda",
+            SlideId::Prayer => "prayer",
             SlideId::Settings => "settings",
         }
     }
@@ -69,6 +73,7 @@ impl SlideId {
             SlideId::Timer => "Timer",
             SlideId::Clipboard => "Clipboard",
             SlideId::Agenda => "Agenda",
+            SlideId::Prayer => crate::i18n::tr("Prayer"),
             SlideId::Settings => crate::i18n::tr("Settings"),
         }
     }
@@ -122,6 +127,12 @@ pub(crate) fn format_slides(cfg: &[(SlideId, bool)]) -> String {
     cfg.iter().map(|(s, on)| if *on { s.key().to_string() } else { format!("!{}", s.key()) }).collect::<Vec<_>>().join(",")
 }
 
+/// The slide config as it applies now: the Prayer slide counts as off while prayer times are off, so the carousel and
+/// the slide hotkey numbers both skip it.
+pub(crate) fn effective(cfg: &[(SlideId, bool)], prayer_on: bool) -> SlideCfg {
+    cfg.iter().map(|&(s, on)| (s, on && (prayer_on || s != SlideId::Prayer))).collect()
+}
+
 /// Urutan slide yang benar-benar tampil: yang aktif; `Settings` hanya ada (di akhir) selama dibuka lewat menu.
 /// Tanpa slide aktif dan Settings tertutup, slide pertama tetap ditampilkan agar carousel tidak kosong.
 pub(crate) fn visible_order(cfg: &[(SlideId, bool)], settings_open: bool) -> Vec<SlideId> {
@@ -146,10 +157,10 @@ mod tests {
         // slide yang tidak disebut ditambahkan di akhir
         assert_eq!(c.len(), SlideId::USER.len());
         assert_eq!(c[3], (SlideId::Ledge, true));
-        // slide opsional yang baru muncul di versi baru tetap tersembunyi
+        // slide opsional yang baru muncul di versi baru tetap tersembunyi; Prayer is on (it follows the prayer times setting)
         assert_eq!(
-            &c[c.len() - 4..],
-            &[(SlideId::System, false), (SlideId::Timer, false), (SlideId::Clipboard, false), (SlideId::Agenda, false)]
+            &c[c.len() - 5..],
+            &[(SlideId::System, false), (SlideId::Timer, false), (SlideId::Clipboard, false), (SlideId::Agenda, false), (SlideId::Prayer, true)]
         );
     }
 
@@ -165,7 +176,7 @@ mod tests {
     fn roundtrips() {
         let c = parse_slides("scrap,!ledge,music,water,todo,notifs");
         assert_eq!(parse_slides(&format_slides(&c)), c);
-        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer,!clipboard,!agenda");
+        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer,!clipboard,!agenda,prayer");
     }
 
     #[test]

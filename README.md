@@ -65,6 +65,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 | <img src="https://api.iconify.design/lucide/download.svg?color=%23ff453a" width="22"> | Update check   | At startup and every 24 hours the app asks GitHub for the latest release and shows a toast once per new version, with **Download** to open the release page. Nothing is installed automatically. Right-click menu: **Check for updates**. Turn it off in Settings > Alerts > Update notice. |
 | <img src="https://api.iconify.design/lucide/download.svg?color=%23ff453a" width="22"> | Downloads      | While a browser downloads into your Downloads folder, the notch shows the speed (↓ 4.1 MB/s) and Ledge lists the running downloads with size and speed. When one is done, a toast offers **Open** and **Show in folder**. Turn it off in Settings > Alerts > Download progress. |
 | <img src="https://api.iconify.design/lucide/calendar-clock.svg?color=%23ff453a" width="22"> | Calendar       | Settings > Widgets > Calendar: copy your calendar's secret ICS address (Google: "Secret address in iCal format", Outlook: "Publish calendar"), then press **Paste**. The notch counts down the last 10 minutes before a meeting and shows a toast with **Join** when it starts. The link is kept in Windows Credential Manager (not in a file) and the feed is refreshed every 10 minutes. |
+| <img src="https://api.iconify.design/lucide/moon.svg?color=%23ff453a" width="22"> | Prayer times   | Computed on the PC with the Kemenag parameters for the city in Settings > Widgets: a countdown in the last 15 minutes, a toast when a prayer starts, and a **Prayer** slide with the day (Imsak, Subuh, Terbit, Dzuhur, Ashar, Maghrib, Isya). **Ramadan mode** (turned on by hand) adds the Imsak countdown and toast and an Iftar toast at Maghrib. An optional **adhan** (off by default) plays the system sound or an .mp3 / .wav file you pick. |
 
 ---
 
@@ -101,6 +102,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Japanese romaj
 | `music.rs`                                   | Media thread, artwork and artwork tint, Music slide                |
 | `output.rs`                                  | Sound output switcher on the Music slide (IPolicyConfig)           |
 | `downloads.rs`                               | Download progress: Downloads folder watcher, Ledge list, toast     |
+| `prayer.rs`, `adhan.rs`                      | Prayer times, Prayer slide, Ramadan mode, adhan sound              |
 | `clock.rs`                                   | Clock and date helpers                                             |
 | `water.rs`, `todo.rs`, `shelf.rs`, `note.rs` | Water, To-do, Ledge and Scrap slides                               |
 | `i18n.rs`                                    | UI language: English text as the key, Indonesian table             |

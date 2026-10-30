@@ -52,6 +52,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 // ---------------------------------------------------------------- modul (satu file per fitur)
 mod accent;
+mod adhan;
 mod anim;
 mod audio;
 mod bt;
@@ -169,6 +170,10 @@ struct App {
     /// Today's prayer times: (date+city key, minutes for Subuh..Isya), and the last prayer that already got a toast.
     prayer: Option<(u32, [u16; 5])>,
     prayer_fired: Option<(u32, usize)>,
+    /// Today's Terbit (minutes since midnight), next to `prayer`.
+    prayer_sun: u16,
+    /// The adhan plays until then (adhan.rs).
+    adhan_until: Option<Instant>,
     hover: bool,
     busy: bool,
     /// Mode "Minimal notch": garis tipis saat tidak ada musik, buka dengan hover.
@@ -544,6 +549,8 @@ fn main() -> Result<()> {
             last_min: st.wMinute,
             prayer: None,
             prayer_fired: None,
+            prayer_sun: 0,
+            adhan_until: None,
             hover: false,
             busy: is_busy(hwnd, cfg.busy_on_maximized, &mon),
             minimal: cfg.minimal,
@@ -648,7 +655,7 @@ fn main() -> Result<()> {
             out_scroll: 0,
             out_t: Instant::now() - Duration::from_secs(10),
             out_acc: 0,
-            order: slides::visible_order(&cfg.slides, false),
+            order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
             settings_open: false,
             settings_prev: None,
             sui: settingsview::SettingsUi::new(),

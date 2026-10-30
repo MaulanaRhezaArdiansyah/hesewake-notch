@@ -156,6 +156,12 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 present(a);
             }
             SlideId::System => {}
+            SlideId::Prayer => {
+                if a.prayer_click(x, y) {
+                    present(a);
+                    schedule(a);
+                }
+            }
             SlideId::Agenda => {
                 let (now, off) = (notif::now_unix() as i64, calendar::local_offset());
                 if let Some(calendar::AgendaHit::Join(i)) = a.agenda_hit(x, y, now, off) {

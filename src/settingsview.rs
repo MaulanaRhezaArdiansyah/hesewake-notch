@@ -178,6 +178,10 @@ pub(crate) enum Rid {
     Weather,
     City,
     Prayer,
+    ImsakTerbit,
+    Ramadan,
+    Adhan,
+    AdhanFile,
     Accent,
     Romaji,
     Dictionary,
@@ -260,7 +264,7 @@ impl App {
         if !self.settings_open {
             self.settings_prev = Some(self.cur_id());
             self.settings_open = true;
-            self.order = slides::visible_order(&self.cfg.slides, true);
+            self.order = slides::visible_order(&self.slide_cfg(), true);
         }
         self.show_id(SlideId::Settings);
         self.peek_until = Some(Instant::now() + Duration::from_secs(8));
@@ -280,7 +284,7 @@ impl App {
         // tetap di slide yang sedang dilihat; bila notch menutup di Settings, kembali ke slide asal
         let keep = if on_settings { self.settings_prev } else { Some(self.cur_id()) };
         self.settings_open = false;
-        self.order = slides::visible_order(&self.cfg.slides, false);
+        self.order = slides::visible_order(&self.slide_cfg(), false);
         let idx = keep.and_then(|id| self.order.iter().position(|&s| s == id)).unwrap_or(0);
         self.slide = idx as i32;
         self.sp = idx as f32;
@@ -327,11 +331,21 @@ impl App {
                 Row { id: Rid::Weather, label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
                 Row { id: Rid::City, label: tr("City"), sub: tr("Location"), kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
                 Row { id: Rid::Prayer, label: tr("Prayer times"), sub: tr("Countdown + toast"), kind: RowKind::Toggle(self.cfg.prayer_on) },
+                Row { id: Rid::ImsakTerbit, label: tr("Imsak & sunrise"), sub: tr("In the prayer list"), kind: RowKind::Toggle(self.cfg.imsak_terbit) },
+                Row { id: Rid::Ramadan, label: tr("Ramadan mode"), sub: tr("Imsak and iftar"), kind: RowKind::Toggle(self.cfg.ramadan) },
                 Row { id: Rid::Calendar, label: tr("Calendar"), sub: self.cal_sub(), kind: RowKind::Button(self.cal_button_text().into()) },
                 Row { id: Rid::LyricTiming, label: tr("Lyric timing"), sub: tr("Show earlier by"), kind: RowKind::Stepper(format!("{:+} ms", self.cfg.lyric_lead_ms)) },
                 Row { id: Rid::Romaji, label: tr("Romanize lyrics"), sub: tr("Japanese and Korean"), kind: RowKind::Toggle(self.cfg.romaji_lyrics) },
             ]
             .into_iter()
+            // the adhan sound, and with "File" a row to pick (or change) the file next to it
+            .chain([Row { id: Rid::Adhan, label: tr("Adhan sound"), sub: tr("At prayer times"), kind: RowKind::Stepper(self.adhan_value()) }])
+            .chain((self.cfg.adhan == adhan::FILE).then(|| Row {
+                id: Rid::AdhanFile,
+                label: tr("Adhan file"),
+                sub: tr("mp3 or wav"),
+                kind: RowKind::Button(if self.cfg.adhan_file.is_empty() { tr("Choose") } else { tr("Change") }.into()),
+            }))
             // Kamus Jepang (hanya Jepang yang butuh; Korea tanpa kamus): tombol unduh bila belum ada, Delete (tekan dua kali) bila
             // hasil unduhan, tidak ada baris bila kamus datang dari folder lain (lihat dict.rs).
             .chain(if dict::removable().is_some() {
@@ -386,10 +400,27 @@ impl App {
         self.cfg.save();
     }
 
+    /// Value of the Adhan sound stepper: the mode, or the picked file's name with "File".
+    fn adhan_value(&self) -> String {
+        if self.cfg.adhan == adhan::FILE && !self.cfg.adhan_file.is_empty() {
+            let name = adhan::file_label(&self.cfg.adhan_file);
+            if name.chars().count() > 16 {
+                return name.chars().take(15).collect::<String>() + "\u{2026}";
+            }
+            return name.to_string();
+        }
+        adhan::mode_label(self.cfg.adhan).to_string()
+    }
+
+    /// The slide config with the Prayer slide off while prayer times are off (see `slides::effective`).
+    pub(crate) fn slide_cfg(&self) -> slides::SlideCfg {
+        slides::effective(&self.cfg.slides, self.cfg.prayer_on)
+    }
+
     /// Terapkan perubahan konfigurasi slide: bangun ulang urutan dan tetap berada di slide Settings.
     pub(crate) fn apply_slide_cfg(&mut self) {
         let cur = self.cur_id();
-        self.order = slides::visible_order(&self.cfg.slides, self.settings_open);
+        self.order = slides::visible_order(&self.slide_cfg(), self.settings_open);
         let idx = self.order.iter().position(|&s| s == cur).unwrap_or(self.order.len() - 1);
         self.slide = idx as i32;
         self.sp = idx as f32;
@@ -628,6 +659,28 @@ impl App {
                 Rid::Prayer => {
                     self.cfg.prayer_on = !self.cfg.prayer_on;
                     self.prayer_refresh();
+                    self.apply_slide_cfg(); // the Prayer slide comes and goes with it
+                    if !self.cfg.prayer_on {
+                        self.adhan_stop();
+                    }
+                }
+                Rid::ImsakTerbit => self.cfg.imsak_terbit = !self.cfg.imsak_terbit,
+                Rid::Ramadan => self.cfg.ramadan = !self.cfg.ramadan,
+                Rid::Adhan => {
+                    if right {
+                        self.cfg.adhan = adhan::step(self.cfg.adhan, plus);
+                        if self.cfg.adhan == adhan::FILE && self.cfg.adhan_file.is_empty() {
+                            adhan::pick_file(self.hwnd);
+                        }
+                        if self.cfg.adhan == adhan::OFF {
+                            self.adhan_stop();
+                        }
+                    }
+                }
+                Rid::AdhanFile => {
+                    if right {
+                        adhan::pick_file(self.hwnd);
+                    }
                 }
                 Rid::Accent => {
                     if right {
@@ -703,7 +756,7 @@ impl App {
             g.fill(&rrect(x, y, SC_W, CELL_H, 11.0), &paint(255, 255, 255, 0.07 * a));
             let lab = if on { [255, 255, 255] } else { [160, 164, 176] };
             // with hotkeys on, a small keycap under the name shows the slide's Ctrl+Alt number
-            match hotkeys::number(&self.cfg.slides, i).filter(|_| self.cfg.slide_hotkeys) {
+            match hotkeys::number(&self.slide_cfg(), i).filter(|_| self.cfg.slide_hotkeys) {
                 Some(k) => {
                     g.txtb(id.short_label(), x + 9.0, y + 4.0, 11.0, lab, a, SLIDE_NAME_W);
                     let (kx, ky, kw, kh) = (x + 9.0, y + 19.0, 13.0, 11.0);

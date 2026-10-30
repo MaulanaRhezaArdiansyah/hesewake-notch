@@ -70,6 +70,8 @@ fn test_app(s: f32) -> App {
         reminding: false,
         prayer: None,
         prayer_fired: None,
+        prayer_sun: 0,
+        adhan_until: None,
         splash: None,
         // the idle clock has finished fading in (clock phase, see `idle_phase`)
         idle_base: 5.0,
@@ -144,7 +146,7 @@ fn test_app(s: f32) -> App {
         out_scroll: 0,
         out_t: past,
         out_acc: 0,
-        order: slides::visible_order(&cfg.slides, false),
+        order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
         settings_open: false,
         settings_prev: None,
         sui: settingsview::SettingsUi::new(),
@@ -485,7 +487,7 @@ fn countdown_shows_whichever_comes_first() {
 fn slides_grid_scrolls_to_the_tenth_slide() {
     let mut a = test_app(1.0);
     open_settings_tab(&mut a, 0);
-    assert_eq!(a.cfg.slides.len(), 10);
+    assert_eq!(a.cfg.slides.len(), SlideId::USER.len());
     assert!(settingsview::slide_cells_visible(9, 0).is_none(), "the 10th slide starts below the grid");
     assert!(a.settings_slides_wheel(true));
     assert_eq!(a.sui.slides_scroll, 1);
@@ -1707,5 +1709,207 @@ fn snap_downloads() {
         a.media.playing = true;
         a.media.title = "Almost Easy".into();
         a.dl_apply(vec![dl("report.pdf", 23 * MIB, 12 * MIB)], Vec::new());
+    });
+}
+
+// ---------------------------------------------------------------- prayer list, Ramadan, adhan
+
+/// Subuh 04:11 (Imsak 04:01), Terbit 05:25, Dzuhur 11:40, Ashar 14:52, Maghrib 17:49, Isya 18:59.
+fn prayer_day(a: &mut App) {
+    a.cfg.prayer_on = true;
+    a.prayer = Some((0, [251, 700, 892, 1069, 1139]));
+    a.prayer_sun = 325;
+}
+
+/// The Prayer slide is in the carousel only while prayer times are on, and the slide hotkey numbers follow.
+#[test]
+fn prayer_slide_follows_the_prayer_times_setting() {
+    let mut a = test_app(1.0);
+    assert!(a.order.contains(&SlideId::Prayer), "on by default");
+    let i = a.settings_rows(3).iter().position(|r| r.label == "Prayer times").expect("row in Widgets");
+    let (cx, cy) = settingsview::cell_pos(i);
+    a.sui.tab = 3;
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    assert!(!a.cfg.prayer_on);
+    assert!(!a.order.contains(&SlideId::Prayer), "gone with prayer times off");
+    let p = a.cfg.slides.iter().position(|&(s, _)| s == SlideId::Prayer).unwrap();
+    assert_eq!(hotkeys::number(&a.slide_cfg(), p), None, "and no hotkey number");
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    assert!(a.order.contains(&SlideId::Prayer), "back");
+}
+
+/// In Ramadan, Imsak gets a toast (no adhan) and Maghrib is "Iftar"; the adhan plays for prayers only, once.
+#[test]
+fn ramadan_toasts_and_the_adhan() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    a.cfg.ramadan = true;
+    a.cfg.adhan = adhan::SYSTEM;
+    let _ = adhan::played();
+    assert!(a.prayer_fire(241));
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Prayer { idx: 5, at: 241 })), "Imsak toast");
+    assert!(adhan::played().is_empty(), "Imsak is not a prayer: no adhan");
+    a.toast = None;
+    assert!(a.prayer_fire(1069));
+    assert_eq!(prayer::toast_text(3, a.cfg.ramadan).0, "Iftar");
+    assert_eq!(adhan::played(), vec!["system".to_string()]);
+    a.toast = None;
+    assert!(!a.prayer_fire(1069), "once per time");
+}
+
+/// Outside Ramadan nothing changes: no Imsak toast or countdown, and Maghrib keeps its name.
+#[test]
+fn outside_ramadan_nothing_changes() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    assert!(!a.prayer_fire(241), "no Imsak toast");
+    let mut g = Gfx::new(1.0);
+    {
+        let _now = prayer::fake_now(241 - 12);
+        assert_eq!(a.upcoming(), None, "no Imsak countdown");
+        a.cfg.ramadan = true;
+        assert_eq!(a.countdown_text(&mut g).map(|(l, _)| l).as_deref(), Some("Imsak 12m"));
+        a.cfg.ramadan = false;
+    }
+    let _now = prayer::fake_now(1069 - 5);
+    assert_eq!(a.countdown_text(&mut g).map(|(l, _)| l).as_deref(), Some("Maghrib 5m"));
+    a.cfg.ramadan = true;
+    assert_eq!(a.countdown_text(&mut g).map(|(l, _)| l).as_deref(), Some("Iftar 5m"));
+}
+
+/// No sound at all unless the user turned the adhan on.
+#[test]
+fn no_adhan_unless_turned_on() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    assert_eq!(a.cfg.adhan, adhan::OFF, "off by default");
+    let _ = adhan::played();
+    assert!(a.prayer_fire(892), "the toast still comes");
+    assert!(adhan::played().is_empty());
+    assert!(!a.adhan_playing());
+}
+
+/// A picked file plays when a prayer starts; the toast stays longer and its Stop button stops it.
+#[test]
+fn adhan_file_plays_and_stops_from_the_toast() {
+    let f = std::env::temp_dir().join(format!("hesewake-adhan-app-{}.mp3", std::process::id()));
+    std::fs::write(&f, b"x").unwrap();
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    a.adhan_picked(Some(f.to_string_lossy().into_owned()));
+    assert_eq!(a.cfg.adhan, adhan::FILE);
+    let _ = adhan::played();
+    assert!(a.prayer_fire(892));
+    assert_eq!(adhan::played(), vec![format!("file:{}", f.to_string_lossy())]);
+    assert!(a.adhan_playing());
+    assert!(a.toast.as_ref().unwrap().dur >= 15.0, "the toast stays up while it plays");
+    assert!(a.toast_has_button(), "hovering the toast does not cancel it");
+    a.toast.as_mut().unwrap().t0 = Instant::now() - Duration::from_secs(1);
+    let (bx, by, bw, bh) = prayer::toast_stop_rect(toast::TOAST_CHARGE.0, toast::TOAST_CHARGE.1);
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(adhan::played(), vec!["stop".to_string()]);
+    assert!(!a.adhan_playing());
+    assert!(a.toast.is_none());
+    let _ = std::fs::remove_file(&f);
+}
+
+/// The Prayer slide's Stop button while the adhan plays.
+#[test]
+fn adhan_stops_from_the_prayer_slide() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
+    let (bx, by, bw, bh) = prayer::slide_stop_rect();
+    let _ = adhan::played();
+    assert!(a.prayer_click(bx + bw / 2.0, by + bh / 2.0));
+    assert!(!a.adhan_playing());
+    assert_eq!(adhan::played(), vec!["stop".to_string()]);
+    assert!(!a.prayer_click(bx + bw / 2.0, by + bh / 2.0), "nothing to stop");
+}
+
+/// Cancelling the file dialog without a file falls back to the system sound; a file keeps "File".
+#[test]
+fn adhan_file_dialog_answers() {
+    let mut a = test_app(1.0);
+    a.cfg.adhan = adhan::FILE;
+    a.adhan_picked(None);
+    assert_eq!(a.cfg.adhan, adhan::SYSTEM, "cancelled with no file");
+    a.adhan_picked(Some("C:\\Music\\adzan.mp3".into()));
+    assert_eq!((a.cfg.adhan, a.cfg.adhan_file.as_str()), (adhan::FILE, "C:\\Music\\adzan.mp3"));
+    a.adhan_picked(None);
+    assert_eq!((a.cfg.adhan, a.cfg.adhan_file.as_str()), (adhan::FILE, "C:\\Music\\adzan.mp3"), "cancelling a change keeps the file");
+}
+
+#[test]
+fn snap_prayer_slide() {
+    let _lang = i18n::restore_on_drop();
+    let _now = prayer::fake_now(860); // 14:20: Ashar (14:52) is next
+    for (lang, pre) in [(i18n::EN, ""), (i18n::ID, "id-")] {
+        i18n::set(lang);
+        let set = move |a: &mut App| {
+            a.cfg.lang = lang;
+            prayer_day(a);
+        };
+        shot(&format!("{pre}prayer-slide"), 1.0, |a| {
+            set(a);
+            open_slide(a, SlideId::Prayer);
+        });
+        shot(&format!("{pre}prayer-slide-ramadan"), 1.0, |a| {
+            set(a);
+            a.cfg.ramadan = true;
+            open_slide(a, SlideId::Prayer);
+        });
+        shot(&format!("{pre}prayer-toast-imsak"), 1.0, |a| {
+            set(a);
+            a.cfg.ramadan = true;
+            show_toast(a, ToastKind::Prayer { idx: prayer::IMSAK as u8, at: 241 });
+        });
+        shot(&format!("{pre}prayer-toast-iftar"), 1.0, |a| {
+            set(a);
+            a.cfg.ramadan = true;
+            show_toast(a, ToastKind::Prayer { idx: 3, at: 1069 });
+        });
+        shot(&format!("{pre}prayer-toast-adhan"), 1.0, |a| {
+            set(a);
+            a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
+            show_toast(a, ToastKind::Prayer { idx: 2, at: 892 });
+        });
+        shot(&format!("{pre}prayer-settings-widgets"), 1.0, |a| {
+            set(a);
+            a.cfg.adhan = adhan::FILE;
+            a.cfg.adhan_file = "C:\\Users\\me\\Music\\Adzan Makkah.mp3".into();
+            open_settings_tab(a, 3);
+            a.settings_rows_wheel(true);
+            a.settings_rows_wheel(true);
+        });
+    }
+    shot("prayer-slide", 1.5, |a| {
+        prayer_day(a);
+        a.cfg.ramadan = true;
+        open_slide(a, SlideId::Prayer);
+    });
+    shot("prayer-slide-five", 1.0, |a| {
+        prayer_day(a);
+        a.cfg.imsak_terbit = false;
+        open_slide(a, SlideId::Prayer);
+    });
+    shot("prayer-slide-adhan", 1.0, |a| {
+        prayer_day(a);
+        a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
+        open_slide(a, SlideId::Prayer);
+    });
+    {
+        let _imsak = prayer::fake_now(241 - 12);
+        shot("prayer-idle-imsak", 1.0, |a| {
+            prayer_day(a);
+            a.cfg.ramadan = true;
+            a.cfg.weather_on = false;
+        });
+    }
+    let _iftar = prayer::fake_now(1069 - 12);
+    shot("prayer-idle-iftar", 1.0, |a| {
+        prayer_day(a);
+        a.cfg.ramadan = true;
+        a.cfg.weather_on = false;
     });
 }

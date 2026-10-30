@@ -264,7 +264,10 @@ impl App {
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
             ToastKind::Prayer { idx, at } => {
-                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), tr("Prayer time").to_string(), 1.0, Some(prayer::hhmm(*at)))
+                let (title, sub) = prayer::toast_text(*idx as usize, self.cfg.ramadan);
+                // while the adhan plays, its Stop button takes the place of the time
+                let right = (!self.adhan_playing()).then(|| prayer::hhmm(*at));
+                (prayer::GOLD, title.to_string(), sub.to_string(), 1.0, right)
             }
             ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(_) | ToastKind::Downloaded { .. } => {
                 unreachable!()
@@ -306,7 +309,12 @@ impl App {
         g.txt(&sub, tx, cy + 2.0, 12.0, GREY, al * k, max_w + 2.0);
 
         // Kanan: persen (charger) atau orb headphone dengan riak (Bluetooth).
-        if let Some(txt) = right {
+        if matches!(ts.kind, ToastKind::Prayer { .. }) && self.adhan_playing() {
+            let (bx, by, bw, bh) = prayer::toast_stop_rect(w, h);
+            let over = self.cursor_canvas().is_some_and(|(x, y)| in_rect(x, y, bx, by, bw, bh));
+            g.pill(bx, by, bw, bh, g.acc.deep, if over { 1.0 } else { 0.85 } * al * k, 1.0);
+            g.txt_c(tr("Stop"), bx + bw / 2.0, by + ty(bh, 13.0), 13.0, [255, 255, 255], al * k, bw, true);
+        } else if let Some(txt) = right {
             let col = if matches!(ts.kind, ToastKind::LowBattery { .. }) { ACCENT } else { [255, 255, 255] };
             let tw = g.width(&txt, 24.0);
             g.txt(&txt, x0 + w - 26.0 - tw - (1.0 - k) * -6.0, cy - 16.0, 24.0, col, al * k, 100.0);
@@ -467,7 +475,7 @@ impl App {
                     | ToastKind::Update(update::Note::Available(_) | update::Note::Downloading(_) | update::Note::DownloadFailed(_))
                     | ToastKind::Downloaded { .. }
             )
-        )
+        ) || (matches!(self.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Prayer { .. })) && self.adhan_playing())
     }
 
     pub(crate) fn end_toast(&mut self) {
@@ -484,6 +492,18 @@ impl App {
         }
         if matches!(ts.kind, ToastKind::Downloaded { .. }) {
             return self.dl_toast_click(x, y);
+        }
+        if matches!(ts.kind, ToastKind::Prayer { .. }) && self.adhan_playing() {
+            let (w, h) = TOAST_CHARGE;
+            if !in_rect(x, y, CX - w / 2.0, 0.0, w, h) {
+                return false;
+            }
+            let (bx, by, bw, bh) = prayer::toast_stop_rect(w, h);
+            if in_rect(x, y, bx, by, bw, bh) {
+                self.adhan_stop();
+            }
+            self.end_toast();
+            return true;
         }
         if let ToastKind::Update(note) = &ts.kind {
             let (w, h) = TOAST_UPDATE;
