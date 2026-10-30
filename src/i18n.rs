@@ -218,7 +218,7 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("Ramadan mode", "Mode Ramadan"),
     ("Imsak and iftar", "Imsak dan buka"),
     ("Adhan sound", "Suara adzan"),
-    ("When a prayer starts", "Saat waktu sholat"),
+    ("At prayer times", "Saat sholat"),
     ("System sound", "Suara sistem"),
     ("File", "File"),
     ("Adhan file", "File adzan"),

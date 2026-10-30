@@ -480,7 +480,7 @@ fn countdown_shows_whichever_comes_first() {
 fn slides_grid_scrolls_to_the_tenth_slide() {
     let mut a = test_app(1.0);
     open_settings_tab(&mut a, 0);
-    assert_eq!(a.cfg.slides.len(), 10);
+    assert_eq!(a.cfg.slides.len(), SlideId::USER.len());
     assert!(settingsview::slide_cells_visible(9, 0).is_none(), "the 10th slide starts below the grid");
     assert!(a.settings_slides_wheel(true));
     assert_eq!(a.sui.slides_scroll, 1);

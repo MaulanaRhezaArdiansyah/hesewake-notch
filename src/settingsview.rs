@@ -337,7 +337,7 @@ impl App {
             ]
             .into_iter()
             // the adhan sound, and with "File" a row to pick (or change) the file next to it
-            .chain([Row { id: Rid::Adhan, label: tr("Adhan sound"), sub: tr("When a prayer starts"), kind: RowKind::Stepper(self.adhan_value()) }])
+            .chain([Row { id: Rid::Adhan, label: tr("Adhan sound"), sub: tr("At prayer times"), kind: RowKind::Stepper(self.adhan_value()) }])
             .chain((self.cfg.adhan == adhan::FILE).then(|| Row {
                 id: Rid::AdhanFile,
                 label: tr("Adhan file"),

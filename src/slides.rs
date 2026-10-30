@@ -157,10 +157,10 @@ mod tests {
         // slide yang tidak disebut ditambahkan di akhir
         assert_eq!(c.len(), SlideId::USER.len());
         assert_eq!(c[3], (SlideId::Ledge, true));
-        // slide opsional yang baru muncul di versi baru tetap tersembunyi
+        // slide opsional yang baru muncul di versi baru tetap tersembunyi; Prayer is on (it follows the prayer times setting)
         assert_eq!(
-            &c[c.len() - 4..],
-            &[(SlideId::System, false), (SlideId::Timer, false), (SlideId::Clipboard, false), (SlideId::Agenda, false)]
+            &c[c.len() - 5..],
+            &[(SlideId::System, false), (SlideId::Timer, false), (SlideId::Clipboard, false), (SlideId::Agenda, false), (SlideId::Prayer, true)]
         );
     }
 
@@ -176,7 +176,7 @@ mod tests {
     fn roundtrips() {
         let c = parse_slides("scrap,!ledge,music,water,todo,notifs");
         assert_eq!(parse_slides(&format_slides(&c)), c);
-        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer,!clipboard,!agenda");
+        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer,!clipboard,!agenda,prayer");
     }
 
     #[test]
