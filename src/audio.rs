@@ -54,19 +54,30 @@ struct DevCb {
     tx: Sender<()>,
 }
 
+/// Tell the window that the playback devices changed, so the output list (output.rs) is read again.
+fn post_output() {
+    unsafe {
+        let _ = PostMessageW(HWND(TARGET.load(Ordering::Relaxed) as *mut c_void), output::WM_OUTPUT, WPARAM(0), LPARAM(0));
+    }
+}
+
 impl IMMNotificationClient_Impl for DevCb_Impl {
     fn OnDeviceStateChanged(&self, _id: &WPCWSTR, _state: DEVICE_STATE) -> windows::core::Result<()> {
+        post_output();
         Ok(())
     }
     fn OnDeviceAdded(&self, _id: &WPCWSTR) -> windows::core::Result<()> {
+        post_output();
         Ok(())
     }
     fn OnDeviceRemoved(&self, _id: &WPCWSTR) -> windows::core::Result<()> {
+        post_output();
         Ok(())
     }
     fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _id: &WPCWSTR) -> windows::core::Result<()> {
         if flow == eRender && role == eConsole {
             let _ = self.tx.send(());
+            post_output();
         }
         Ok(())
     }

@@ -240,6 +240,17 @@ pub(crate) fn input_idle_secs() -> f32 {
     unsafe { GetTickCount() }.wrapping_sub(li.dwTime) as f32 / 1000.0
 }
 
+/// Open Explorer on the folder of `path` with that file selected. Tests record it as "select:<path>".
+pub(crate) fn show_in_folder(path: &str) {
+    #[cfg(test)]
+    OPENED.with(|o| o.borrow_mut().push(format!("select:{path}")));
+    #[cfg(not(test))]
+    unsafe {
+        let args = HSTRING::from(format!("/select,\"{path}\""));
+        let _ = ShellExecuteW(None, w!("open"), w!("explorer.exe"), &args, None, SW_SHOWNORMAL);
+    }
+}
+
 /// Tests: the links `open_url` was asked to open on this thread (and forget them).
 #[cfg(test)]
 pub(crate) fn opened() -> Vec<String> {

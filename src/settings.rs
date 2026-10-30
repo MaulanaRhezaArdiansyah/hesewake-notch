@@ -34,6 +34,8 @@ pub(crate) struct Settings {
     pub(crate) slide_hotkeys: bool,
     /// Ctrl+Alt+M mutes the default microphone for every app (mic.rs).
     pub(crate) mic_hotkey: bool,
+    /// Running downloads in the Downloads folder: speed in the notch, list on Ledge, toast when done (downloads.rs).
+    pub(crate) downloads: bool,
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
@@ -45,6 +47,13 @@ pub(crate) struct Settings {
     pub(crate) weather_city: usize,
     /// Prayer times: 15-minute countdown + a toast when the prayer starts (city = weather city).
     pub(crate) prayer_on: bool,
+    /// Imsak and Terbit in the prayer list.
+    pub(crate) imsak_terbit: bool,
+    /// Ramadan mode, turned on by hand: Imsak countdown and toast, "Iftar" at Maghrib.
+    pub(crate) ramadan: bool,
+    /// Adhan when a prayer starts: adhan::OFF / SYSTEM / FILE, and the file the user picked.
+    pub(crate) adhan: u8,
+    pub(crate) adhan_file: String,
     /// Indeks di `scale::SIZES`: 0 = Auto (ikut scaling Windows), selebihnya ukuran tetap.
     pub(crate) notch_size: usize,
     /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
@@ -77,12 +86,17 @@ impl Default for Settings {
             privacy_dot: true,
             slide_hotkeys: true,
             mic_hotkey: true,
+            downloads: true,
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
             monitor: 0,
             weather_city: 0,
             prayer_on: true,
+            imsak_terbit: true,
+            ramadan: false,
+            adhan: adhan::OFF,
+            adhan_file: String::new(),
             notch_size: 0,
             idle_display: 0,
             accent: 0,
@@ -112,10 +126,15 @@ impl Settings {
                 "privacy_dot" => s.privacy_dot = flag,
                 "slide_hotkeys" => s.slide_hotkeys = flag,
                 "mic_hotkey" => s.mic_hotkey = flag,
+                "downloads" => s.downloads = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
                 "prayer" => s.prayer_on = flag,
+                "imsak_terbit" => s.imsak_terbit = flag,
+                "ramadan" => s.ramadan = flag,
+                "adhan" => s.adhan = v.parse::<u8>().unwrap_or(adhan::OFF).min(adhan::MODES - 1),
+                "adhan_file" => s.adhan_file = v.to_string(),
                 "update_check" => s.update_check = flag,
                 "update_seen" => s.update_seen = v.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+')).take(32).collect(),
                 "monitor" => {
@@ -165,7 +184,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\ndownloads={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nimsak_terbit={}\nramadan={}\nadhan={}\nadhan_file={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -176,11 +195,16 @@ impl Settings {
             self.privacy_dot as u8,
             self.slide_hotkeys as u8,
             self.mic_hotkey as u8,
+            self.downloads as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
             self.weather_on as u8,
             self.weather_city,
             self.prayer_on as u8,
+            self.imsak_terbit as u8,
+            self.ramadan as u8,
+            self.adhan,
+            self.adhan_file.replace(['\r', '\n'], ""),
             self.monitor,
             self.notch_size,
             self.idle_display,
@@ -286,6 +310,31 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).lang, crate::i18n::ID);
         assert_eq!(Settings::parse("lang=99").lang, crate::i18n::EN, "unknown = English");
         assert_eq!(Settings::parse("lang=x").lang, crate::i18n::EN);
+    }
+
+    #[test]
+    fn downloads_roundtrip_and_default() {
+        assert!(Settings::parse("minimal=1\n").downloads, "old file = on");
+        let mut s = Settings::default();
+        s.downloads = false;
+        assert!(!Settings::parse(&s.serialize()).downloads);
+    }
+
+    #[test]
+    fn prayer_extras_roundtrip_and_defaults() {
+        let s = Settings::parse("prayer=1\n");
+        assert!(s.imsak_terbit, "Imsak and Terbit shown by default");
+        assert!(!s.ramadan, "Ramadan mode is turned on by hand");
+        assert_eq!((s.adhan, s.adhan_file.as_str()), (adhan::OFF, ""), "no sound unless the user turns it on");
+        let mut s = Settings::default();
+        s.ramadan = true;
+        s.imsak_terbit = false;
+        s.adhan = adhan::FILE;
+        s.adhan_file = "C:\\Users\\me\\Music\\adzan = makkah.mp3".into();
+        let back = Settings::parse(&s.serialize());
+        assert!(back.ramadan && !back.imsak_terbit);
+        assert_eq!((back.adhan, back.adhan_file.as_str()), (adhan::FILE, "C:\\Users\\me\\Music\\adzan = makkah.mp3"));
+        assert_eq!(Settings::parse("adhan=9\n").adhan, adhan::MODES - 1, "out of range is clamped");
     }
 
     #[test]

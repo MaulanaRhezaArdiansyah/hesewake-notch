@@ -70,6 +70,8 @@ fn test_app(s: f32) -> App {
         reminding: false,
         prayer: None,
         prayer_fired: None,
+        prayer_sun: 0,
+        adhan_until: None,
         splash: None,
         // the idle clock has finished fading in (clock phase, see `idle_phase`)
         idle_base: 5.0,
@@ -134,10 +136,17 @@ fn test_app(s: f32) -> App {
         priv_cam: Vec::new(),
         priv_t: past,
         mic_muted: Some(false),
+        dls: Vec::new(),
+        dl_seen: false,
         vol_t: past,
         bright_seen: false,
         vol_state: (0, false),
-        order: slides::visible_order(&cfg.slides, false),
+        outs: output::Outputs::default(),
+        out_open: false,
+        out_scroll: 0,
+        out_t: past,
+        out_acc: 0,
+        order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
         settings_open: false,
         settings_prev: None,
         sui: settingsview::SettingsUi::new(),
@@ -478,7 +487,7 @@ fn countdown_shows_whichever_comes_first() {
 fn slides_grid_scrolls_to_the_tenth_slide() {
     let mut a = test_app(1.0);
     open_settings_tab(&mut a, 0);
-    assert_eq!(a.cfg.slides.len(), 10);
+    assert_eq!(a.cfg.slides.len(), SlideId::USER.len());
     assert!(settingsview::slide_cells_visible(9, 0).is_none(), "the 10th slide starts below the grid");
     assert!(a.settings_slides_wheel(true));
     assert_eq!(a.sui.slides_scroll, 1);
@@ -1265,6 +1274,222 @@ fn rows_tab_scrolls_to_the_last_rows() {
     assert_eq!(a.sui.rows_scroll, 0);
 }
 
+// ---------------------------------------------------------------- audio output switcher
+
+fn three_outputs() {
+    output::set_fake(
+        &[
+            ("spk", "Speakers (Realtek(R) Audio)", false),
+            ("hp", "Headphones (WH-1000XM4 Stereo)", true),
+            ("mon", "LG ULTRAGEAR (NVIDIA High Definition Audio)", false),
+        ],
+        Some("spk"),
+    );
+}
+
+/// The Music slide with three playback devices, Speakers being the default.
+fn music_with_outputs(a: &mut App) {
+    three_outputs();
+    a.out_refresh();
+    open_slide(a, SlideId::Music);
+}
+
+fn default_output() -> Option<String> {
+    output::with_fake(|f| f.cur.clone())
+}
+
+/// A click on the output button opens the list; a click on a row makes that device the default for every role.
+#[test]
+fn output_button_opens_the_list_and_picks_a_device() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    assert!(!a.out_list_shown());
+    assert!(a.out_click(output::BTN.0, output::BTN.1));
+    assert!(a.out_list_shown());
+    let (rx, ry) = output::row_pos(1);
+    assert!(a.out_click(rx + 60.0, ry + 12.0));
+    assert_eq!(default_output().as_deref(), Some("hp"));
+    assert_eq!(output::with_fake(|f| f.calls.len()), 3, "Console, Multimedia and Communications");
+    assert!(!a.out_list_shown(), "the list closes after a pick");
+    assert_eq!(a.outs.cur.as_deref(), Some("hp"));
+    assert!(a.out_t.elapsed() < Duration::from_secs(1), "the overlay shows the new device");
+}
+
+/// The list closes again on the button, on a click outside it (which does nothing else) and on a slide change.
+#[test]
+fn output_list_closes_on_button_outside_click_and_slide_change() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    a.out_click(output::BTN.0, output::BTN.1);
+    assert!(a.out_click(output::BTN.0, output::BTN.1));
+    assert!(!a.out_list_shown(), "the button closes it again");
+    a.out_click(output::BTN.0, output::BTN.1);
+    assert!(a.out_click(RX - 10.0, 60.0), "a click outside only closes the list");
+    assert!(!a.out_list_shown());
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0, "nothing was switched");
+    a.out_click(output::BTN.0, output::BTN.1);
+    a.step(1);
+    assert!(!a.out_open, "another slide closes it");
+    a.step(-1);
+    assert!(!a.out_list_shown());
+    a.out_click(output::BTN.0, output::BTN.1);
+    a.hover = false;
+    assert!(!a.out_list_shown(), "never drawn while the notch is closed");
+    a.hover = true;
+    a.lyric_mode = true;
+    assert!(!a.out_list_shown(), "nor in the lyrics view");
+    assert!(!a.out_click(output::BTN.0, output::BTN.1), "the lyrics view has no output button");
+}
+
+/// The wheel on the button moves to the next (down) or previous (up) device, wrapping around.
+#[test]
+fn output_wheel_on_the_button_cycles_devices() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    let (bx, by) = output::BTN;
+    for want in ["hp", "mon", "spk"] {
+        assert!(a.out_wheel(bx, by, -120));
+        assert_eq!(default_output().as_deref(), Some(want));
+        assert_eq!(a.outs.cur.as_deref(), Some(want));
+    }
+    assert!(a.out_wheel(bx, by, 120));
+    assert_eq!(default_output().as_deref(), Some("mon"), "wheel up goes back");
+    assert!(!a.out_wheel(MCX, MCY, -120), "elsewhere on the controls the wheel still sets the volume");
+}
+
+/// Plugging and unplugging devices updates the list; when the last one goes the list closes.
+#[test]
+fn output_list_follows_devices_added_and_removed() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    a.out_click(output::BTN.0, output::BTN.1);
+    // speakers unplugged: Windows moves the default to the headphones
+    output::with_fake(|f| {
+        f.list.retain(|d| d.id != "spk");
+        f.cur = Some("hp".into());
+    });
+    a.out_refresh();
+    assert_eq!(a.outs.list.len(), 2);
+    assert_eq!(a.outs.current().map(|d| d.id.as_str()), Some("hp"));
+    assert!(a.out_list_shown());
+    output::with_fake(|f| f.list.push(output::Device { id: "usb".into(), name: "Speakers (USB Audio)".into(), phones: false }));
+    a.out_refresh();
+    assert_eq!(a.outs.list.len(), 3, "a new device shows up");
+    output::with_fake(|f| {
+        f.list.clear();
+        f.cur = None;
+    });
+    a.out_refresh();
+    assert!(!a.out_list_shown(), "no devices left: the list closes");
+    assert!(a.outs.current().is_none());
+}
+
+/// If Windows refuses the switch, the sound settings open; nothing else happens.
+#[test]
+fn output_switch_failure_opens_sound_settings() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    output::with_fake(|f| f.refuse = true);
+    let _ = sys::opened();
+    a.out_pick("hp");
+    assert_eq!(sys::opened(), vec!["ms-settings:sound".to_string()]);
+    assert_eq!(a.outs.cur.as_deref(), Some("spk"), "still the old device");
+    assert!(a.out_t.elapsed() > Duration::from_secs(2), "no overlay");
+}
+
+/// Picking the current device, or the wheel with only one device, switches nothing; the wheel still shows the name.
+#[test]
+fn output_single_device_changes_nothing() {
+    let mut a = test_app(1.0);
+    output::set_fake(&[("spk", "Speakers (Realtek(R) Audio)", false)], Some("spk"));
+    a.out_refresh();
+    open_slide(&mut a, SlideId::Music);
+    assert!(a.out_wheel(output::BTN.0, output::BTN.1, -120), "taken, so the volume does not move");
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0);
+    assert!(a.out_t.elapsed() < Duration::from_secs(1), "shows which device plays");
+    a.out_pick("spk");
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0, "already the default");
+}
+
+/// Without any playback device the button opens the Windows sound settings.
+#[test]
+fn output_without_devices_opens_sound_settings() {
+    let mut a = test_app(1.0);
+    output::set_fake(&[], None);
+    a.out_refresh();
+    open_slide(&mut a, SlideId::Music);
+    let _ = sys::opened();
+    assert!(a.out_click(output::BTN.0, output::BTN.1));
+    assert!(!a.out_list_shown());
+    assert_eq!(sys::opened(), vec!["ms-settings:sound".to_string()]);
+}
+
+/// More devices than rows: the wheel over the list scrolls it, and rows map to the scrolled devices.
+#[test]
+fn output_list_scrolls_with_many_devices() {
+    let mut a = test_app(1.0);
+    let names: Vec<(String, String)> = (0..6).map(|i| (format!("d{i}"), format!("Speakers {i} (USB Audio)"))).collect();
+    let list: Vec<(&str, &str, bool)> = names.iter().map(|(id, n)| (id.as_str(), n.as_str(), false)).collect();
+    output::set_fake(&list, Some("d0"));
+    a.out_refresh();
+    open_slide(&mut a, SlideId::Music);
+    a.out_click(output::BTN.0, output::BTN.1);
+    let (px, py) = (output::PANEL.0 + 40.0, output::PANEL.1 + 40.0);
+    assert!(a.out_wheel(px, py, -120));
+    assert_eq!(a.out_scroll, 1);
+    for _ in 0..5 {
+        a.out_wheel(px, py, -120);
+    }
+    assert_eq!(a.out_scroll, 6 - output::MAX_ROWS, "stops at the last row");
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0, "scrolling the list switches nothing");
+    let (rx, ry) = output::row_pos(0);
+    a.out_click(rx + 60.0, ry + 12.0);
+    assert_eq!(default_output().as_deref(), Some("d2"));
+}
+
+#[test]
+fn snap_output() {
+    shot("music-output-speaker", 1.0, music_with_outputs);
+    shot("music-output-headphones", 1.0, |a| {
+        music_with_outputs(a);
+        output::with_fake(|f| f.cur = Some("hp".into()));
+        a.out_refresh();
+    });
+    for s in SCALES {
+        shot("music-output-list", s, |a| {
+            music_with_outputs(a);
+            a.out_click(output::BTN.0, output::BTN.1);
+        });
+    }
+    shot("music-output-switched", 1.0, |a| {
+        music_with_outputs(a);
+        a.out_pick("hp");
+        a.out_t = Instant::now() - Duration::from_millis(300);
+    });
+    // the volume overlay is as wide as the output overlay, so it covers the output button too
+    shot("music-volume-overlay", 1.0, |a| {
+        music_with_outputs(a);
+        a.vol_state = (64, false);
+        a.vol_t = Instant::now() - Duration::from_millis(300);
+    });
+    shot("music-output-many", 1.0, |a| {
+        output::set_fake(
+            &[
+                ("a", "Speakers (Realtek(R) Audio)", false),
+                ("b", "Headset Earphone (Jabra Evolve2 65 with a long product name)", true),
+                ("c", "LG ULTRAGEAR (NVIDIA High Definition Audio)", false),
+                ("d", "Headphones (AirPods Pro)", true),
+                ("e", "Digital Output (S/PDIF)", false),
+            ],
+            Some("d"),
+        );
+        a.out_refresh();
+        open_slide(a, SlideId::Music);
+        a.out_click(output::BTN.0, output::BTN.1);
+        a.out_wheel(output::PANEL.0 + 40.0, output::PANEL.1 + 40.0, -120);
+    });
+}
+
 /// The lyrics mode shows where the lyrics came from ("via lrc.red"), in both languages.
 #[test]
 fn lyric_mode_credits_the_source() {
@@ -1346,4 +1571,345 @@ fn snap_update_install_toasts() {
         shot(&format!("{prefix}-toast-downloading"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Downloading(63))));
         shot(&format!("{prefix}-toast-download-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::DownloadFailed(release("9.9.9")))));
     }
+}
+
+// ---------------------------------------------------------------- download progress
+
+const MIB: u64 = 1024 * 1024;
+
+fn dl(name: &str, size: u64, speed: u64) -> downloads::DlView {
+    downloads::DlView { name: name.into(), path: format!("C:\\Users\\me\\Downloads\\{name}.crdownload"), size, speed }
+}
+
+/// A running download takes the countdown slot ("↓ 4.1 MB/s"); a prayer or meeting that is near goes first.
+#[test]
+fn download_speed_shows_in_the_countdown_slot() {
+    let mut a = test_app(1.0);
+    a.cfg.prayer_on = false;
+    a.dl_apply(vec![dl("report.pdf", 23 * MIB, 3 * MIB), dl("setup.exe", 5 * MIB, MIB + 100 * 1024)], Vec::new());
+    assert_eq!(a.dl_speed(), Some(4 * MIB + 100 * 1024), "total of both");
+    assert_eq!(a.upcoming(), Some(calendar::Upcoming::Download(4 * MIB + 100 * 1024)));
+    let mut g = Gfx::new(1.0);
+    let (label, _) = a.countdown_text(&mut g).expect("label");
+    assert!(label.ends_with("4.1 MB/s"), "{label}");
+    a.cfg.prayer_on = true;
+    prayer_in(&mut a, 2, 12);
+    assert_eq!(a.upcoming(), Some(calendar::Upcoming::Prayer(2, 12)), "the prayer countdown goes first");
+    a.cfg.prayer_on = false;
+    a.dl_apply(Vec::new(), Vec::new());
+    assert_eq!(a.upcoming(), None, "done: the slot is free again");
+}
+
+/// A finished download pops a toast; Open opens the file, Show in folder selects it in Explorer.
+#[test]
+fn finished_download_toast_opens_or_shows_the_file() {
+    let path = "C:\\Users\\me\\Downloads\\report.pdf";
+    let mut a = test_app(1.0);
+    a.dl_apply(Vec::new(), vec![path.to_string()]);
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Downloaded { path: p }) if p == path));
+    assert!(a.toast_has_button(), "hovering the toast must not cancel it");
+    assert_eq!(a.toast_size(), downloads::TOAST_DOWNLOAD);
+    a.toast.as_mut().unwrap().t0 = Instant::now() - Duration::from_secs(1);
+    let _ = sys::opened();
+    let (open, folder) = downloads::toast_buttons();
+    assert!(a.toast_click(open.0 + open.2 / 2.0, open.1 + open.3 / 2.0));
+    assert_eq!(sys::opened(), vec![path.to_string()]);
+    assert!(a.toast.is_none());
+
+    a.dl_apply(Vec::new(), vec![path.to_string()]);
+    a.toast.as_mut().unwrap().t0 = Instant::now() - Duration::from_secs(1);
+    assert!(a.toast_click(folder.0 + folder.2 / 2.0, folder.1 + folder.3 / 2.0));
+    assert_eq!(sys::opened(), vec![format!("select:{path}")]);
+}
+
+/// With the setting off nothing shows, even if the watcher still sent something.
+#[test]
+fn downloads_off_shows_nothing() {
+    let mut a = test_app(1.0);
+    a.cfg.downloads = false;
+    a.dl_apply(vec![dl("report.pdf", MIB, MIB)], vec!["C:\\x\\a.zip".into()]);
+    assert!(a.dls.is_empty());
+    assert!(a.toast.is_none());
+    assert_eq!(a.dl_speed(), None);
+}
+
+/// The pointer entering the notch opens Ledge once per new download, not on every hover.
+#[test]
+fn first_hover_after_a_new_download_opens_ledge() {
+    let mut a = test_app(1.0);
+    let ledge = a.order.iter().position(|&s| s == SlideId::Ledge).expect("Ledge is on");
+    assert!(!a.dl_on_hover(), "no download: nothing");
+    a.dl_apply(vec![dl("report.pdf", MIB, MIB)], Vec::new());
+    assert!(a.dl_on_hover());
+    assert_eq!(a.cur(), ledge);
+    a.show(0);
+    assert!(!a.dl_on_hover(), "already seen");
+    a.dl_apply(vec![dl("report.pdf", 2 * MIB, MIB)], Vec::new());
+    assert!(!a.dl_on_hover(), "the same download growing is not new");
+    a.dl_apply(vec![dl("report.pdf", 2 * MIB, MIB), dl("setup.exe", MIB, MIB)], Vec::new());
+    assert!(a.dl_on_hover(), "a second download is new");
+}
+
+/// Ledge lists the running downloads; a click on one selects its file in Explorer.
+#[test]
+fn ledge_rows_show_the_download_in_its_folder() {
+    let mut a = test_app(1.0);
+    a.dl_apply(vec![dl("report.pdf", MIB, MIB), dl("setup.exe", MIB, MIB)], Vec::new());
+    open_slide(&mut a, SlideId::Ledge);
+    let _ = sys::opened();
+    let (x, y) = downloads::ledge_row(1);
+    assert!(a.dl_ledge_click(x + 40.0, y + downloads::LEDGE_ROW_H / 2.0));
+    assert_eq!(sys::opened(), vec![format!("select:{}", a.dls[1].path)]);
+    assert!(!a.dl_ledge_click(x + 40.0, downloads::ledge_row(2).1 + 10.0), "below the last row");
+}
+
+#[test]
+fn download_rows_in_alerts() {
+    let a = test_app(1.0);
+    let i = a.settings_rows(2).iter().position(|r| r.label == "Download progress").expect("row in Alerts");
+    assert!(matches!(a.settings_rows(2)[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
+}
+
+#[test]
+fn snap_downloads() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, pre) in [(i18n::EN, ""), (i18n::ID, "id-")] {
+        i18n::set(lang);
+        let set = move |a: &mut App| {
+            a.cfg.lang = lang;
+            a.cfg.prayer_on = false;
+        };
+        shot(&format!("{pre}download-toast"), 1.0, |a| {
+            set(a);
+            show_toast(a, ToastKind::Downloaded { path: "C:\\Users\\me\\Downloads\\Quarterly report 2026 final version.pdf".into() });
+        });
+        shot(&format!("{pre}download-ledge"), 1.0, |a| {
+            set(a);
+            a.dl_apply(vec![dl("report.pdf", 23 * MIB + 400 * 1024, 4 * MIB + 100 * 1024), dl("ubuntu-26.04-desktop-amd64.iso", 1900 * MIB, 11 * MIB)], Vec::new());
+            open_slide(a, SlideId::Ledge);
+        });
+        shot(&format!("{pre}download-ledge-many"), 1.0, |a| {
+            set(a);
+            a.dl_apply((0..5).map(|i| dl(&format!("photo-{i}.jpg"), (i + 1) * MIB, 300 * 1024)).collect(), Vec::new());
+            open_slide(a, SlideId::Ledge);
+        });
+    }
+    shot("download-idle", 1.0, |a| {
+        a.cfg.prayer_on = false;
+        a.cfg.weather_on = false;
+        a.dl_apply(vec![dl("report.pdf", 23 * MIB, 4 * MIB + 100 * 1024)], Vec::new());
+    });
+    shot("download-idle", 1.5, |a| {
+        a.cfg.prayer_on = false;
+        a.cfg.weather_on = false;
+        a.dl_apply(vec![dl("report.pdf", 23 * MIB, 4 * MIB + 100 * 1024)], Vec::new());
+    });
+    shot("download-playing", 1.0, |a| {
+        a.cfg.prayer_on = false;
+        a.media.playing = true;
+        a.media.title = "Almost Easy".into();
+        a.dl_apply(vec![dl("report.pdf", 23 * MIB, 12 * MIB)], Vec::new());
+    });
+}
+
+// ---------------------------------------------------------------- prayer list, Ramadan, adhan
+
+/// Subuh 04:11 (Imsak 04:01), Terbit 05:25, Dzuhur 11:40, Ashar 14:52, Maghrib 17:49, Isya 18:59.
+fn prayer_day(a: &mut App) {
+    a.cfg.prayer_on = true;
+    a.prayer = Some((0, [251, 700, 892, 1069, 1139]));
+    a.prayer_sun = 325;
+}
+
+/// The Prayer slide is in the carousel only while prayer times are on, and the slide hotkey numbers follow.
+#[test]
+fn prayer_slide_follows_the_prayer_times_setting() {
+    let mut a = test_app(1.0);
+    assert!(a.order.contains(&SlideId::Prayer), "on by default");
+    let i = a.settings_rows(3).iter().position(|r| r.label == "Prayer times").expect("row in Widgets");
+    let (cx, cy) = settingsview::cell_pos(i);
+    a.sui.tab = 3;
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    assert!(!a.cfg.prayer_on);
+    assert!(!a.order.contains(&SlideId::Prayer), "gone with prayer times off");
+    let p = a.cfg.slides.iter().position(|&(s, _)| s == SlideId::Prayer).unwrap();
+    assert_eq!(hotkeys::number(&a.slide_cfg(), p), None, "and no hotkey number");
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    assert!(a.order.contains(&SlideId::Prayer), "back");
+}
+
+/// In Ramadan, Imsak gets a toast (no adhan) and Maghrib is "Iftar"; the adhan plays for prayers only, once.
+#[test]
+fn ramadan_toasts_and_the_adhan() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    a.cfg.ramadan = true;
+    a.cfg.adhan = adhan::SYSTEM;
+    let _ = adhan::played();
+    assert!(a.prayer_fire(241));
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Prayer { idx: 5, at: 241 })), "Imsak toast");
+    assert!(adhan::played().is_empty(), "Imsak is not a prayer: no adhan");
+    a.toast = None;
+    assert!(a.prayer_fire(1069));
+    assert_eq!(prayer::toast_text(3, a.cfg.ramadan).0, "Iftar");
+    assert_eq!(adhan::played(), vec!["system".to_string()]);
+    a.toast = None;
+    assert!(!a.prayer_fire(1069), "once per time");
+}
+
+/// Outside Ramadan nothing changes: no Imsak toast or countdown, and Maghrib keeps its name.
+#[test]
+fn outside_ramadan_nothing_changes() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    assert!(!a.prayer_fire(241), "no Imsak toast");
+    let mut g = Gfx::new(1.0);
+    {
+        let _now = prayer::fake_now(241 - 12);
+        assert_eq!(a.upcoming(), None, "no Imsak countdown");
+        a.cfg.ramadan = true;
+        assert_eq!(a.countdown_text(&mut g).map(|(l, _)| l).as_deref(), Some("Imsak 12m"));
+        a.cfg.ramadan = false;
+    }
+    let _now = prayer::fake_now(1069 - 5);
+    assert_eq!(a.countdown_text(&mut g).map(|(l, _)| l).as_deref(), Some("Maghrib 5m"));
+    a.cfg.ramadan = true;
+    assert_eq!(a.countdown_text(&mut g).map(|(l, _)| l).as_deref(), Some("Iftar 5m"));
+}
+
+/// No sound at all unless the user turned the adhan on.
+#[test]
+fn no_adhan_unless_turned_on() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    assert_eq!(a.cfg.adhan, adhan::OFF, "off by default");
+    let _ = adhan::played();
+    assert!(a.prayer_fire(892), "the toast still comes");
+    assert!(adhan::played().is_empty());
+    assert!(!a.adhan_playing());
+}
+
+/// A picked file plays when a prayer starts; the toast stays longer and its Stop button stops it.
+#[test]
+fn adhan_file_plays_and_stops_from_the_toast() {
+    let f = std::env::temp_dir().join(format!("hesewake-adhan-app-{}.mp3", std::process::id()));
+    std::fs::write(&f, b"x").unwrap();
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    a.adhan_picked(Some(f.to_string_lossy().into_owned()));
+    assert_eq!(a.cfg.adhan, adhan::FILE);
+    let _ = adhan::played();
+    assert!(a.prayer_fire(892));
+    assert_eq!(adhan::played(), vec![format!("file:{}", f.to_string_lossy())]);
+    assert!(a.adhan_playing());
+    assert!(a.toast.as_ref().unwrap().dur >= 15.0, "the toast stays up while it plays");
+    assert!(a.toast_has_button(), "hovering the toast does not cancel it");
+    a.toast.as_mut().unwrap().t0 = Instant::now() - Duration::from_secs(1);
+    let (bx, by, bw, bh) = prayer::toast_stop_rect(toast::TOAST_CHARGE.0, toast::TOAST_CHARGE.1);
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(adhan::played(), vec!["stop".to_string()]);
+    assert!(!a.adhan_playing());
+    assert!(a.toast.is_none());
+    let _ = std::fs::remove_file(&f);
+}
+
+/// The Prayer slide's Stop button while the adhan plays.
+#[test]
+fn adhan_stops_from_the_prayer_slide() {
+    let mut a = test_app(1.0);
+    prayer_day(&mut a);
+    a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
+    let (bx, by, bw, bh) = prayer::slide_stop_rect();
+    let _ = adhan::played();
+    assert!(a.prayer_click(bx + bw / 2.0, by + bh / 2.0));
+    assert!(!a.adhan_playing());
+    assert_eq!(adhan::played(), vec!["stop".to_string()]);
+    assert!(!a.prayer_click(bx + bw / 2.0, by + bh / 2.0), "nothing to stop");
+}
+
+/// Cancelling the file dialog without a file falls back to the system sound; a file keeps "File".
+#[test]
+fn adhan_file_dialog_answers() {
+    let mut a = test_app(1.0);
+    a.cfg.adhan = adhan::FILE;
+    a.adhan_picked(None);
+    assert_eq!(a.cfg.adhan, adhan::SYSTEM, "cancelled with no file");
+    a.adhan_picked(Some("C:\\Music\\adzan.mp3".into()));
+    assert_eq!((a.cfg.adhan, a.cfg.adhan_file.as_str()), (adhan::FILE, "C:\\Music\\adzan.mp3"));
+    a.adhan_picked(None);
+    assert_eq!((a.cfg.adhan, a.cfg.adhan_file.as_str()), (adhan::FILE, "C:\\Music\\adzan.mp3"), "cancelling a change keeps the file");
+}
+
+#[test]
+fn snap_prayer_slide() {
+    let _lang = i18n::restore_on_drop();
+    let _now = prayer::fake_now(860); // 14:20: Ashar (14:52) is next
+    for (lang, pre) in [(i18n::EN, ""), (i18n::ID, "id-")] {
+        i18n::set(lang);
+        let set = move |a: &mut App| {
+            a.cfg.lang = lang;
+            prayer_day(a);
+        };
+        shot(&format!("{pre}prayer-slide"), 1.0, |a| {
+            set(a);
+            open_slide(a, SlideId::Prayer);
+        });
+        shot(&format!("{pre}prayer-slide-ramadan"), 1.0, |a| {
+            set(a);
+            a.cfg.ramadan = true;
+            open_slide(a, SlideId::Prayer);
+        });
+        shot(&format!("{pre}prayer-toast-imsak"), 1.0, |a| {
+            set(a);
+            a.cfg.ramadan = true;
+            show_toast(a, ToastKind::Prayer { idx: prayer::IMSAK as u8, at: 241 });
+        });
+        shot(&format!("{pre}prayer-toast-iftar"), 1.0, |a| {
+            set(a);
+            a.cfg.ramadan = true;
+            show_toast(a, ToastKind::Prayer { idx: 3, at: 1069 });
+        });
+        shot(&format!("{pre}prayer-toast-adhan"), 1.0, |a| {
+            set(a);
+            a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
+            show_toast(a, ToastKind::Prayer { idx: 2, at: 892 });
+        });
+        shot(&format!("{pre}prayer-settings-widgets"), 1.0, |a| {
+            set(a);
+            a.cfg.adhan = adhan::FILE;
+            a.cfg.adhan_file = "C:\\Users\\me\\Music\\Adzan Makkah.mp3".into();
+            open_settings_tab(a, 3);
+            a.settings_rows_wheel(true);
+            a.settings_rows_wheel(true);
+        });
+    }
+    shot("prayer-slide", 1.5, |a| {
+        prayer_day(a);
+        a.cfg.ramadan = true;
+        open_slide(a, SlideId::Prayer);
+    });
+    shot("prayer-slide-five", 1.0, |a| {
+        prayer_day(a);
+        a.cfg.imsak_terbit = false;
+        open_slide(a, SlideId::Prayer);
+    });
+    shot("prayer-slide-adhan", 1.0, |a| {
+        prayer_day(a);
+        a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
+        open_slide(a, SlideId::Prayer);
+    });
+    {
+        let _imsak = prayer::fake_now(241 - 12);
+        shot("prayer-idle-imsak", 1.0, |a| {
+            prayer_day(a);
+            a.cfg.ramadan = true;
+            a.cfg.weather_on = false;
+        });
+    }
+    let _iftar = prayer::fake_now(1069 - 12);
+    shot("prayer-idle-iftar", 1.0, |a| {
+        prayer_day(a);
+        a.cfg.ramadan = true;
+        a.cfg.weather_on = false;
+    });
 }
