@@ -334,7 +334,7 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("New session", "Sesi baru"),
     ("Other folder...", "Folder lain..."),
     ("Usage", "Pemakaian"),
-    ("Turn on in Settings", "Nyalakan di Settings"),
+    ("Turn on in Settings", "Nyalakan di Pengaturan"),
     ("After Claude's first reply", "Setelah balasan pertama"),
     ("No Claude Code sessions", "Belum ada sesi Claude Code"),
     ("Start one with New session", "Mulai lewat Sesi baru"),

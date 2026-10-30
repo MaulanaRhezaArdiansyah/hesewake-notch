@@ -198,6 +198,14 @@ pub(crate) fn row_pos(i: usize) -> (f32, f32) {
     (LIST.0, LIST.1 + i as f32 * ROW_H)
 }
 
+/// Rows of the New session list: one line each, so the recent folders and "Other folder..." fit above the page dots.
+pub(crate) const NEW_ROW_H: f32 = 26.0;
+
+/// Top-left of row `i` of the New session list.
+pub(crate) fn new_row_pos(i: usize) -> (f32, f32) {
+    (LIST.0, LIST.1 + i as f32 * NEW_ROW_H)
+}
+
 /// The Open button of row `i`.
 pub(crate) fn open_rect(i: usize) -> (f32, f32, f32, f32) {
     let (x, y) = row_pos(i);
@@ -266,8 +274,8 @@ impl App {
             // the New session list: a recent folder, Other folder..., or anywhere else to close it
             let n = self.claude_recent_shown();
             for i in 0..=n {
-                let (rx, ry) = row_pos(i);
-                if in_rect(x, y, rx, ry, LIST.2, ROW_H) {
+                let (rx, ry) = new_row_pos(i);
+                if in_rect(x, y, rx, ry, LIST.2, NEW_ROW_H) {
                     if i < n {
                         let dir = self.claude_recent[i].clone();
                         self.claude_launch(&dir);
@@ -360,17 +368,22 @@ impl App {
     /// The New session list over the sessions: recent folders, then Other folder...
     fn draw_claude_new_list(&self, g: &mut Gfx, ox: f32, al: f32) {
         let n = self.claude_recent_shown();
-        let (x0, y0) = row_pos(0);
-        g.fill(&rrect(x0 + ox, y0, LIST.2, (n + 1) as f32 * ROW_H, 11.0), &paint(22, 24, 32, al));
+        let (x0, y0) = new_row_pos(0);
+        g.fill(&rrect(x0 + ox, y0, LIST.2, (n + 1) as f32 * NEW_ROW_H, 10.0), &paint(22, 24, 32, al));
         for i in 0..=n {
-            let (x, y) = row_pos(i);
-            let (x, cy) = (x + ox, y + ROW_H / 2.0);
+            let (x, y) = new_row_pos(i);
+            let (x, cy) = (x + ox, y + NEW_ROW_H / 2.0);
             if i < n {
+                // the project name, then its folder dimmer on the same line
                 let dir = &self.claude_recent[i];
-                let name = fit(g, folder_name(dir), 13.0, true, LIST.2 - 24.0);
-                g.txtb(&name, x + 12.0, cy - 13.0, 13.0, [255, 255, 255], al, LIST.2 - 20.0);
-                let path = fit(g, dir, 10.0, false, LIST.2 - 24.0);
-                g.txt(&path, x + 12.0, cy + 1.5, 10.0, TEXT_FAINT, al, LIST.2 - 20.0);
+                let name = fit(g, folder_name(dir), 12.0, true, LIST.2 / 2.0);
+                g.txtb(&name, x + 12.0, cy - 7.5, 12.0, [255, 255, 255], al, LIST.2 / 2.0 + 2.0);
+                let px = x + 12.0 + g.width_ex(&name, 12.0, true) + 8.0;
+                let room = x + LIST.2 - 12.0 - px;
+                if room > 30.0 {
+                    let path = fit(g, dir, 10.0, false, room);
+                    g.txt(&path, px, cy - 5.5, 10.0, TEXT_FAINT, al, room + 2.0);
+                }
             } else {
                 g.txtb(tr("Other folder..."), x + 12.0, cy - 7.5, 12.0, g.acc.bright, al, LIST.2 - 20.0);
             }
