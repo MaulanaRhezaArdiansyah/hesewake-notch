@@ -1782,8 +1782,10 @@ fn snap_claude_slide() {
             a.claude.list = vec![
                 claude_session("s1", "hesewake-notch", claude::State::Working, 7),
                 claude_session("s2", "api-gateway-with-a-long-name", claude::State::NeedsYou, 7),
-                claude_session("s3", "docs", claude::State::Done, 0),
+                claude_session("s3", "hesewake-notch", claude::State::Idle, 0),
             ];
+            a.claude.list[1].text = "Allow Bash: cargo test --locked?".into();
+            a.claude.list[2].last = Instant::now() - Duration::from_secs(5 * 60 + 20);
             a.claude_usage = Some(claude_usage_msg(41.2, 18.0, now + 2 * 3600, now));
         };
         shot(&format!("{pre}claude-slide"), 1.0, fill_slide);
@@ -1823,4 +1825,27 @@ fn snap_claude_slide() {
         a.claude.list = vec![claude_session("s1", "hesewake-notch", claude::State::Working, 7), claude_session("s2", "api", claude::State::Done, 7)];
         a.claude_usage = Some(claude_usage_msg(41.0, 18.0, now + 2 * 3600, now));
     });
+}
+
+/// Two sessions of one project are told apart by Claude's question or reply, the working time, or how long ago.
+#[test]
+fn claude_rows_tell_sessions_apart() {
+    let now = Instant::now();
+    let mut s = claude_session("s1", "notch", claude::State::Idle, 0);
+    s.last = now - Duration::from_secs(5 * 60 + 20);
+    assert_eq!(App::claude_state_text(&s, now), "Idle \u{b7} 5m ago");
+    s.state = claude::State::Done;
+    s.text = "PR is up".into();
+    assert_eq!(App::claude_state_text(&s, now), "Done \u{b7} PR is up");
+    s.text.clear();
+    assert_eq!(App::claude_state_text(&s, now), "Done \u{b7} 5m ago");
+    s.state = claude::State::NeedsYou;
+    s.text = "Allow Bash?".into();
+    assert_eq!(App::claude_state_text(&s, now), "Needs you \u{b7} Allow Bash?");
+    s.state = claude::State::Working;
+    s.turn_start = Some(now - Duration::from_secs(185));
+    assert_eq!(App::claude_state_text(&s, now), "Working \u{b7} 3m 5s");
+    assert_eq!(claude_slide::ago_text(10), "just now");
+    assert_eq!(claude_slide::ago_text(2 * 3600 + 5), "2h ago");
+    assert_eq!(claude_slide::ago_text(3 * 86_400), "3d ago");
 }

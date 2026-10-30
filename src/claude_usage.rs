@@ -95,6 +95,30 @@ pub(crate) fn decode(b: &[u8]) -> Option<Usage> {
     serde_json::from_slice::<Usage>(b).ok().filter(|u| u.v == VERSION)
 }
 
+const SAVED: &str = "claude_usage.json";
+
+/// The last numbers, saved so the Claude slide shows them right after the notch starts.
+pub(crate) fn load() -> Option<Usage> {
+    if cfg!(test) {
+        return None;
+    }
+    let text = std::fs::read_to_string(data_path(SAVED)).ok()?;
+    decode(text.as_bytes())
+}
+
+fn save(u: &Usage) {
+    if cfg!(test) {
+        return;
+    }
+    write_data(SAVED, String::from_utf8_lossy(&encode(u)).into_owned());
+}
+
+/// The 5-hour window to count as already warned about at start: a saved one at or past `WARN_PCT` (its toast came
+/// before the restart).
+pub(crate) fn warned_at_start(u: Option<&Usage>) -> i64 {
+    u.and_then(|u| u.five).filter(|w| w.pct >= WARN_PCT).map_or(0, |w| w.resets_at)
+}
+
 /// `--claude-statusline`: print the line and pass the limits to the running notch. Never fails.
 pub(crate) fn run_statusline() {
     let mut buf = Vec::new();
@@ -138,6 +162,9 @@ impl App {
                 self.claude_warned = w.resets_at;
                 self.push_toast(ToastKind::Claude(claude::Show::Usage { pct: w.pct.round() as u16, resets_at: w.resets_at }));
             }
+        }
+        if self.claude_usage.as_ref() != Some(&u) {
+            save(&u);
         }
         self.claude_usage = Some(u);
     }
@@ -206,6 +233,16 @@ mod tests {
         assert_eq!(decode(&[b'x'; 5000]), None, "too long");
         let old = Usage { v: 0, ..u };
         assert_eq!(decode(&encode(&old)), None, "other version");
+    }
+
+    #[test]
+    fn a_saved_window_past_90_was_already_warned_about() {
+        let u = parse_status(&full(), NOW).unwrap().usage;
+        assert_eq!(warned_at_start(Some(&u)), 0, "41%: nothing warned yet");
+        let mut hot = u.clone();
+        hot.five = Some(Window { pct: 93.0, resets_at: NOW + 600 });
+        assert_eq!(warned_at_start(Some(&hot)), NOW + 600, "no second toast for the same window after a restart");
+        assert_eq!(warned_at_start(None), 0);
     }
 
     #[test]
