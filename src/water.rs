@@ -617,7 +617,7 @@ impl App {
             let p = paint(c[0], c[1], c[2], (1.0 - e).max(0.0) * 0.55 * al);
             g.ring(ix, iy, r, 0.0, 1.5, &p, &p);
         }
-        g.icon_drop(ix, iy, 14.0, &paint(120, 200, 255, al));
+        g.icon_water_drop(ix, iy, 14.0, g.acc.pale, g.acc.bright, al);
         g.txtb(tr("Drink"), dx + 36.0, dy + ty(dh, 14.0), 14.0, g.acc.pale, al, 60.0);
 
         let (sx, sy2, sw, sh) = (SIDE.0 + ox, SIDE.1, SIDE.2, SIDE.3);

@@ -579,12 +579,12 @@ impl App {
         let (x0, cy) = (CX - w / 2.0, h / 2.0);
         let sc = 0.6 + 0.4 * pop(t).clamp(0.0, 1.2);
         let (icx, r) = (x0 + 34.0, 18.0 * sc);
-        // accent colours, like the Water slide; the drop itself stays water blue
+        // accent colours, like the Water slide
         let (dark, bright, deep) = (g.acc.dark, g.acc.bright, g.acc.deep);
         g.circle(icx, cy, r, &paint(dark[0], dark[1], dark[2], 0.5 * al));
         let edge = paint(bright[0], bright[1], bright[2], 0.55 * al);
         g.ring(icx, cy, r, 0.0, 1.5, &edge, &edge);
-        g.icon_drop(icx, cy, 17.0 * sc, &paint(135, 210, 255, al));
+        g.icon_water_drop(icx, cy, 17.0 * sc, g.acc.pale, g.acc.bright, al);
 
         let k = ss(0.12, 0.4, t);
         let tx = x0 + 66.0 + (1.0 - k) * 6.0;
