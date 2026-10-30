@@ -174,6 +174,7 @@ pub(crate) enum Rid {
     PrivacyDot,
     UpdateCheck,
     MicMute,
+    Downloads,
     Weather,
     City,
     Prayer,
@@ -320,6 +321,7 @@ impl App {
                 Row { id: Rid::PrivacyDot, label: tr("Mic / camera dot"), sub: tr("When an app uses them"), kind: RowKind::Toggle(self.cfg.privacy_dot) },
                 Row { id: Rid::UpdateCheck, label: tr("Update notice"), sub: tr("When a new version is out"), kind: RowKind::Toggle(self.cfg.update_check) },
                 Row { id: Rid::MicMute, label: tr("Mic mute key"), sub: tr("Ctrl+Alt+M, all apps"), kind: RowKind::Toggle(self.cfg.mic_hotkey) },
+                Row { id: Rid::Downloads, label: tr("Download progress"), sub: tr("Downloads folder"), kind: RowKind::Toggle(self.cfg.downloads) },
             ],
             3 => vec![
                 Row { id: Rid::Weather, label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
@@ -599,6 +601,13 @@ impl App {
                     self.priv_t = Instant::now();
                 }
                 Rid::UpdateCheck => self.cfg.update_check = !self.cfg.update_check,
+                Rid::Downloads => {
+                    self.cfg.downloads = !self.cfg.downloads;
+                    downloads::set_enabled(self.hwnd, self.cfg.downloads);
+                    if !self.cfg.downloads {
+                        self.dl_apply(Vec::new(), Vec::new());
+                    }
+                }
                 Rid::MicMute => {
                     self.cfg.mic_hotkey = !self.cfg.mic_hotkey;
                     hotkeys::set_mic_hotkey(self.hwnd, self.cfg.mic_hotkey);

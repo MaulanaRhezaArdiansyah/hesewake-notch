@@ -186,6 +186,8 @@ pub(crate) enum Upcoming {
     Prayer(usize, u16),
     /// Meeting title and minutes left.
     Meeting(String, i64),
+    /// Running downloads: total bytes per second (downloads.rs). Shown when no prayer or meeting is near.
+    Download(u64),
 }
 
 /// "09:30" for unix time `t` at `offset` seconds east of UTC.
@@ -325,7 +327,7 @@ impl App {
             (Some((_, pm)), Some((e, mm))) if mm < pm as i64 => Some(Upcoming::Meeting(e.summary.clone(), mm)),
             (Some((i, pm)), _) => Some(Upcoming::Prayer(i, pm)),
             (None, Some((e, mm))) => Some(Upcoming::Meeting(e.summary.clone(), mm)),
-            (None, None) => None,
+            (None, None) => self.dl_speed().filter(|_| !self.thin()).map(Upcoming::Download),
         }
     }
 
@@ -343,6 +345,7 @@ impl App {
                 let title = if g.width(&title, 12.0) > room { ellipsize(g, &title, 12.0, room) } else { title };
                 Some((title + &suffix, g.acc.bright))
             }
+            Upcoming::Download(bps) => Some((format!("\u{2193} {}", downloads::fmt_speed(bps)), g.acc.bright)),
         }
     }
 

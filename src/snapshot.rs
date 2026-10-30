@@ -134,6 +134,8 @@ fn test_app(s: f32) -> App {
         priv_cam: Vec::new(),
         priv_t: past,
         mic_muted: Some(false),
+        dls: Vec::new(),
+        dl_seen: false,
         vol_t: past,
         bright_seen: false,
         vol_state: (0, false),
@@ -1567,4 +1569,143 @@ fn snap_update_install_toasts() {
         shot(&format!("{prefix}-toast-downloading"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Downloading(63))));
         shot(&format!("{prefix}-toast-download-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::DownloadFailed(release("9.9.9")))));
     }
+}
+
+// ---------------------------------------------------------------- download progress
+
+const MIB: u64 = 1024 * 1024;
+
+fn dl(name: &str, size: u64, speed: u64) -> downloads::DlView {
+    downloads::DlView { name: name.into(), path: format!("C:\\Users\\me\\Downloads\\{name}.crdownload"), size, speed }
+}
+
+/// A running download takes the countdown slot ("↓ 4.1 MB/s"); a prayer or meeting that is near goes first.
+#[test]
+fn download_speed_shows_in_the_countdown_slot() {
+    let mut a = test_app(1.0);
+    a.cfg.prayer_on = false;
+    a.dl_apply(vec![dl("report.pdf", 23 * MIB, 3 * MIB), dl("setup.exe", 5 * MIB, MIB + 100 * 1024)], Vec::new());
+    assert_eq!(a.dl_speed(), Some(4 * MIB + 100 * 1024), "total of both");
+    assert_eq!(a.upcoming(), Some(calendar::Upcoming::Download(4 * MIB + 100 * 1024)));
+    let mut g = Gfx::new(1.0);
+    let (label, _) = a.countdown_text(&mut g).expect("label");
+    assert!(label.ends_with("4.1 MB/s"), "{label}");
+    a.cfg.prayer_on = true;
+    prayer_in(&mut a, 2, 12);
+    assert_eq!(a.upcoming(), Some(calendar::Upcoming::Prayer(2, 12)), "the prayer countdown goes first");
+    a.cfg.prayer_on = false;
+    a.dl_apply(Vec::new(), Vec::new());
+    assert_eq!(a.upcoming(), None, "done: the slot is free again");
+}
+
+/// A finished download pops a toast; Open opens the file, Show in folder selects it in Explorer.
+#[test]
+fn finished_download_toast_opens_or_shows_the_file() {
+    let path = "C:\\Users\\me\\Downloads\\report.pdf";
+    let mut a = test_app(1.0);
+    a.dl_apply(Vec::new(), vec![path.to_string()]);
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Downloaded { path: p }) if p == path));
+    assert!(a.toast_has_button(), "hovering the toast must not cancel it");
+    assert_eq!(a.toast_size(), downloads::TOAST_DOWNLOAD);
+    a.toast.as_mut().unwrap().t0 = Instant::now() - Duration::from_secs(1);
+    let _ = sys::opened();
+    let (open, folder) = downloads::toast_buttons();
+    assert!(a.toast_click(open.0 + open.2 / 2.0, open.1 + open.3 / 2.0));
+    assert_eq!(sys::opened(), vec![path.to_string()]);
+    assert!(a.toast.is_none());
+
+    a.dl_apply(Vec::new(), vec![path.to_string()]);
+    a.toast.as_mut().unwrap().t0 = Instant::now() - Duration::from_secs(1);
+    assert!(a.toast_click(folder.0 + folder.2 / 2.0, folder.1 + folder.3 / 2.0));
+    assert_eq!(sys::opened(), vec![format!("select:{path}")]);
+}
+
+/// With the setting off nothing shows, even if the watcher still sent something.
+#[test]
+fn downloads_off_shows_nothing() {
+    let mut a = test_app(1.0);
+    a.cfg.downloads = false;
+    a.dl_apply(vec![dl("report.pdf", MIB, MIB)], vec!["C:\\x\\a.zip".into()]);
+    assert!(a.dls.is_empty());
+    assert!(a.toast.is_none());
+    assert_eq!(a.dl_speed(), None);
+}
+
+/// The pointer entering the notch opens Ledge once per new download, not on every hover.
+#[test]
+fn first_hover_after_a_new_download_opens_ledge() {
+    let mut a = test_app(1.0);
+    let ledge = a.order.iter().position(|&s| s == SlideId::Ledge).expect("Ledge is on");
+    assert!(!a.dl_on_hover(), "no download: nothing");
+    a.dl_apply(vec![dl("report.pdf", MIB, MIB)], Vec::new());
+    assert!(a.dl_on_hover());
+    assert_eq!(a.cur(), ledge);
+    a.show(0);
+    assert!(!a.dl_on_hover(), "already seen");
+    a.dl_apply(vec![dl("report.pdf", 2 * MIB, MIB)], Vec::new());
+    assert!(!a.dl_on_hover(), "the same download growing is not new");
+    a.dl_apply(vec![dl("report.pdf", 2 * MIB, MIB), dl("setup.exe", MIB, MIB)], Vec::new());
+    assert!(a.dl_on_hover(), "a second download is new");
+}
+
+/// Ledge lists the running downloads; a click on one selects its file in Explorer.
+#[test]
+fn ledge_rows_show_the_download_in_its_folder() {
+    let mut a = test_app(1.0);
+    a.dl_apply(vec![dl("report.pdf", MIB, MIB), dl("setup.exe", MIB, MIB)], Vec::new());
+    open_slide(&mut a, SlideId::Ledge);
+    let _ = sys::opened();
+    let (x, y) = downloads::ledge_row(1);
+    assert!(a.dl_ledge_click(x + 40.0, y + downloads::LEDGE_ROW_H / 2.0));
+    assert_eq!(sys::opened(), vec![format!("select:{}", a.dls[1].path)]);
+    assert!(!a.dl_ledge_click(x + 40.0, downloads::ledge_row(2).1 + 10.0), "below the last row");
+}
+
+#[test]
+fn download_rows_in_alerts() {
+    let a = test_app(1.0);
+    let i = a.settings_rows(2).iter().position(|r| r.label == "Download progress").expect("row in Alerts");
+    assert!(matches!(a.settings_rows(2)[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
+}
+
+#[test]
+fn snap_downloads() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, pre) in [(i18n::EN, ""), (i18n::ID, "id-")] {
+        i18n::set(lang);
+        let set = move |a: &mut App| {
+            a.cfg.lang = lang;
+            a.cfg.prayer_on = false;
+        };
+        shot(&format!("{pre}download-toast"), 1.0, |a| {
+            set(a);
+            show_toast(a, ToastKind::Downloaded { path: "C:\\Users\\me\\Downloads\\Quarterly report 2026 final version.pdf".into() });
+        });
+        shot(&format!("{pre}download-ledge"), 1.0, |a| {
+            set(a);
+            a.dl_apply(vec![dl("report.pdf", 23 * MIB + 400 * 1024, 4 * MIB + 100 * 1024), dl("ubuntu-26.04-desktop-amd64.iso", 1900 * MIB, 11 * MIB)], Vec::new());
+            open_slide(a, SlideId::Ledge);
+        });
+        shot(&format!("{pre}download-ledge-many"), 1.0, |a| {
+            set(a);
+            a.dl_apply((0..5).map(|i| dl(&format!("photo-{i}.jpg"), (i + 1) * MIB, 300 * 1024)).collect(), Vec::new());
+            open_slide(a, SlideId::Ledge);
+        });
+    }
+    shot("download-idle", 1.0, |a| {
+        a.cfg.prayer_on = false;
+        a.cfg.weather_on = false;
+        a.dl_apply(vec![dl("report.pdf", 23 * MIB, 4 * MIB + 100 * 1024)], Vec::new());
+    });
+    shot("download-idle", 1.5, |a| {
+        a.cfg.prayer_on = false;
+        a.cfg.weather_on = false;
+        a.dl_apply(vec![dl("report.pdf", 23 * MIB, 4 * MIB + 100 * 1024)], Vec::new());
+    });
+    shot("download-playing", 1.0, |a| {
+        a.cfg.prayer_on = false;
+        a.media.playing = true;
+        a.media.title = "Almost Easy".into();
+        a.dl_apply(vec![dl("report.pdf", 23 * MIB, 12 * MIB)], Vec::new());
+    });
 }

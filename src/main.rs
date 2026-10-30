@@ -63,6 +63,7 @@ mod clock;
 mod config;
 mod data;
 mod dict;
+mod downloads;
 mod dragdrop;
 mod eye;
 mod gfx;
@@ -266,6 +267,9 @@ struct App {
     priv_t: Instant,
     /// Mute state of the default microphone(s): None = no microphone (mic.rs).
     mic_muted: Option<bool>,
+    /// Running downloads (downloads.rs), and whether the pointer already opened Ledge for them.
+    dls: Vec<downloads::DlView>,
+    dl_seen: bool,
     /// Indikator volume di slide Music setelah scroll: waktu terakhir dan (persen, bisu).
     vol_t: Instant,
     /// Peristiwa kecerahan pertama (saat pendaftaran) hanya dicatat, tidak ditampilkan.
@@ -497,6 +501,7 @@ fn main() -> Result<()> {
         keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
+        downloads::set_enabled(hwnd.0 as isize, cfg.downloads);
         audio::start_watch(hwnd.0 as isize);
         mic::start_watch(hwnd.0 as isize);
         {
@@ -633,6 +638,8 @@ fn main() -> Result<()> {
             priv_cam: demo_priv("cam"),
             priv_t: Instant::now() - Duration::from_secs(10),
             mic_muted: None,
+            dls: Vec::new(),
+            dl_seen: false,
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,
             vol_state: (0, false),
