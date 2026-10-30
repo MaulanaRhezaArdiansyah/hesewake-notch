@@ -216,6 +216,13 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     let mut p = POINT::default();
                     if GetCursorPos(&mut p).is_ok() {
                         let (x, y) = ((p.x - a.wx) as f32 / a.scale, (p.y - a.wy) as f32 / a.scale);
+                        // the output button and list come first (the button sits inside the volume area)
+                        if a.out_wheel(x, y, d) {
+                            a.last = Instant::now();
+                            present(a);
+                            schedule(a);
+                            return;
+                        }
                         if in_rect(x, y, MX - 10.0, 100.0, MW + 20.0, 56.0) {
                             if let Some((vol, muted)) = audio::adjust(audio::wheel_step(d)) {
                                 // Notch sedang terbuka: indikator di dalam slide (toast dibatalkan saat hover).
@@ -480,6 +487,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             });
             LRESULT(0)
         }
+        output::WM_OUTPUT => {
+            with_app(|a| {
+                a.out_refresh();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         audio::WM_VOLUME => {
             let (pct, muted) = audio::unpack(wp.0);
             with_app(|a| {
@@ -502,6 +517,28 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 present(a);
                 schedule(a);
             });
+            LRESULT(0)
+        }
+        downloads::WM_DOWNLOADS => {
+            if let Some((list, finished)) = downloads::take_update() {
+                with_app(|a| {
+                    a.dl_apply(list, finished);
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(0)
+        }
+        adhan::WM_ADHAN_FILE => {
+            if let Some(picked) = adhan::take_picked() {
+                with_app(|a| {
+                    a.adhan_picked(picked);
+                    a.cfg.save();
+                    present(a);
+                    schedule(a);
+                });
+            }
             LRESULT(0)
         }
         privacy::WM_PRIVACY => {
