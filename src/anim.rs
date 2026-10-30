@@ -380,7 +380,7 @@ mod frame_tests {
 
     #[test]
     fn eye_and_glow_follow_real_time_at_the_resting_rate() {
-        let (ui, clock) = frame_dt(EYE_REST_MS as f32 / 1000.0);
+        let (ui, clock) = frame_dt(eye::EYE_REST_MS as f32 / 1000.0);
         assert!((clock - 0.083).abs() < 0.001, "the glow does not slow down at 12 fps");
         assert_eq!(ui, 0.05, "UI springs keep their 50 ms cap");
         assert_eq!(frame_dt(0.016), (0.016, 0.016));
