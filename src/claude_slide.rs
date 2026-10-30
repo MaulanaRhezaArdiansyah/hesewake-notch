@@ -55,9 +55,45 @@ pub(crate) fn folder_name(dir: &str) -> &str {
     dir.trim_end_matches(['\\', '/']).rsplit(['\\', '/']).next().unwrap_or(dir)
 }
 
-/// The programs to try for a new session in `dir`: Windows Terminal, then a plain console. (program, arguments, folder)
-pub(crate) fn launch_plan(dir: &str) -> [(&'static str, String, String); 2] {
-    [("wt.exe", format!("-d \"{dir}\" claude"), dir.to_string()), ("cmd.exe", "/k claude".to_string(), dir.to_string())]
+/// `name` on `path_var` (the PATH variable) with one of `pathext`'s extensions. Only absolute folders are searched:
+/// never `.` or a relative entry, so a project folder can't slip in its own `claude.cmd`.
+pub(crate) fn find_on_path(path_var: &str, pathext: &str, name: &str) -> Option<std::path::PathBuf> {
+    let exts: Vec<&str> = pathext.split(';').map(str::trim).filter(|e| e.starts_with('.')).collect();
+    for dir in path_var.split(';').map(|d| d.trim().trim_matches('"')) {
+        let dir = std::path::Path::new(dir);
+        if dir.as_os_str().is_empty() || !dir.is_absolute() {
+            continue;
+        }
+        for ext in &exts {
+            let f = dir.join(format!("{name}{}", ext.to_ascii_lowercase()));
+            if f.is_file() {
+                return Some(f);
+            }
+        }
+    }
+    None
+}
+
+/// Windows Terminal treats `;` as a command separator in its arguments.
+fn wt_escape(s: &str) -> String {
+    s.replace(';', "\;")
+}
+
+/// The programs to try for a new session in `dir`, all by absolute path: Windows Terminal (from the app alias
+/// folder), then the console. `claude` is the full path of Claude Code, or None to open just the terminal there.
+/// (program, arguments, working folder)
+pub(crate) fn launch_plan(dir: &str, claude: Option<&str>, system_root: &str, local_appdata: &str) -> Vec<(String, String, String)> {
+    let mut plan = Vec::new();
+    if !local_appdata.is_empty() {
+        let wt = format!("{local_appdata}\Microsoft\WindowsApps\wt.exe");
+        let cmd = claude.map_or(String::new(), |c| format!(" \"{}\"", wt_escape(c)));
+        plan.push((wt, format!("-d \"{}\"{cmd}", wt_escape(dir)), dir.to_string()));
+    }
+    if !system_root.is_empty() {
+        let args = claude.map_or("/k".to_string(), |c| format!("/k \"{c}\""));
+        plan.push((format!("{system_root}\System32\cmd.exe"), args, dir.to_string()));
+    }
+    plan
 }
 
 #[cfg(test)]
@@ -71,19 +107,27 @@ pub(crate) fn launched() -> Vec<String> {
     LAUNCHED.with(|l| std::mem::take(&mut *l.borrow_mut()))
 }
 
-/// Start `claude` in `dir`: Windows Terminal, or a console when Windows Terminal is missing.
+/// Start `claude` in `dir` (an existing folder): Windows Terminal, or the console when it is missing.
 fn launch(dir: &str) {
+    if !std::path::Path::new(dir).is_dir() {
+        return;
+    }
     #[cfg(test)]
     LAUNCHED.with(|l| l.borrow_mut().push(dir.to_string()));
     #[cfg(not(test))]
-    for (exe, args, cwd) in launch_plan(dir) {
-        if shell_open(exe, &args, &cwd) {
-            return;
+    {
+        let env = |k: &str| std::env::var(k).unwrap_or_default();
+        let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        let claude = find_on_path(&env("PATH"), &pathext, "claude").map(|p| p.to_string_lossy().into_owned());
+        for (exe, args, cwd) in launch_plan(dir, claude.as_deref(), &env("SystemRoot"), &env("LOCALAPPDATA")) {
+            if std::path::Path::new(&exe).is_file() && shell_open(&exe, &args, &cwd) {
+                return;
+            }
         }
     }
 }
 
-/// `ShellExecuteW` "open"; false when Windows could not start it (e.g. Windows Terminal is not installed).
+/// `ShellExecuteW` "open" of an absolute path; false when Windows could not start it.
 #[cfg(not(test))]
 fn shell_open(exe: &str, args: &str, dir: &str) -> bool {
     use windows::Win32::UI::Shell::ShellExecuteW;
@@ -191,6 +235,12 @@ impl App {
     /// Start a new session in `dir` and keep it among the recent folders.
     pub(crate) fn claude_launch(&mut self, dir: &str) {
         self.claude_new = false;
+        if !std::path::Path::new(dir).is_dir() {
+            // a folder that is gone leaves the recent list
+            self.claude_recent.retain(|d| !d.eq_ignore_ascii_case(dir));
+            save_recent(&self.claude_recent);
+            return;
+        }
         launch(dir);
         if remember(&mut self.claude_recent, dir) {
             save_recent(&self.claude_recent);
@@ -381,11 +431,29 @@ mod tests {
 
     #[test]
     fn folder_names_and_launch_plan() {
-        assert_eq!(folder_name("C:\\code\\hesewake-notch\\"), "hesewake-notch");
+        assert_eq!(folder_name("C:\code\hesewake-notch\\"), "hesewake-notch");
         assert_eq!(folder_name("D:/work/api"), "api");
-        let plan = launch_plan("C:\\My Code\\api");
-        assert_eq!(plan[0].0, "wt.exe");
-        assert_eq!(plan[0].1, "-d \"C:\\My Code\\api\" claude", "Windows Terminal opens in the folder, quoted");
-        assert_eq!((plan[1].0, plan[1].1.as_str(), plan[1].2.as_str()), ("cmd.exe", "/k claude", "C:\\My Code\\api"), "fallback: a console in the folder");
+        let claude = "C:\Users\me\.local\bin\claude.exe";
+        let plan = launch_plan("C:\My Code\a;b", Some(claude), "C:\Windows", "C:\Users\me\AppData\Local");
+        assert_eq!(plan[0].0, "C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe", "absolute path");
+        assert_eq!(plan[0].1, format!("-d \"C:\My Code\a\;b\" \"{claude}\""), "quoted, `;` escaped for Windows Terminal, claude by full path");
+        assert_eq!(plan[1], ("C:\Windows\System32\cmd.exe".to_string(), format!("/k \"{claude}\""), "C:\My Code\a;b".to_string()), "fallback: the console in the folder");
+        let plan = launch_plan("C:\p", None, "C:\Windows", "");
+        assert_eq!(plan, vec![("C:\Windows\System32\cmd.exe".to_string(), "/k".to_string(), "C:\p".to_string())], "no claude found: just the terminal");
+    }
+
+    /// `claude` is only looked up in absolute PATH folders: a `claude.cmd` in `.` or a relative folder is never used.
+    #[test]
+    fn claude_is_found_only_in_absolute_path_folders() {
+        let base = std::env::temp_dir().join(format!("hesewake-claude-path-{}", std::process::id()));
+        let bin = base.join("bin");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("claude.cmd"), "@echo off").unwrap();
+        let path = format!(".;relative\bin;\"{}\"", bin.display());
+        assert_eq!(find_on_path(&path, ".COM;.EXE;.BAT;.CMD", "claude"), Some(bin.join("claude.cmd")));
+        assert_eq!(find_on_path(".;relative", ".EXE;.CMD", "claude"), None);
+        assert_eq!(find_on_path(&bin.display().to_string(), ".EXE", "claude"), None, "only the listed extensions");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -1711,18 +1711,30 @@ fn claude_slide_rows_and_scroll() {
 /// elsewhere closes the list.
 #[test]
 fn claude_new_session_list() {
+    let base = std::env::temp_dir().join(format!("hesewake-claude-new-{}", std::process::id()));
+    let (notch, api) = (base.join("notch"), base.join("api"));
+    std::fs::create_dir_all(&notch).unwrap();
+    std::fs::create_dir_all(&api).unwrap();
+    let (notch, api) = (notch.to_string_lossy().into_owned(), api.to_string_lossy().into_owned());
+    let gone = base.join("gone").to_string_lossy().into_owned();
+
     let mut a = test_app(1.0);
     open_claude_slide(&mut a);
-    a.claude_recent = vec!["C:\\code\\notch".into(), "C:\\code\\api".into()];
+    a.claude_recent = vec![notch.clone(), api.clone(), gone.clone()];
     let _ = claude_slide::launched();
     let (bx, by, bw, bh) = claude_slide::NEW_BTN;
     assert!(a.claude_click(bx + bw / 2.0, by + bh / 2.0));
     assert!(a.claude_new);
     let (x, y) = claude_slide::row_pos(1);
     assert!(a.claude_click(x + 40.0, y + 10.0));
-    assert_eq!(claude_slide::launched(), vec!["C:\\code\\api".to_string()]);
+    assert_eq!(claude_slide::launched(), vec![api.clone()]);
     assert!(!a.claude_new);
-    assert_eq!(a.claude_recent[0], "C:\\code\\api", "newest first");
+    assert_eq!(a.claude_recent[0], api, "newest first");
+    a.claude_click(bx + bw / 2.0, by + bh / 2.0);
+    let (x, y) = claude_slide::row_pos(2);
+    assert!(a.claude_click(x + 40.0, y + 10.0), "a folder that is gone");
+    assert!(claude_slide::launched().is_empty(), "nothing starts there");
+    assert!(!a.claude_recent.contains(&gone), "and it leaves the list");
     a.claude_click(bx + bw / 2.0, by + bh / 2.0);
     let (x, y) = claude_slide::row_pos(2);
     assert!(a.claude_click(x + 40.0, y + 10.0), "Other folder...");
@@ -1731,6 +1743,7 @@ fn claude_new_session_list() {
     a.claude_click(bx + bw / 2.0, by + bh / 2.0);
     assert!(a.claude_click(RX - 10.0, 150.0));
     assert!(!a.claude_new, "a click outside closes the list");
+    let _ = std::fs::remove_dir_all(&base);
 }
 
 /// The hooks' folders become the recent folders for New session.
