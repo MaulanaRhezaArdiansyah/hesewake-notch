@@ -56,11 +56,13 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 |   <img src="https://api.iconify.design/lucide/clock.svg?color=%23ff453a" width="22">    | Idle clock     | When nothing is playing, the notch shows the time, then switches to a blinking eye with a red glow, then loops.     |
 | <img src="https://api.iconify.design/lucide/minimize-2.svg?color=%23ff453a" width="22"> | Busy mode      | With a maximized or fullscreen window (or Adobe apps in front), the notch shrinks to a thin line. Hover to open it. |
 |  <img src="https://api.iconify.design/lucide/keyboard.svg?color=%23ff453a" width="22">  | Hotkey         | `Ctrl` + `Alt` + `H` toggles between the clock and the eye.                                                         |
+| <img src="https://api.iconify.design/lucide/mic-off.svg?color=%23ff453a" width="22"> | Mic mute       | `Ctrl` + `Alt` + `M` mutes the default microphone for every app, and again to unmute. While muted, a crossed-out mic stays in the notch, also when the mute was made elsewhere. Turn the key off in Settings > Alerts > Mic mute key. |
 |   <img src="https://api.iconify.design/lucide/waves.svg?color=%23ff453a" width="22">    | Drop animation | Dropping a file onto the notch makes its bottom edge ripple like water.                                             |
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
-| <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romaji lyrics  | Optional (Settings > Extras): Japanese  lyrics shown in romaji, using Lindera (IPADIC) and WanaKana.                 |
-| <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > Features > Language). Applies right away, including the right-click menu.     |
-| <img src="https://api.iconify.design/lucide/calendar-clock.svg?color=%23ff453a" width="22"> | Calendar       | Settings > Features > Calendar: copy your calendar's secret ICS address (Google: "Secret address in iCal format", Outlook: "Publish calendar"), then press **Paste**. The notch counts down the last 10 minutes before a meeting and shows a toast with **Join** when it starts. The link is kept in Windows Credential Manager (not in a file) and the feed is refreshed every 10 minutes. |
+| <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romanize lyrics | Optional (Settings > Widgets): Japanese lyrics shown in romaji (Lindera IPADIC and WanaKana) and Korean lyrics in Revised Romanization (no dictionary needed). |
+| <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > General > Language). Applies right away, including the right-click menu.     |
+| <img src="https://api.iconify.design/lucide/download.svg?color=%23ff453a" width="22"> | Update check   | At startup and every 24 hours the app asks GitHub for the latest release and shows a toast once per new version, with **Download** to open the release page. Nothing is installed automatically. Right-click menu: **Check for updates**. Turn it off in Settings > Alerts > Update notice. |
+| <img src="https://api.iconify.design/lucide/calendar-clock.svg?color=%23ff453a" width="22"> | Calendar       | Settings > Widgets > Calendar: copy your calendar's secret ICS address (Google: "Secret address in iCal format", Outlook: "Publish calendar"), then press **Paste**. The notch counts down the last 10 minutes before a meeting and shows a toast with **Join** when it starts. The link is kept in Windows Credential Manager (not in a file) and the feed is refreshed every 10 minutes. |
 | <img src="https://api.iconify.design/lucide/square-terminal.svg?color=%23ff453a" width="22"> | Claude Code    | Settings > Alerts > Claude Code: press **Connect** to add the notch's hooks to Claude Code's user settings (`~/.claude/settings.json`; your other settings stay, and the original file is kept once as `settings.json.hesewake-backup`). New Claude Code sessions then show a small `>_` chip while Claude works, an orange toast and mark when it needs your permission or an answer, and a toast with the time taken and the first line of its reply when it is done. Click a toast to bring that terminal to the front. Several sessions in one window (terminal tabs) bring the window, not the tab. Claude Code in WSL is not supported. **Remove** takes the hooks out again; uninstalling does too. Nothing leaves your PC. |
 
 ---
@@ -83,7 +85,7 @@ cd hesewake-notch
 cargo build --release
 ```
 
-The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics need the Lindera IPADIC dictionary: press **Get** in Settings > Extras (it goes to `%APPDATA%\hesewake-notch\dict\ipadic`), or for development run `scripts\fetch-dict.ps1` to put it in the repo's `dict\ipadic`. To make a setup installer, open `hesewake-notch.iss` in Inno Setup and compile it.
+The executable is created at `target\release\hesewake-notch.exe`. Japanese romaji needs the Lindera IPADIC dictionary: press **Get** on the "Japanese dictionary" row in Settings > Widgets (it goes to `%APPDATA%\hesewake-notch\dict\ipadic`), or for development run `scripts\fetch-dict.ps1` to put it in the repo's `dict\ipadic`. To make a setup installer, open `hesewake-notch.iss` in Inno Setup and compile it.
 
 ---
 
@@ -102,6 +104,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Romaji lyrics 
 | `clipboard.rs`                               | Clipboard history slide and clipboard listener                     |
 | `ics.rs`, `calendar.rs`                      | iCalendar reader (time zones, recurring events), calendar feed, Agenda slide |
 | `claude.rs`, `claude_hook.rs`, `claude_setup.rs` | Claude Code sessions in the notch, the `--claude-hook` bridge process, Connect/Remove in `settings.json` |
+| `update.rs`                                  | Update check against the latest GitHub release                     |
 | `dragdrop.rs`                                | OLE drag out of the Ledge                                          |
 | `eye.rs`, `busy.rs`, `icon.rs`               | Eye animation, busy detection, app icons                           |
 | `nav.rs`, `input.rs`, `config.rs`, `data.rs` | Carousel, clicks and menu, shared sizes, data storage              |

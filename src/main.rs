@@ -77,6 +77,7 @@ mod icons;
 mod input;
 mod keys;
 mod lyricview;
+mod korean;
 mod lyrics;
 mod monitors;
 mod music;
@@ -89,6 +90,7 @@ mod note;
 mod pace;
 mod perf;
 mod prayer;
+mod mic;
 mod privacy;
 mod render;
 mod romaji;
@@ -105,6 +107,7 @@ mod weather;
 mod todo;
 mod timer;
 mod toast;
+mod update;
 mod water;
 mod window;
 
@@ -248,6 +251,10 @@ struct App {
     claude: claude::Sessions,
     /// Whether the hooks are in Claude Code's settings (read when Settings opens).
     claude_link: claude_setup::Link,
+    /// A newer release, once the update check found one.
+    update: Option<update::Release>,
+    update_last: Option<Instant>,
+    update_busy: bool,
     drop_pulse: Option<Instant>,
     note: String,
     note_mode: bool,
@@ -263,6 +270,8 @@ struct App {
     priv_mic: Vec<String>,
     priv_cam: Vec<String>,
     priv_t: Instant,
+    /// Mute state of the default microphone(s): None = no microphone (mic.rs).
+    mic_muted: Option<bool>,
     /// Indikator volume di slide Music setelah scroll: waktu terakhir dan (persen, bisu).
     vol_t: Instant,
     /// Peristiwa kecerahan pertama (saat pendaftaran) hanya dicatat, tidak ditampilkan.
@@ -298,7 +307,7 @@ impl App {
         self.hover
             || self.editing
             // menekan tombol di toast Water (Snooze/Drank) bukan gestur geser: toast tidak boleh dibatalkan sebelum klik selesai
-            || (self.drag.is_some() && !self.water_toast())
+            || (self.drag.is_some() && !self.toast_has_button())
             || self.peek_until.map_or(false, |t| Instant::now() < t)
     }
 
@@ -316,7 +325,7 @@ impl App {
     }
 }
 
-/// `--demo-toast=charging|unplugged|low|bt|bt-off`: tampilkan satu toast setelah start (uji visual tanpa colok kabel).
+/// `--demo-toast=charging|unplugged|low|bt|bt-off|update|...`: tampilkan satu toast setelah start (uji visual tanpa colok kabel).
 const DEMO_NOTIF_ID: u32 = 999_999;
 
 /// `--demo-playing`: lagu palsu sedang diputar (uji tata letak notch kecil tanpa pemutar media sungguhan).
@@ -360,8 +369,17 @@ fn demo_toast() -> Option<ToastKind> {
         "water" => ToastKind::Water,
         "timer" => ToastKind::Timer { title: "Time's up".into(), label: "5 min timer".into() },
         "pomo" => ToastKind::Timer { title: "Focus #1 done".into(), label: "Short break \u{b7} 5 min".into() },
+        "update" => ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into(), installer: None })),
+        // an installer that does not exist: Install starts the download, which fails and offers the release page
+        "update-install" => {
+            let base = "https://github.com/dirgaastya/hesewake-notch/releases/download/v9.9.9";
+            let installer = update::Installer { file: "HesewakeNotch-Setup-9.9.9.exe".into(), url: format!("{base}/HesewakeNotch-Setup-9.9.9.exe"), size: 3_300_000, sums_url: format!("{base}/SHA256SUMS") };
+            ToastKind::Update(update::Note::Available(update::Release { version: "9.9.9".into(), url: "https://github.com/dirgaastya/hesewake-notch/releases/latest".into(), installer: Some(installer) }))
+        }
         "mic" => ToastKind::Privacy { cam: false, app: "Zoom".into() },
         "cam" => ToastKind::Privacy { cam: true, app: "chrome".into() },
+        "mic-muted" => ToastKind::Hud { kind: HudKind::Mic(Some(true)), on: false },
+        "mic-on" => ToastKind::Hud { kind: HudKind::Mic(Some(false)), on: true },
         "bt-off" => ToastKind::Bluetooth { name: "AirBuds Pro".into(), pct: None, connected: false },
         _ => ToastKind::Bluetooth { name: "soundcore R50i".into(), pct: None, connected: true },
     })
@@ -445,6 +463,7 @@ fn main() -> Result<()> {
         }
         i18n::set(cfg0.lang);
         hotkeys::set_slide_hotkeys(hwnd.0 as isize, cfg0.slide_hotkeys);
+        hotkeys::set_mic_hotkey(hwnd.0 as isize, cfg0.mic_hotkey);
         clipboard::listen(hwnd.0 as isize);
         let cal_link = calendar::load_link();
         calendar::start(hwnd.0 as isize, cal_link.clone());
@@ -487,6 +506,7 @@ fn main() -> Result<()> {
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
         audio::start_watch(hwnd.0 as isize);
+        mic::start_watch(hwnd.0 as isize);
         {
             let (_, lat, lon) = weather::CITIES[cfg.weather_city];
             weather::start(hwnd.0 as isize, cfg.weather_on, lat, lon);
@@ -608,6 +628,9 @@ fn main() -> Result<()> {
             agenda_scroll: 0,
             claude: claude::Sessions::default(),
             claude_link: claude_setup::Link::Off,
+            update: None,
+            update_last: None,
+            update_busy: false,
             drop_pulse: None,
             note: load_note(),
             note_mode: false,
@@ -619,6 +642,7 @@ fn main() -> Result<()> {
             priv_mic: demo_priv("mic"),
             priv_cam: demo_priv("cam"),
             priv_t: Instant::now() - Duration::from_secs(10),
+            mic_muted: None,
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,
             vol_state: (0, false),

@@ -219,8 +219,8 @@ unsafe fn poll(a: &mut App) {
             };
             let x = (p.x - a.wx) as f32 / a.scale;
             let y = (p.y - a.wy) as f32 / a.scale;
-            // Toast Water punya tombol: hover di atasnya tidak boleh membuka notch (itu membatalkan toast-nya).
-            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh && !a.water_toast();
+            // Toast dengan tombol (Water, rapat, pembaruan): hover di atasnya tidak boleh membuka notch (itu membatalkan toast-nya).
+            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh && !a.toast_has_button();
             if inside != a.hover {
                 // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.
                 let to_notif = inside
@@ -252,6 +252,10 @@ unsafe fn poll(a: &mut App) {
     }
     if a.tick_n % 10 == 0 && a.claude_tick() {
         redraw = true;
+    }
+    // Update check: looked at once a minute, runs at most every 24 hours.
+    if a.tick_n % 600 == 30 {
+        a.update_tick(Instant::now());
     }
     if a.tick_n % 50 == 0 && a.water.roll() {
         redraw = true;

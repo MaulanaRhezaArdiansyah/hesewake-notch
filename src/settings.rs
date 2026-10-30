@@ -32,6 +32,8 @@ pub(crate) struct Settings {
     pub(crate) privacy_dot: bool,
     /// Ctrl+Alt+1..8 open the Nth enabled slide (hotkeys.rs).
     pub(crate) slide_hotkeys: bool,
+    /// Ctrl+Alt+M mutes the default microphone for every app (mic.rs).
+    pub(crate) mic_hotkey: bool,
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
@@ -51,6 +53,10 @@ pub(crate) struct Settings {
     pub(crate) accent: usize,
     /// UI language, index into `i18n::LANGS` (0 = English).
     pub(crate) lang: usize,
+    /// Look for a newer release at startup and every 24 hours.
+    pub(crate) update_check: bool,
+    /// The newest version the person was already told about (told once per version).
+    pub(crate) update_seen: String,
     pub(crate) slides: SlideCfg,
 }
 
@@ -70,6 +76,7 @@ impl Default for Settings {
             lock_toast: true,
             privacy_dot: true,
             slide_hotkeys: true,
+            mic_hotkey: true,
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
@@ -80,6 +87,8 @@ impl Default for Settings {
             idle_display: 0,
             accent: 0,
             lang: 0,
+            update_check: true,
+            update_seen: String::new(),
             slides: slides::default_cfg(),
         }
     }
@@ -102,10 +111,13 @@ impl Settings {
                 "lock_toast" => s.lock_toast = flag,
                 "privacy_dot" => s.privacy_dot = flag,
                 "slide_hotkeys" => s.slide_hotkeys = flag,
+                "mic_hotkey" => s.mic_hotkey = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
                 "prayer" => s.prayer_on = flag,
+                "update_check" => s.update_check = flag,
+                "update_seen" => s.update_seen = v.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+')).take(32).collect(),
                 "monitor" => {
                     if let Ok(n) = v.parse::<usize>() {
                         s.monitor = n.min(32);
@@ -153,7 +165,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -163,6 +175,7 @@ impl Settings {
             self.lock_toast as u8,
             self.privacy_dot as u8,
             self.slide_hotkeys as u8,
+            self.mic_hotkey as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
             self.weather_on as u8,
@@ -173,6 +186,8 @@ impl Settings {
             self.idle_display,
             self.accent,
             self.lang,
+            self.update_check as u8,
+            self.update_seen,
             slides::format_slides(&self.slides),
         )
     }
@@ -251,6 +266,19 @@ mod tests {
     }
 
     #[test]
+    fn update_settings_roundtrip_and_default() {
+        let s = Settings::parse("minimal=1\n");
+        assert!(s.update_check, "on by default, also for old files");
+        assert_eq!(s.update_seen, "");
+        let mut s = Settings::default();
+        s.update_check = false;
+        s.update_seen = "0.9.0".into();
+        let back = Settings::parse(&s.serialize());
+        assert_eq!((back.update_check, back.update_seen.as_str()), (false, "0.9.0"));
+        assert_eq!(Settings::parse("update_seen=0.9.0\nx\r\n").update_seen, "0.9.0");
+    }
+
+    #[test]
     fn lang_roundtrip_and_default() {
         assert_eq!(Settings::parse("minimal=1\n").lang, crate::i18n::EN, "old file = English");
         let mut s = Settings::default();
@@ -258,6 +286,14 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).lang, crate::i18n::ID);
         assert_eq!(Settings::parse("lang=99").lang, crate::i18n::EN, "unknown = English");
         assert_eq!(Settings::parse("lang=x").lang, crate::i18n::EN);
+    }
+
+    #[test]
+    fn mic_hotkey_roundtrip_and_default() {
+        assert!(Settings::parse("minimal=1\n").mic_hotkey, "old file = on");
+        let mut s = Settings::default();
+        s.mic_hotkey = false;
+        assert!(!Settings::parse(&s.serialize()).mic_hotkey);
     }
 
     #[test]

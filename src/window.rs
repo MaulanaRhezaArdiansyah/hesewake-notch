@@ -248,6 +248,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     }
                     return;
                 }
+                if vertical && a.is_slide(SlideId::Settings) && a.rows_scrollable() {
+                    if a.last_wheel.elapsed() >= Duration::from_millis(90) {
+                        a.last_wheel = Instant::now();
+                        if a.settings_rows_wheel(d < 0) {
+                            present(a);
+                        }
+                    }
+                    return;
+                }
                 if vertical && a.is_slide(SlideId::Agenda) && a.agenda_scrollable() {
                     if a.last_wheel.elapsed() >= Duration::from_millis(90) {
                         a.last_wheel = Instant::now();
@@ -388,6 +397,24 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             }
             LRESULT(1)
         }
+        update::WM_UPDATE => {
+            if let Some((manual, release)) = update::take() {
+                with_app(|a| {
+                    a.on_update(manual, release);
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(0)
+        }
+        update::WM_UPDATE_DL => {
+            with_app(|a| {
+                a.on_update_dl();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
         calendar::WM_CALENDAR => {
             with_app(|a| {
                 // ignore a late result for a link that was just removed or replaced
@@ -433,6 +460,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 if a.cfg.hud_volume {
                     a.push_toast(ToastKind::Hud { kind: HudKind::Volume(pct, muted), on: true });
                 }
+                a.last = Instant::now();
+                present(a);
+                schedule(a);
+            });
+            LRESULT(0)
+        }
+        mic::WM_MIC => {
+            with_app(|a| {
+                a.mic_apply(mic::unpack(wp.0));
                 a.last = Instant::now();
                 present(a);
                 schedule(a);
@@ -487,13 +523,14 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
         sys::WM_TRAY => {
             match (lp.0 & 0xffff) as u32 {
                 WM_RBUTTONUP | WM_CONTEXTMENU => {
-                    let (mut minimal, mut notif_on) = (false, true);
+                    let (mut minimal, mut notif_on, mut update) = (false, true, None);
                     with_app(|a| {
                         a.menu_open = true;
                         minimal = a.minimal;
                         notif_on = a.notif_on;
+                        update = a.update.as_ref().map(|r| r.version.clone());
                     });
-                    let cmd = sys::tray_menu(hwnd, sys::autostart_enabled(), minimal, notif_on);
+                    let cmd = sys::tray_menu(hwnd, sys::autostart_enabled(), minimal, notif_on, update.as_deref());
                     run_command(hwnd, cmd);
                 }
                 WM_LBUTTONUP => {
@@ -574,6 +611,13 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             let id = wp.0 as i32;
             if id == HOTKEY_ID {
                 with_app(|a| toggle_idle_phase(a));
+            } else if id == hotkeys::MIC_ID {
+                with_app(|a| {
+                    a.mic_hotkey();
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                });
             } else if let Some(n) = hotkeys::slide_of(id) {
                 with_app(|a| {
                     if a.slide_hotkey(n) {
@@ -650,6 +694,12 @@ unsafe fn run_command(hwnd: HWND, cmd: i32) {
             }
             sys::CMD_ABOUT => show_about = true,
             sys::CMD_SETTINGS => a.open_settings(),
+            sys::CMD_UPDATE_OPEN => {
+                if let Some(r) = &a.update {
+                    sys::open_url(&r.url);
+                }
+            }
+            sys::CMD_UPDATE_CHECK => a.update_check_now(),
             sys::CMD_NOTIF => {
                 a.notif_on = !a.notif_on;
                 notif::set_enabled(a.notif_on);

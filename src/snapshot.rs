@@ -121,6 +121,9 @@ fn test_app(s: f32) -> App {
         agenda_scroll: 0,
         claude: claude::Sessions::default(),
         claude_link: claude_setup::Link::Off,
+        update: None,
+        update_last: None,
+        update_busy: false,
         drop_pulse: None,
         note: String::new(),
         note_mode: false,
@@ -132,6 +135,7 @@ fn test_app(s: f32) -> App {
         priv_mic: Vec::new(),
         priv_cam: Vec::new(),
         priv_t: past,
+        mic_muted: Some(false),
         vol_t: past,
         bright_seen: false,
         vol_state: (0, false),
@@ -296,19 +300,19 @@ fn open_settings_tab(a: &mut App, tab: u8) {
 
 #[test]
 fn snap_settings() {
-    for tab in 0..5u8 {
+    for tab in 0..4u8 {
         shot(&format!("settings-tab{tab}"), 1.0, |a| open_settings_tab(a, tab));
     }
 }
 
-/// Settings › Extras with a long city name: the stepper grows to the left instead of cutting the name.
+/// Settings › Widgets with a long city name: the stepper grows to the left instead of cutting the name.
 #[test]
 fn snap_settings_long_city() {
     for (name, city) in [("settings-city-short", "Jakarta"), ("settings-city-long", "Balikpapan"), ("settings-city-longest", "Bandar Lampung")] {
         let i = weather::CITIES.iter().position(|c| c.0 == city).unwrap();
         shot(name, 1.0, |a| {
             a.cfg.weather_city = i;
-            open_settings_tab(a, 4);
+            open_settings_tab(a, 3);
         });
     }
 }
@@ -536,10 +540,10 @@ fn snap_calendar() {
         a.cal = vec![event("Standup", now_s() + 30 * 3600, 15, None)];
         open_slide(a, SlideId::Agenda);
     });
-    shot("settings-calendar-off", 1.0, |a| open_settings_tab(a, 2));
+    shot("settings-calendar-off", 1.0, |a| open_settings_tab(a, 3));
     shot("settings-calendar-synced", 1.0, |a| {
         with_meetings(a);
-        open_settings_tab(a, 2);
+        open_settings_tab(a, 3);
     });
     shot("settings-slides-scrolled", 1.0, |a| {
         open_settings_tab(a, 0);
@@ -562,20 +566,20 @@ fn snap_calendar() {
     shot("id-settings-calendar", 1.0, |a| {
         id(a);
         with_meetings(a);
-        open_settings_tab(a, 2);
+        open_settings_tab(a, 3);
     });
 }
 
-/// The Calendar row in Settings > Features: Paste reads the clipboard, and every state's text fits, in both languages.
+/// The Calendar row in Settings > Widgets: Paste reads the clipboard, and every state's text fits, in both languages.
 #[test]
 fn calendar_row_pastes_and_fits_in_every_state() {
     let _lang = i18n::restore_on_drop();
     let mut a = test_app(1.0);
-    let row = |a: &App| a.settings_rows(2).into_iter().position(|r| r.label == i18n::tr("Calendar")).expect("Calendar row");
+    let row = |a: &App| a.settings_rows(3).into_iter().position(|r| r.label == i18n::tr("Calendar")).expect("Calendar row");
     let i = row(&a);
     let (cx, cy) = settingsview::cell_pos(i);
     calendar::TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some("https://calendar.google.com/x/basic.ics".into()));
-    a.settings_click_rows(2, cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    a.settings_click_rows(3, cx + settingsview::CELL_W - 30.0, cy + 17.0);
     assert_eq!(a.cal_link.as_deref(), Some("https://calendar.google.com/x/basic.ics"), "Paste took the link from the clipboard");
 
     let mut g = Gfx::new(1.0);
@@ -600,7 +604,7 @@ fn calendar_row_pastes_and_fits_in_every_state() {
         ];
         for (name, set) in states {
             set(&mut a);
-            let r = a.settings_rows(2).swap_remove(row(&a));
+            let r = a.settings_rows(3).swap_remove(row(&a));
             let w = settingsview::text_w(&r.kind);
             assert!(g.width_ex(r.label, 12.0, true) <= w && g.width(r.sub, 11.0) <= w, "lang {lang}, {name}: {:?} / {:?}", r.label, r.sub);
             let settingsview::RowKind::Button(b) = &r.kind else { panic!("{name}: a button") };
@@ -613,10 +617,10 @@ fn calendar_row_pastes_and_fits_in_every_state() {
 #[test]
 fn moved_minus_button_is_still_clickable() {
     let mut a = test_app(1.0);
-    let row = |a: &App| a.settings_rows(4).into_iter().position(|r| r.label == "City").unwrap();
+    let row = |a: &App| a.settings_rows(3).into_iter().position(|r| r.label == "City").unwrap();
     let i = row(&a);
     let minus_x = |a: &mut App| {
-        let r = a.settings_rows(4).swap_remove(i);
+        let r = a.settings_rows(3).swap_remove(i);
         let settingsview::RowKind::Stepper(v) = &r.kind else { unreachable!() };
         settingsview::stepper_fit(a.gfx.as_mut().unwrap(), &r, v).minus_x
     };
@@ -628,10 +632,10 @@ fn moved_minus_button_is_still_clickable() {
     let mx = minus_x(&mut a);
     assert!(mx < settingsview::STEP_PLUS_X - settingsview::STEP_MIN_SPAN, "the - button should move left");
     let (cx, cy) = settingsview::cell_pos(i);
-    a.settings_click_rows(4, cx + mx, cy + 17.0);
+    a.settings_click_rows(3, cx + mx, cy + 17.0);
     assert_eq!(a.cfg.weather_city, long - 1, "clicking the moved - button steps back");
     a.cfg.weather_city = long;
-    a.settings_click_rows(4, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    a.settings_click_rows(3, cx + settingsview::STEP_PLUS_X, cy + 17.0);
     assert_eq!(a.cfg.weather_city, (long + 1) % weather::CITIES.len(), "+ still steps forward");
 }
 
@@ -657,7 +661,7 @@ fn settings_text_fits_cells() {
     let mut g = Gfx::new(1.0);
     for lang in 0..i18n::LANGS.len() {
         i18n::set(lang);
-        for tab in 1..=4u8 {
+        for tab in 1..=3u8 {
             for r in a.settings_rows(tab) {
                 let w = settingsview::text_w(&r.kind);
                 let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));
@@ -683,25 +687,25 @@ fn settings_tabs_fit_next_to_the_title() {
     }
 }
 
-/// The Language row in Settings > Features switches the whole UI right away, and back.
+/// The Language row in Settings > General switches the whole UI right away, and back.
 #[test]
 fn language_row_switches_the_ui() {
     let _lang = i18n::restore_on_drop();
     let mut a = test_app(1.0);
-    let i = a.settings_rows(2).iter().position(|r| r.label == "Language").expect("Language row in Features");
+    let i = a.settings_rows(1).iter().position(|r| r.label == "Language").expect("Language row in General");
     let (cx, cy) = settingsview::cell_pos(i);
-    a.settings_click_rows(2, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    a.settings_click_rows(1, cx + settingsview::STEP_PLUS_X, cy + 17.0);
     assert_eq!(a.cfg.lang, i18n::ID);
     assert_eq!(i18n::current(), i18n::ID, "applied right away");
-    assert_eq!(a.settings_rows(2)[i].label, "Bahasa");
-    assert_eq!(a.settings_rows(4)[1].label, "Kota");
+    assert_eq!(a.settings_rows(1)[i].label, "Bahasa");
+    assert_eq!(a.settings_rows(3)[1].label, "Kota");
     assert_eq!(SlideId::Todo.label(), "Tugas");
     assert_eq!(clock::day_short(1), "Sen");
     assert_eq!(clock::month(4), "Mei");
     assert_eq!(timer::fmt_preset(90 * 60), "1 j 30 mnt");
-    a.settings_click_rows(2, cx + settingsview::STEP_PLUS_X, cy + 17.0);
+    a.settings_click_rows(1, cx + settingsview::STEP_PLUS_X, cy + 17.0);
     assert_eq!(a.cfg.lang, i18n::EN);
-    assert_eq!(a.settings_rows(4)[1].label, "City");
+    assert_eq!(a.settings_rows(3)[1].label, "City");
     assert_eq!(clock::day_short(1), "Mon");
     assert_eq!(timer::fmt_preset(90 * 60), "1 h 30 min");
 }
@@ -714,7 +718,7 @@ fn snap_indonesian() {
         a.cfg.lang = i18n::ID;
         i18n::set(i18n::ID);
     };
-    for tab in 0..5u8 {
+    for tab in 0..4u8 {
         shot(&format!("id-settings-tab{tab}"), 1.0, |a| {
             id(a);
             open_settings_tab(a, tab);
@@ -784,7 +788,7 @@ fn snap_prayer() {
         a.tm.start(Instant::now() - Duration::from_secs(61));
     });
     shot("toast-prayer", 1.0, |a| show_toast(a, ToastKind::Prayer { idx: 2, at: 15 * 60 + 12 }));
-    // the "Prayer times" row in Settings > Extras: see settings-tab4
+    // the "Prayer times" row in Settings > Extras: see settings-tab3
 }
 
 #[test]
@@ -793,7 +797,7 @@ fn snap_accents() {
         let n = ac.name.to_lowercase();
         shot(&format!("accent-{n}-settings"), 1.0, |a| {
             a.cfg.accent = i;
-            open_settings_tab(a, 4);
+            open_settings_tab(a, 1);
         });
         shot(&format!("accent-{n}-todo"), 1.0, |a| {
             a.cfg.accent = i;
@@ -829,9 +833,9 @@ fn accent_changes_the_rendered_slide() {
 
 #[test]
 fn snap_slide_hotkeys() {
-    // Settings > Slides with each slide's shortcut, and Features with the "Slide hotkeys" toggle
+    // Settings > Slides with each slide's shortcut, and General with the "Slide hotkeys" toggle
     shot("hotkeys-settings-slides", 1.0, |a| open_settings_tab(a, 0));
-    shot("hotkeys-settings-features", 1.0, |a| open_settings_tab(a, 2));
+    shot("hotkeys-settings-general", 1.0, |a| open_settings_tab(a, 1));
     shot("hotkeys-settings-slides-off", 1.0, |a| {
         a.cfg.slide_hotkeys = false;
         open_settings_tab(a, 0);
@@ -1134,18 +1138,21 @@ fn claude_row_connects_and_disconnects() {
     let mut a = test_app(1.0);
     a.open_settings();
     assert_eq!(a.claude_link, claude_setup::Link::Off);
-    let i = a.settings_rows(3).iter().position(|r| r.label == "Claude Code").expect("Claude Code row in Alerts");
-    assert_eq!(a.settings_rows(3)[i].sub, "Not connected");
-    let (cx, cy) = settingsview::cell_pos(i);
+    let i = a.settings_rows(2).iter().position(|r| r.label == "Claude Code").expect("Claude Code row in Alerts");
+    assert_eq!(a.settings_rows(2)[i].sub, "Not connected");
+    // the last row of Alerts: scroll it into view
+    a.sui.tab = 2;
+    while a.settings_rows_wheel(true) {}
+    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("scrolled into view");
     let button = (cx + settingsview::CELL_W - 30.0, cy + 17.0);
 
-    a.settings_click_rows(3, button.0, button.1);
+    a.settings_click_rows(2, button.0, button.1);
     assert_eq!(a.claude_link, claude_setup::Link::On);
     assert!(read().contains("--claude-hook"), "hooks written");
     assert!(read().contains("\"model\": \"opus\""), "the rest kept");
-    assert_eq!(a.settings_rows(3)[i].sub, "Connected");
+    assert_eq!(a.settings_rows(2)[i].sub, "Connected");
 
-    a.settings_click_rows(3, button.0, button.1);
+    a.settings_click_rows(2, button.0, button.1);
     assert_eq!(a.claude_link, claude_setup::Link::Off);
     assert!(!read().contains("--claude-hook"), "hooks removed");
 
@@ -1154,7 +1161,7 @@ fn claude_row_connects_and_disconnects() {
     a.settings_open = false;
     a.open_settings();
     assert_eq!(a.claude_link, claude_setup::Link::Invalid);
-    a.settings_click_rows(3, button.0, button.1);
+    a.settings_click_rows(2, button.0, button.1);
     assert_eq!(read(), "{ broken", "an invalid file is never written");
 
     claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = None);
@@ -1169,9 +1176,364 @@ fn snap_claude_settings_row() {
         i18n::set(lang);
         for (name, link) in links {
             shot(&format!("{prefix}-settings-row-{name}"), 1.0, |a| {
-                open_settings_tab(a, 3);
+                open_settings_tab(a, 2);
+                while a.settings_rows_wheel(true) {}
                 a.claude_link = link;
             });
         }
+    }
+}
+
+/// Ctrl+Alt+M mutes every default microphone, the next press unmutes them, and each press shows the HUD.
+#[test]
+fn mic_hotkey_mutes_and_unmutes() {
+    let mut a = test_app(1.0);
+    let hud = |a: &App| match a.toast.as_ref().map(|t| &t.kind) {
+        Some(ToastKind::Hud { kind: HudKind::Mic(s), .. }) => Some(*s),
+        _ => None,
+    };
+    mic::set_fake(&[false, true]);
+    a.mic_hotkey();
+    assert_eq!(mic::fake(), vec![true, true], "one device was still on: mute both");
+    assert_eq!(a.mic_muted, Some(true));
+    assert_eq!(hud(&a), Some(Some(true)), "HUD says muted");
+    a.mic_hotkey();
+    assert_eq!(mic::fake(), vec![false, false], "all muted: unmute");
+    assert_eq!(a.mic_muted, Some(false));
+    assert_eq!(hud(&a), Some(Some(false)), "the HUD is updated in place");
+}
+
+/// Without a microphone the hotkey only says so: no mute state and nothing new in the notch.
+#[test]
+fn no_microphone_changes_nothing() {
+    let mut a = test_app(1.0);
+    mic::set_fake(&[]);
+    let before = anim::target(&a);
+    a.mic_hotkey();
+    assert_eq!(mic::fake(), Vec::<bool>::new());
+    assert_eq!(a.mic_muted, None);
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Hud { kind: HudKind::Mic(None), .. })), "HUD says there is no microphone");
+    a.toast = None;
+    assert_eq!(anim::target(&a), before, "the idle notch keeps its size");
+    a.mic_apply(None);
+    assert_eq!(a.priv_extra(), 0.0);
+}
+
+/// A mute made elsewhere (Windows, a keyboard mic key, another app) shows a crossed-out mic, without a toast.
+#[test]
+fn mute_from_elsewhere_shows_in_the_notch() {
+    let mut a = test_app(1.0);
+    assert_eq!(a.priv_extra(), 0.0, "mic on and unused: nothing");
+    a.mic_apply(Some(true));
+    assert!(a.toast.is_none(), "no toast for a change made elsewhere");
+    let muted = a.priv_extra();
+    assert!(muted > 0.0, "muted while no app uses the mic: the crossed-out mic still shows");
+    a.priv_mic = vec!["Zoom".into()];
+    assert_eq!(a.priv_extra(), muted, "in use and muted: one crossed-out mic, not a dot next to it");
+    a.cfg.privacy_dot = false;
+    assert_eq!(a.priv_extra(), muted, "with the dots off the mute still shows while the hotkey is on");
+    a.cfg.mic_hotkey = false;
+    assert_eq!(a.priv_extra(), 0.0, "both settings off: nothing");
+    a.cfg.privacy_dot = true;
+    a.cfg.mic_hotkey = true;
+    a.mic_apply(Some(false));
+    let dot = a.priv_extra();
+    assert!(dot > 0.0 && dot < muted, "unmuted and in use: the orange dot again ({dot} < {muted})");
+}
+
+/// Settings > Alerts has the "Mic mute key" toggle, on by default.
+#[test]
+fn mic_hotkey_row_in_alerts() {
+    let mut a = test_app(1.0);
+    let rows = a.settings_rows(2);
+    let i = rows.iter().position(|r| r.label == "Mic mute key").expect("row in Alerts");
+    assert!(matches!(rows[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
+    open_settings_tab(&mut a, 2);
+    assert!(a.settings_rows_wheel(true), "the 8th row sits below the grid until it scrolls");
+    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("visible after scrolling");
+    a.settings_click_rows(2, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    assert!(!a.cfg.mic_hotkey);
+}
+
+/// The mic HUD's name and state fit side by side in every language.
+#[test]
+fn mic_hud_text_fits() {
+    let _lang = i18n::restore_on_drop();
+    let mut g = Gfx::new(1.0);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        for s in [None, Some(false), Some(true)] {
+            let (label, state) = toast::mic_hud_text(s);
+            let used = g.width_ex(label, 14.0, true) + 8.0 + g.width_ex(state, 14.0, true);
+            let room = toast::TOAST_HUD.0 - 54.0 - 20.0;
+            assert!(used <= room, "lang {lang} {s:?}: {label:?} + {state:?} = {used:.1} px > {room} px");
+        }
+    }
+}
+
+#[test]
+fn snap_mic_mute() {
+    let _lang = i18n::restore_on_drop();
+    for s in SCALES {
+        shot("idle-mic-muted", s, |a| a.mic_muted = Some(true));
+    }
+    shot("idle-mic-in-use", 1.0, |a| a.priv_mic = vec!["Zoom".into()]);
+    shot("idle-mic-muted-in-use", 1.0, |a| {
+        a.mic_muted = Some(true);
+        a.priv_mic = vec!["Zoom".into()];
+    });
+    shot("idle-cam-and-mic-muted", 1.0, |a| {
+        a.mic_muted = Some(true);
+        a.priv_mic = vec!["Zoom".into()];
+        a.priv_cam = vec!["Zoom".into()];
+    });
+    shot("playing-mic-muted", 1.0, |a| {
+        a.mic_muted = Some(true);
+        a.media = Media { title: "Almost Easy".into(), artist: "Avenged Sevenfold".into(), playing: true, pos: 60, dur: 240, pos_ms: 60_000, source: "Demo".into(), sources: 1 };
+    });
+    shot("toast-mic-in-use-muted", 1.0, |a| {
+        a.mic_muted = Some(true);
+        show_toast(a, ToastKind::Privacy { cam: false, app: "Zoom".into() });
+    });
+    for lang in [i18n::EN, i18n::ID] {
+        let pre = if lang == i18n::ID { "id-" } else { "" };
+        for (name, s) in [("hud-mic-muted", Some(true)), ("hud-mic-on", Some(false)), ("hud-mic-none", None)] {
+            shot(&format!("{pre}{name}"), 1.0, |a| {
+                a.cfg.lang = lang;
+                i18n::set(lang);
+                show_toast(a, ToastKind::Hud { kind: HudKind::Mic(s), on: s == Some(false) });
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------- update check
+
+fn release(v: &str) -> update::Release {
+    update::Release { version: v.into(), url: format!("https://github.com/dirgaastya/hesewake-notch/releases/tag/v{v}"), installer: None }
+}
+
+/// A release that has an installer and its checksum file (so the toast offers one-click Install).
+fn release_with_installer(v: &str) -> update::Release {
+    let base = format!("https://github.com/dirgaastya/hesewake-notch/releases/download/v{v}");
+    let installer = update::Installer { file: format!("HesewakeNotch-Setup-{v}.exe"), url: format!("{base}/HesewakeNotch-Setup-{v}.exe"), size: 3_300_000, sums_url: format!("{base}/SHA256SUMS") };
+    update::Release { installer: Some(installer), ..release(v) }
+}
+
+fn update_note(a: &App) -> Option<update::Note> {
+    match &a.toast {
+        Some(Toast { kind: ToastKind::Update(n), .. }) => Some(n.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn update_toast_once_per_version() {
+    let mut a = test_app(1.0);
+    a.on_update(false, Some(release("99.0.0")));
+    assert_eq!(update_note(&a), Some(update::Note::Available(release("99.0.0"))));
+    assert_eq!(a.cfg.update_seen, "99.0.0");
+    assert_eq!(a.update, Some(release("99.0.0")), "kept for the menu");
+    a.toast = None;
+    a.on_update(false, Some(release("99.0.0")));
+    assert_eq!(update_note(&a), None, "the same version is told once");
+    a.on_update(false, Some(release("99.0.1")));
+    assert_eq!(update_note(&a), Some(update::Note::Available(release("99.0.1"))), "a newer one again");
+}
+
+#[test]
+fn update_quiet_when_current_or_offline() {
+    let mut a = test_app(1.0);
+    a.on_update(false, Some(release(env!("CARGO_PKG_VERSION"))));
+    assert_eq!((update_note(&a), a.update.clone()), (None, None), "same version: nothing");
+    a.on_update(false, Some(release("0.0.1")));
+    assert_eq!(update_note(&a), None, "older: nothing");
+    a.on_update(false, None);
+    assert_eq!(update_note(&a), None, "offline: silent");
+}
+
+#[test]
+fn update_check_from_the_menu_always_answers() {
+    let mut a = test_app(1.0);
+    a.on_update(true, Some(release(env!("CARGO_PKG_VERSION"))));
+    assert_eq!(update_note(&a), Some(update::Note::UpToDate));
+    a.toast = None;
+    a.on_update(true, None);
+    assert_eq!(update_note(&a), Some(update::Note::Failed));
+    a.toast = None;
+    a.cfg.update_seen = "99.0.0".into();
+    a.on_update(true, Some(release("99.0.0")));
+    assert_eq!(update_note(&a), Some(update::Note::Available(release("99.0.0"))), "asked: shown even if seen before");
+}
+
+#[test]
+fn update_checks_daily_and_never_when_off() {
+    let mut a = test_app(1.0);
+    let t0 = Instant::now();
+    a.cfg.update_check = false;
+    assert!(!a.update_tick(t0), "off: no network call");
+    a.cfg.update_check = true;
+    assert!(a.update_tick(t0), "first check");
+    assert!(!a.update_tick(t0 + Duration::from_secs(60)), "still running");
+    a.on_update(false, None);
+    assert!(!a.update_tick(t0 + Duration::from_secs(3600)), "not before 24 hours");
+    assert!(a.update_tick(t0 + update::INTERVAL + Duration::from_secs(1)), "again after 24 hours");
+    assert_eq!(update::fetches(), vec![false, false], "two automatic checks, no manual one");
+}
+
+#[test]
+fn update_toast_download_opens_the_release() {
+    let mut a = test_app(1.0);
+    a.on_update(false, Some(release("99.0.0")));
+    if let Some(t) = a.toast.as_mut() {
+        t.t0 = Instant::now() - Duration::from_millis(1500);
+    }
+    let (bx, by, bw, bh) = update::button_rect(toast::TOAST_UPDATE.0, toast::TOAST_UPDATE.1);
+    let _ = sys::opened();
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), vec![release("99.0.0").url]);
+    assert!(a.toast.is_none());
+}
+
+#[test]
+fn update_row_in_alerts() {
+    let mut a = test_app(1.0);
+    let i = a.settings_rows(2).iter().position(|r| r.label == "Update notice").expect("Update notice row in Alerts");
+    open_settings_tab(&mut a, 2);
+    assert!(settingsview::row_cell_visible(i, 0).is_none(), "the 7th row starts below the grid");
+    assert!(a.settings_rows_wheel(true));
+    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("visible after scrolling");
+    assert!(a.cfg.update_check, "on by default");
+    a.settings_click_rows(2, cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    assert!(!a.cfg.update_check);
+}
+
+#[test]
+fn snap_update_toasts() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, prefix) in [(i18n::EN, "update"), (i18n::ID, "id-update")] {
+        i18n::set(lang);
+        shot(&format!("{prefix}-toast-available"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
+        shot(&format!("{prefix}-toast-up-to-date"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::UpToDate)));
+        shot(&format!("{prefix}-toast-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Failed)));
+        shot(&format!("{prefix}-settings-alerts"), 1.0, |a| open_settings_tab(a, 2));
+    }
+    shot("update-toast-available", 1.5, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
+}
+
+/// General has 9 rows: the first six show, the wheel brings the rest into view, and rows keep working there.
+#[test]
+fn rows_tab_scrolls_to_the_last_rows() {
+    let mut a = test_app(1.0);
+    open_settings_tab(&mut a, 1);
+    assert_eq!(a.settings_rows(1).len(), 9);
+    assert!(a.rows_scrollable());
+    assert!(settingsview::row_cell_visible(8, 0).is_none(), "the 9th row starts below the grid");
+    assert!(a.settings_rows_wheel(true));
+    assert!(a.settings_rows_wheel(true));
+    assert_eq!(a.sui.rows_scroll, 2, "9 rows = 5 rows of cells, 3 show");
+    assert!(!a.settings_rows_wheel(true), "nothing left to scroll");
+    assert!(settingsview::row_cell_visible(0, a.sui.rows_scroll).is_none(), "the first row scrolled out");
+    assert!(settingsview::row_cell_visible(8, a.sui.rows_scroll).is_some(), "the last row is in view");
+    let (x, y) = settingsview::row_cell_visible(6, a.sui.rows_scroll).expect("Minimal notch is visible");
+    let was = a.minimal;
+    a.settings_click_rows(1, x + settingsview::CELL_W - 30.0, y + 17.0);
+    assert_eq!(a.minimal, !was, "its toggle works after scrolling");
+    shot("settings-general-scrolled", 1.0, |a| {
+        open_settings_tab(a, 1);
+        a.settings_rows_wheel(true);
+        a.settings_rows_wheel(true);
+    });
+    assert!(a.settings_rows_wheel(false));
+    assert!(a.settings_rows_wheel(false));
+    assert_eq!(a.sui.rows_scroll, 0);
+    // changing tab starts at the top again
+    a.settings_rows_wheel(true);
+    a.settings_set_tab(2);
+    assert_eq!(a.sui.rows_scroll, 0);
+}
+
+/// The lyrics mode shows where the lyrics came from ("via lrc.red"), in both languages.
+#[test]
+fn lyric_mode_credits_the_source() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, prefix) in [(i18n::EN, "lyrics"), (i18n::ID, "id-lyrics")] {
+        i18n::set(lang);
+        for (src, name) in [(lyrics::Source::Lrclib, "lrclib"), (lyrics::Source::LrcRed, "lrcred")] {
+            shot(&format!("{prefix}-credit-{name}"), 1.0, |a| {
+                a.media.title = "Song".into();
+                a.media.artist = "Artist".into();
+                a.media.dur = 200;
+                a.media.playing = true;
+                a.lyrics = lyrics::Lyrics::Synced(lyrics::parse_lrc("[00:01.00]First line
+[00:05.00]Second line
+[00:09.00]Third line"), src);
+                a.lyric_mode = true;
+                open_slide(a, SlideId::Music);
+            });
+        }
+    }
+}
+
+/// Toasts with a button must not let the hover open the notch (that cancels the toast before the button is pressed).
+#[test]
+fn toasts_with_buttons_are_not_cancelled_by_hover() {
+    let mut a = test_app(1.0);
+    assert!(!a.toast_has_button(), "no toast");
+    show_toast(&mut a, ToastKind::Water);
+    assert!(a.toast_has_button(), "Snooze / Drank");
+    show_toast(&mut a, ToastKind::Update(update::Note::Available(release("9.9.9"))));
+    assert!(a.toast_has_button(), "Download");
+    show_toast(&mut a, ToastKind::Meeting { title: "Standup".into(), at: now_s(), link: Some("https://meet.google.com/abc-defg-hij".into()) });
+    assert!(a.toast_has_button(), "Join");
+    show_toast(&mut a, ToastKind::Claude(claude::Show::NeedsYou { session: "s1".into(), project: "notch".into(), text: "Claude needs your permission".into() }));
+    assert!(a.toast_has_button(), "a Claude Code toast is clicked to reach its terminal");
+    show_toast(&mut a, ToastKind::Update(update::Note::UpToDate));
+    assert!(!a.toast_has_button(), "nothing to press");
+    show_toast(&mut a, ToastKind::Charging { pct: 50 });
+    assert!(!a.toast_has_button());
+}
+
+/// One click on Install starts the download and turns the toast into a progress toast; a failure falls back to the
+/// release page; without an installer the button still just opens the release page.
+#[test]
+fn update_install_flow() {
+    let mut a = test_app(1.0);
+    let r = release_with_installer("99.0.0");
+    show_toast(&mut a, ToastKind::Update(update::Note::Available(r.clone())));
+    let (w, h) = toast::TOAST_UPDATE;
+    let (bx, by, bw, bh) = update::button_rect(w, h);
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(update::installs(), vec!["HesewakeNotch-Setup-99.0.0.exe".to_string()], "the download started");
+    assert!(sys::opened().is_empty(), "the browser is not opened");
+    assert_eq!(update_note(&a), Some(update::Note::Downloading(0)));
+    assert!(a.toast_has_button(), "hover must not cancel the progress toast");
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0), "clicks are swallowed while downloading");
+    assert!(update::installs().is_empty(), "no second download");
+    assert!(a.toast.is_some());
+
+    // a failed download offers the release page
+    a.update = Some(r.clone());
+    a.set_update_note(update::Note::DownloadFailed(r.clone()));
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), vec![r.url.clone()]);
+    assert!(a.toast.is_none());
+
+    // no installer asset: the old behaviour
+    let plain = release("99.0.0");
+    show_toast(&mut a, ToastKind::Update(update::Note::Available(plain.clone())));
+    assert!(a.toast_click(bx + bw / 2.0, by + bh / 2.0));
+    assert_eq!(sys::opened(), vec![plain.url]);
+    assert!(update::installs().is_empty());
+}
+
+#[test]
+fn snap_update_install_toasts() {
+    let _lang = i18n::restore_on_drop();
+    for (lang, prefix) in [(i18n::EN, "update"), (i18n::ID, "id-update")] {
+        i18n::set(lang);
+        shot(&format!("{prefix}-toast-install"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Available(release_with_installer("9.9.9")))));
+        shot(&format!("{prefix}-toast-downloading"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Downloading(63))));
+        shot(&format!("{prefix}-toast-download-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::DownloadFailed(release("9.9.9")))));
     }
 }

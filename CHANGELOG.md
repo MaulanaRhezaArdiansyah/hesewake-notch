@@ -2,6 +2,41 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [0.10.2] - 2026-10-29
+
+### Added
+- **Pasang pembaruan dengan satu klik**: pada toast "Version X is available", tombol kini **Install** (bila rilisnya punya installer dan berkas `SHA256SUMS`). Aplikasi mengunduh `HesewakeNotch-Setup-X.exe` dengan progres di toast, memeriksa ukuran dan **SHA-256**-nya terhadap `SHA256SUMS` di rilis yang sama, menyimpannya di folder sementara, lalu menjalankan installer biasa (wizard-nya tetap terlihat; tidak ada instal senyap). Berkas hanya diunduh dari `github.com/dirgaastya/hesewake-notch/releases/download/`, ukurannya harus wajar, dan bila unduhan atau checksum gagal, toast menawarkan halaman rilis. Rilis lama tanpa `SHA256SUMS` tetap membuka halaman rilis seperti sebelumnya. Workflow rilis kini menerbitkan `SHA256SUMS` di setiap rilis. Karena installer belum ditandatangani, PC dengan Smart App Control atau kebijakan Application Control tetap bisa memblokirnya, sama seperti unduhan manual.
+
+## [0.10.1] - 2026-10-29
+
+### Fixed
+- **Tombol Download pada toast pembaruan tidak bisa dipencet**: begitu pointer mendekati toast, notch ikut terbuka dan membuka slide, sehingga toast hilang sebelum tombolnya terklik. Hover di atas toast yang punya tombol (pengingat Water, **Join** pada rapat, **Download** pada pembaruan) kini tidak lagi membuka notch; sebelumnya hanya toast Water yang dikecualikan.
+
+## [0.10.0] - 2026-10-29
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #32).
+
+### Added
+- **Mute mikrofon** dengan `Ctrl+Alt+M` untuk semua aplikasi (`IAudioEndpointVolume::SetMute` pada perangkat rekam default; bila perangkat untuk peran konsol dan komunikasi berbeda, keduanya di-mute). HUD singkat menampilkan **Muted**, **On**, atau **Not found** bila tidak ada mikrofon. Perubahan mute dari tempat lain (pengaturan Windows, tombol mic di keyboard, aplikasi lain) diikuti langsung tanpa polling. Pil privasi di sisi kanan notch kecil menampilkan mic tercoret selama di-mute, oranye bila ada aplikasi yang masih memakai mic dan abu-abu bila tidak, jadi status mute tidak pernah tersembunyi; toast "Microphone in use" ikut menampilkannya. Bisa dimatikan di Settings > Alerts > "Mic mute key" (kontribusi @MaulanaRhezaArdiansyah, PR #32).
+- **Lirik cadangan dari [lrc.red](https://lrc.red)**: bila LRCLIB tidak punya lirik sinkron untuk sebuah lagu, aplikasi mencari di lrc.red (judul + artis, lalu judul saja). Hasil hanya dipakai bila judulnya sama persis (versi lain seperti "(Acoustic)" tidak ikut), artisnya cocok, dan durasinya selisih paling banyak 3 detik. Penanda waktu per kata (`<00:19.76>`) dibuang supaya baris tampil bersih. Permintaan hanya terjadi sekali per lagu, dan hanya bila LRCLIB tidak punya lirik sinkron. Sesuai syarat lrc.red, permintaan memakai User-Agent yang menyebut aplikasi, tautan, dan email kontak, dan sumber lirik dikreditkan: label kecil "via lrc.red" / "via LRCLIB" (klik membuka situsnya) di pojok panel mode lirik, serta di kotak About.
+- Unison (Better Lyrics) ikut dicoba sebagai sumber lain, tetapi dilewati: tujuh pencarian lagu populer, Jepang, dan Indonesia semuanya tidak ditemukan karena kuncinya video YouTube.
+
+- **Lirik Korea dalam romanisasi** (Settings > Widgets > "Romanize lyrics", menggantikan "Romaji lyrics"): suku kata Hangul dilatinkan dengan *Revised Romanization*, sistem resmi Korea Selatan, **tanpa kamus dan tanpa unduhan**. Aturan bunyi antar suku kata diterapkan dalam satu kata: liaison (한국어 = *hangugeo*), nasalisasi (국물 = *gungmul*), lateralisasi (신라 = *silla*), aspirasi dengan ㅎ (놓다 = *nota*), dan palatalisasi (같이 = *gachi*); sesuai RR, pengerasan bunyi tidak ditulis (학교 = *hakgyo*). Karena Korea tidak butuh kamus, toggle ini kini selalu bisa dinyalakan, dan unduhan kamus IPADIC (khusus Jepang) pindah ke baris tersendiri **"Japanese dictionary"** (Get, lalu Delete dengan dua kali tekan). Diuji dengan puluhan kata dan dengan lirik nyata.
+
+### Changed
+- **Settings dirapikan**: tab kini **Slides, General, Alerts, Widgets** (sebelumnya Slides, Display, Features, Alerts, Extras), dikelompokkan menurut tujuan. **General**: Language, Accent, Autostart, Slide hotkeys, Monitor, Notch size, Minimal notch, Thin on maximize, Idle display. **Alerts**: Notifications, Contact photos, Volume HUD, Brightness HUD, Lock keys, Mic / camera dot, Update notice. **Widgets**: Weather, City, Prayer times, Calendar, Lyric timing, Romaji lyrics (dan Delete kamus).
+- **Baris bisa di-scroll**: tab General, Alerts, dan Widgets menampilkan tiga baris sel sekaligus dan sisanya digulir dengan roda mouse (scrollbar tipis di kanan), sehingga tidak ada lagi batas enam pengaturan per tab. Sel kini tersusun kiri ke kanan, atas ke bawah. Pindah tab selalu mulai dari atas.
+- Di kode, klik pengaturan kini dikenali lewat id baris (`Rid`), bukan nomor urut, jadi menambah atau memindah pengaturan tidak lagi menggeser nomor yang lain.
+
+## [0.9.0] - 2026-10-29
+
+Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #30).
+
+### Added
+- **Pemberitahuan pembaruan** (Settings > Alerts > "Update notice", default nyala): sekitar semenit setelah aplikasi mulai, lalu tiap 24 jam, aplikasi menanyakan rilis terbaru ke GitHub (`releases/latest`) di thread latar. Bila ada versi yang lebih baru, muncul toast "Version X is available" dengan tombol **Download** yang membuka halaman rilis, sekali per versi (versi yang sudah dilihat disimpan sebagai `update_seen` di `settings.txt`). Tidak ada unduhan atau instal otomatis. Bila setting dimatikan, tidak ada permintaan otomatis.
+- **Menu klik kanan**: **Check for updates** selalu menjawab dengan toast (ada versi baru, "You're up to date", atau gagal), dan **Update available (X)...** muncul selama ada versi yang lebih baru.
+- Hanya halaman di `github.com/dirgaastya/hesewake-notch/releases/` yang dibuka; draft, pre-release, dan tag non-versi diabaikan; versi dibandingkan secara numerik. Kegagalan (offline, rate limit) diam saat pengecekan otomatis (kontribusi @MaulanaRhezaArdiansyah, PR #30).
+
 ## [0.8.0] - 2026-10-29
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #20, #27).
