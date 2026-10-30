@@ -76,7 +76,7 @@ pub(crate) fn find_on_path(path_var: &str, pathext: &str, name: &str) -> Option<
 
 /// Windows Terminal treats `;` as a command separator in its arguments.
 fn wt_escape(s: &str) -> String {
-    s.replace(';', "\;")
+    s.replace(';', "\\;")
 }
 
 /// The programs to try for a new session in `dir`, all by absolute path: Windows Terminal (from the app alias
@@ -85,13 +85,13 @@ fn wt_escape(s: &str) -> String {
 pub(crate) fn launch_plan(dir: &str, claude: Option<&str>, system_root: &str, local_appdata: &str) -> Vec<(String, String, String)> {
     let mut plan = Vec::new();
     if !local_appdata.is_empty() {
-        let wt = format!("{local_appdata}\Microsoft\WindowsApps\wt.exe");
+        let wt = format!("{local_appdata}\\Microsoft\\WindowsApps\\wt.exe");
         let cmd = claude.map_or(String::new(), |c| format!(" \"{}\"", wt_escape(c)));
         plan.push((wt, format!("-d \"{}\"{cmd}", wt_escape(dir)), dir.to_string()));
     }
     if !system_root.is_empty() {
         let args = claude.map_or("/k".to_string(), |c| format!("/k \"{c}\""));
-        plan.push((format!("{system_root}\System32\cmd.exe"), args, dir.to_string()));
+        plan.push((format!("{system_root}\\System32\\cmd.exe"), args, dir.to_string()));
     }
     plan
 }
@@ -431,15 +431,15 @@ mod tests {
 
     #[test]
     fn folder_names_and_launch_plan() {
-        assert_eq!(folder_name("C:\code\hesewake-notch\\"), "hesewake-notch");
+        assert_eq!(folder_name("C:\\code\\hesewake-notch\\\"), "hesewake-notch");
         assert_eq!(folder_name("D:/work/api"), "api");
-        let claude = "C:\Users\me\.local\bin\claude.exe";
-        let plan = launch_plan("C:\My Code\a;b", Some(claude), "C:\Windows", "C:\Users\me\AppData\Local");
-        assert_eq!(plan[0].0, "C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe", "absolute path");
-        assert_eq!(plan[0].1, format!("-d \"C:\My Code\a\;b\" \"{claude}\""), "quoted, `;` escaped for Windows Terminal, claude by full path");
-        assert_eq!(plan[1], ("C:\Windows\System32\cmd.exe".to_string(), format!("/k \"{claude}\""), "C:\My Code\a;b".to_string()), "fallback: the console in the folder");
-        let plan = launch_plan("C:\p", None, "C:\Windows", "");
-        assert_eq!(plan, vec![("C:\Windows\System32\cmd.exe".to_string(), "/k".to_string(), "C:\p".to_string())], "no claude found: just the terminal");
+        let claude = "C:\\Users\\me\\.local\\bin\\claude.exe";
+        let plan = launch_plan("C:\\My Code\\a;b", Some(claude), "C:\\Windows", "C:\\Users\\me\\AppData\\Local");
+        assert_eq!(plan[0].0, "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe", "absolute path");
+        assert_eq!(plan[0].1, format!("-d \"C:\\My Code\\a\\;b\" \"{claude}\""), "quoted, `;` escaped for Windows Terminal, claude by full path");
+        assert_eq!(plan[1], ("C:\\Windows\\System32\\cmd.exe".to_string(), format!("/k \"{claude}\""), "C:\\My Code\\a;b".to_string()), "fallback: the console in the folder");
+        let plan = launch_plan("C:\\p", None, "C:\\Windows", "");
+        assert_eq!(plan, vec![("C:\\Windows\\System32\\cmd.exe".to_string(), "/k".to_string(), "C:\\p".to_string())], "no claude found: just the terminal");
     }
 
     /// `claude` is only looked up in absolute PATH folders: a `claude.cmd` in `.` or a relative folder is never used.
@@ -450,7 +450,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(bin.join("claude.cmd"), "@echo off").unwrap();
-        let path = format!(".;relative\bin;\"{}\"", bin.display());
+        let path = format!(".;relative\\bin;\"{}\"", bin.display());
         assert_eq!(find_on_path(&path, ".COM;.EXE;.BAT;.CMD", "claude"), Some(bin.join("claude.cmd")));
         assert_eq!(find_on_path(".;relative", ".EXE;.CMD", "claude"), None);
         assert_eq!(find_on_path(&bin.display().to_string(), ".EXE", "claude"), None, "only the listed extensions");
