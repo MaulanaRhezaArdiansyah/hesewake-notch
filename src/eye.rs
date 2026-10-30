@@ -17,8 +17,17 @@ pub(crate) const SPLASH_FADE: f32 = 0.35;
 
 const EYE_FADE_IN: f32 = 0.45;
 const EYE_FADE_OUT: f32 = 0.50;
-/// Timer period while the eye is resting (only the glow flows): ~25 fps is plenty and cheap.
-pub(crate) const EYE_REST_MS: u32 = 40;
+/// Timer period while the eye rests (only the glow flows and the eye breathes): about 12 fps. Blinks and glances
+/// run at 16 ms.
+pub(crate) const EYE_REST_MS: u32 = 83;
+/// A blink or glance due this soon switches to 16 ms frames first, so it starts as smoothly as before.
+const EYE_SOON_SECS: f32 = 0.12;
+/// A glance counts as moving until it is this close to its target and this slow: the rest of the spring's tail is
+/// a tenth of a pixel, too small to see, so it runs at the resting rate.
+const LOOK_SETTLE_PX: f32 = 0.1;
+const LOOK_SETTLE_V: f32 = 1.0;
+/// With no keyboard or mouse input for this long the eye stops moving (no frames at all) until input comes back.
+pub(crate) const EYE_STILL_AFTER_SECS: f32 = 300.0;
 
 // Eye geometry. The two shapes below are the eyes of eye.svg (viewBox 1000x1000), baked in as cubic
 // beziers so nothing has to be parsed at runtime. The white plate of the SVG is just the bounding box.
@@ -150,9 +159,34 @@ impl EyeAnim {
         self.boost = ((sy - 1.0).max(0.0) * 1.5).min(0.5);
     }
 
-    /// True while something is moving (needs the fast 16 ms timer).
+    /// True while something visibly moves (needs the fast 16 ms timer).
     pub(crate) fn active(&self) -> bool {
-        self.blinking || self.age < EYE_FADE_IN + 0.1 || (self.look - self.look_to).abs() > 0.02 || self.look_v.abs() > 0.05
+        self.moving(LOOK_SETTLE_PX, LOOK_SETTLE_V)
+    }
+
+    /// Blinking, fading in, or a glance not yet within `px` of its target (or faster than `v` px/s).
+    fn moving(&self, px: f32, v: f32) -> bool {
+        self.blinking || self.age < EYE_FADE_IN + 0.1 || (self.look - self.look_to).abs() > px || self.look_v.abs() > v
+    }
+
+    /// A blink or a glance starts within `EYE_SOON_SECS`.
+    fn soon(&self) -> bool {
+        !self.blinking && (self.wait < EYE_SOON_SECS || self.look_wait < EYE_SOON_SECS)
+    }
+
+    /// Timer period for the eye phase: 16 ms while (or just before) the eye moves, `EYE_REST_MS` while it rests,
+    /// and 0 (no frames) once nobody has used the keyboard or mouse for `EYE_STILL_AFTER_SECS`. A blink that is
+    /// already running finishes first, so the eye never stops half closed.
+    pub(crate) fn frame_ms(&self, input_idle_secs: f32) -> u32 {
+        if self.active() {
+            16
+        } else if input_idle_secs >= EYE_STILL_AFTER_SECS {
+            0
+        } else if self.soon() {
+            16
+        } else {
+            EYE_REST_MS
+        }
     }
 
     fn fade_in(&self) -> f32 {
@@ -406,5 +440,124 @@ impl App {
         for p in &self.eye_paths {
             g.pm.fill_path(p, &white, FillRule::Winding, tr, None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Open eyes in the middle of a rest: no blink or glance due for a while.
+    fn resting() -> EyeAnim {
+        let mut e = EyeAnim::new();
+        for _ in 0..120 {
+            e.update(1.0 / 60.0);
+        }
+        e.blinking = false;
+        e.bt = 0.0;
+        e.set_pose(1.0);
+        (e.wait, e.look_wait) = (2.0, 2.0);
+        (e.look, e.look_to, e.look_v) = (0.0, 0.0, 0.0);
+        e
+    }
+
+    #[test]
+    fn resting_eye_runs_at_about_12_fps() {
+        let e = resting();
+        assert!(!e.active());
+        assert_eq!(e.frame_ms(0.0), EYE_REST_MS);
+        assert!((70..=100).contains(&EYE_REST_MS), "10 to 14 fps");
+    }
+
+    #[test]
+    fn blinks_and_glances_stay_at_60_fps() {
+        let mut e = resting();
+        e.wait = 0.1;
+        assert_eq!(e.frame_ms(0.0), 16, "a blink is due: 60 fps before it starts");
+        let mut e = resting();
+        e.look_wait = 0.05;
+        assert_eq!(e.frame_ms(0.0), 16, "a glance is due");
+        let mut e = resting();
+        e.wait = 0.0;
+        e.update(1.0 / 60.0);
+        assert!(e.blinking);
+        assert_eq!(e.frame_ms(0.0), 16, "blinking");
+    }
+
+    /// Driven by its own timer from a rest, every blink frame is 16 ms, so the short anticipation (70 ms) is seen.
+    #[test]
+    fn blink_frames_are_short_even_coming_from_a_rest() {
+        let mut e = resting();
+        e.wait = 1.0;
+        let (mut t, mut blink_frames, mut long) = (0.0, 0, 0);
+        while t < 2.5 {
+            let dt = e.frame_ms(0.0) as f32 / 1000.0;
+            let was = e.blinking;
+            e.update(dt);
+            t += dt;
+            if was {
+                blink_frames += 1;
+                if dt > 0.017 {
+                    long += 1;
+                }
+            }
+        }
+        assert!(blink_frames > 20, "a blink happened ({blink_frames} frames)");
+        assert_eq!(long, 0, "no blink frame at the rest rate");
+    }
+
+    /// A glance runs at 60 fps for as long as it visibly moves; what is left at the resting rate is under 0.15 px.
+    #[test]
+    fn glances_move_at_60_fps_until_the_motion_is_invisible() {
+        let mut e = resting();
+        e.look_to = EYE_LOOK_MAX;
+        (e.wait, e.look_wait) = (100.0, 100.0); // only this glance, no blink or next glance meanwhile
+        let mut slow_moves = 0.0f32;
+        for _ in 0..200 {
+            let ms = e.frame_ms(0.0);
+            let before = e.look;
+            e.update(ms as f32 / 1000.0);
+            if ms != 16 {
+                slow_moves += (e.look - before).abs();
+            }
+        }
+        assert!((e.look - EYE_LOOK_MAX).abs() < 0.02, "the glance arrives");
+        assert!(slow_moves < 0.15, "only {slow_moves} px of the glance is drawn at the resting rate");
+    }
+
+    /// Frames per second of the eye phase over 10 minutes of its own timeline (fixed random seed).
+    fn simulated_fps(policy: impl Fn(&EyeAnim) -> u32) -> f32 {
+        let mut e = EyeAnim::new();
+        let (mut t, mut frames) = (0.0f32, 0u32);
+        while t < 600.0 {
+            let dt = policy(&e) as f32 / 1000.0;
+            e.update(dt);
+            t += dt;
+            frames += 1;
+        }
+        frames as f32 / t
+    }
+
+    /// The old policy (40 ms at rest, glances moving until 0.02 px) gives the frame rate measured on a real laptop
+    /// for issue #26 (36.8 fps), so the model holds. The new one gives about 26.6 fps: what is left is the blinks and
+    /// the visible part of the glances, which stay at 60 fps.
+    #[test]
+    fn fewer_frames_than_before() {
+        let old = simulated_fps(|e| if e.moving(0.02, 0.05) { 16 } else { 40 });
+        let new = simulated_fps(|e| e.frame_ms(0.0));
+        eprintln!("eye phase: old {old:.1} fps, new {new:.1} fps");
+        assert!((31.0..43.0).contains(&old), "old policy {old:.1} fps (measured: 36.8)");
+        assert!(new < old * 0.75, "new {new:.1} fps vs old {old:.1} fps");
+    }
+
+    #[test]
+    fn eye_stops_when_nobody_is_there() {
+        let e = resting();
+        assert_eq!(e.frame_ms(EYE_STILL_AFTER_SECS + 1.0), 0, "away: no frames");
+        assert_eq!(e.frame_ms(EYE_STILL_AFTER_SECS - 1.0), EYE_REST_MS);
+        let mut e = resting();
+        e.wait = 0.0;
+        e.update(1.0 / 60.0);
+        assert_eq!(e.frame_ms(EYE_STILL_AFTER_SECS + 1.0), 16, "a blink in progress finishes first");
     }
 }
