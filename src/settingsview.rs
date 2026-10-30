@@ -175,6 +175,7 @@ pub(crate) enum Rid {
     UpdateCheck,
     MicMute,
     ClaudeCode,
+    ClaudeUsage,
     Weather,
     City,
     Prayer,
@@ -262,6 +263,7 @@ impl App {
             self.settings_open = true;
             self.order = slides::visible_order(&self.cfg.slides, true);
             self.claude_link = claude_setup::read_link();
+            self.claude_status = claude_setup::read_status();
         }
         self.show_id(SlideId::Settings);
         self.peek_until = Some(Instant::now() + Duration::from_secs(8));
@@ -323,7 +325,16 @@ impl App {
                 Row { id: Rid::UpdateCheck, label: tr("Update notice"), sub: tr("When a new version is out"), kind: RowKind::Toggle(self.cfg.update_check) },
                 Row { id: Rid::MicMute, label: tr("Mic mute key"), sub: tr("Ctrl+Alt+M, all apps"), kind: RowKind::Toggle(self.cfg.mic_hotkey) },
                 Row { id: Rid::ClaudeCode, label: "Claude Code", sub: self.claude_sub(), kind: RowKind::Button(self.claude_button_text().into()) },
-            ],
+            ]
+            .into_iter()
+            // usage through our status line, while Claude Code is connected
+            .chain((self.claude_link == claude_setup::Link::On).then(|| Row {
+                id: Rid::ClaudeUsage,
+                label: tr("Claude usage"),
+                sub: self.claude_usage_sub(),
+                kind: RowKind::Toggle(self.claude_status == claude_setup::StatusLink::On),
+            }))
+            .collect(),
             3 => vec![
                 Row { id: Rid::Weather, label: tr("Weather"), sub: tr("Left of the clock"), kind: RowKind::Toggle(self.cfg.weather_on) },
                 Row { id: Rid::City, label: tr("City"), sub: tr("Location"), kind: RowKind::Stepper(weather::CITIES[self.cfg.weather_city].0.to_string()) },
@@ -607,6 +618,7 @@ impl App {
                         self.claude_button();
                     }
                 }
+                Rid::ClaudeUsage => self.claude_usage_toggle(),
                 Rid::MicMute => {
                     self.cfg.mic_hotkey = !self.cfg.mic_hotkey;
                     hotkeys::set_mic_hotkey(self.hwnd, self.cfg.mic_hotkey);

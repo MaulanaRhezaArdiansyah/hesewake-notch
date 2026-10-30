@@ -39,6 +39,8 @@ pub(crate) enum Show {
     NeedsYou { session: String, project: String, text: String },
     Done { session: String, project: String, text: String, secs: Option<u64> },
     Error { session: String, project: String },
+    /// The 5-hour usage window passed `claude_usage::WARN_PCT`.
+    Usage { pct: u16, resets_at: i64 },
 }
 
 #[derive(Default)]
@@ -189,6 +191,7 @@ impl Show {
     pub(crate) fn session(&self) -> &str {
         match self {
             Show::NeedsYou { session, .. } | Show::Done { session, .. } | Show::Error { session, .. } => session,
+            Show::Usage { .. } => "",
         }
     }
 }
@@ -235,6 +238,10 @@ impl App {
         if let Some(show) = self.claude.apply(m, Instant::now(), fg) {
             self.push_toast(ToastKind::Claude(show));
         }
+        // the project folders people work in, for New session on the Claude slide
+        if !m.subagent && matches!(m.kind, EventKind::SessionStart | EventKind::Prompt) && claude_slide::remember(&mut self.claude_recent, &m.cwd) {
+            claude_slide::save_recent(&self.claude_recent);
+        }
         self.last = Instant::now();
     }
 
@@ -275,6 +282,11 @@ impl App {
                 (GREEN, title, join(project, text))
             }
             Show::Error { project, .. } => (RED, tr("Stopped with an error").to_string(), project.clone()),
+            Show::Usage { pct, resets_at } => {
+                let reset = claude_usage::reset_text(*resets_at, notif::now_unix() as i64, calendar::local_offset());
+                let sub = if reset.is_empty() { tr("5-hour limit").to_string() } else { format!("{} \u{b7} {reset}", tr("5-hour limit")) };
+                (ORANGE, fill(tr("Claude usage {}%"), &[pct]), sub)
+            }
         };
         let sc = 0.6 + 0.4 * toast::pop(t).clamp(0.0, 1.2);
         let (icx, r) = (x0 + 34.0, 18.0 * sc);
@@ -391,6 +403,23 @@ impl App {
     pub(crate) fn claude_button(&mut self) {
         let on = self.claude_link != claude_setup::Link::On;
         self.claude_link = claude_setup::apply(on).unwrap_or(claude_setup::Link::Invalid);
+        self.claude_status = claude_setup::read_status();
+    }
+
+    /// The Claude usage row: turn our status line on or off. Someone else's status line stays.
+    pub(crate) fn claude_usage_toggle(&mut self) {
+        if self.claude_status != claude_setup::StatusLink::Taken {
+            let on = self.claude_status != claude_setup::StatusLink::On;
+            self.claude_status = claude_setup::apply_status(on).unwrap_or(self.claude_status);
+        }
+    }
+
+    pub(crate) fn claude_usage_sub(&self) -> &'static str {
+        if self.claude_status == claude_setup::StatusLink::Taken {
+            tr("Your own status line is set")
+        } else {
+            tr("5h and 7d limits")
+        }
     }
 }
 

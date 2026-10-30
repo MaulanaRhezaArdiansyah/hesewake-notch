@@ -121,6 +121,12 @@ fn test_app(s: f32) -> App {
         agenda_scroll: 0,
         claude: claude::Sessions::default(),
         claude_link: claude_setup::Link::Off,
+        claude_status: claude_setup::StatusLink::Off,
+        claude_usage: None,
+        claude_warned: 0,
+        claude_recent: Vec::new(),
+        claude_scroll: 0,
+        claude_new: false,
         update: None,
         update_last: None,
         update_busy: false,
@@ -480,7 +486,7 @@ fn countdown_shows_whichever_comes_first() {
 fn slides_grid_scrolls_to_the_tenth_slide() {
     let mut a = test_app(1.0);
     open_settings_tab(&mut a, 0);
-    assert_eq!(a.cfg.slides.len(), 10);
+    assert_eq!(a.cfg.slides.len(), SlideId::USER.len());
     assert!(settingsview::slide_cells_visible(9, 0).is_none(), "the 10th slide starts below the grid");
     assert!(a.settings_slides_wheel(true));
     assert_eq!(a.sui.slides_scroll, 1);
@@ -1536,4 +1542,272 @@ fn snap_update_install_toasts() {
         shot(&format!("{prefix}-toast-downloading"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Downloading(63))));
         shot(&format!("{prefix}-toast-download-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::DownloadFailed(release("9.9.9")))));
     }
+}
+
+// ---------------------------------------------------------------- Claude Code phase 2: usage and the Claude slide
+
+fn claude_session(id: &str, project: &str, state: claude::State, hwnd: isize) -> claude::Session {
+    claude::Session {
+        id: id.into(),
+        project: project.into(),
+        state,
+        turn_start: Some(Instant::now() - Duration::from_secs(185)),
+        last: Instant::now(),
+        text: String::new(),
+        hwnd,
+        pid: 0,
+    }
+}
+
+fn claude_usage_msg(five: f32, seven: f32, resets_at: i64, at: i64) -> claude_usage::Usage {
+    claude_usage::Usage {
+        v: claude_usage::VERSION,
+        five: Some(claude_usage::Window { pct: five, resets_at }),
+        seven: Some(claude_usage::Window { pct: seven, resets_at: resets_at + 3 * 86_400 }),
+        at,
+    }
+}
+
+/// The Claude slide on, and opened.
+fn open_claude_slide(a: &mut App) {
+    for e in a.cfg.slides.iter_mut() {
+        if e.0 == SlideId::Claude {
+            e.1 = true;
+        }
+    }
+    a.order = slides::visible_order(&a.cfg.slides, false);
+    open_slide(a, SlideId::Claude);
+}
+
+fn usage_toast(a: &App) -> Option<u16> {
+    match a.toast.as_ref().map(|t| &t.kind) {
+        Some(ToastKind::Claude(claude::Show::Usage { pct, .. })) => Some(*pct),
+        _ => None,
+    }
+}
+
+/// The 5-hour window warns once when it reaches 90%, and again only for a new window; older numbers are ignored.
+#[test]
+fn claude_usage_warns_once_per_window() {
+    let mut a = test_app(1.0);
+    let now = notif::now_unix() as i64;
+    let reset = now + 3600;
+    a.on_claude_usage(claude_usage_msg(85.0, 20.0, reset, now));
+    assert_eq!(usage_toast(&a), None, "below 90%");
+    a.on_claude_usage(claude_usage_msg(91.4, 21.0, reset, now + 1));
+    assert_eq!(usage_toast(&a), Some(91));
+    a.toast = None;
+    a.on_claude_usage(claude_usage_msg(96.0, 22.0, reset, now + 2));
+    assert_eq!(usage_toast(&a), None, "same window: once");
+    a.on_claude_usage(claude_usage_msg(10.0, 1.0, reset, now - 50));
+    assert_eq!(a.claude_window(false, now).map(|w| w.pct), Some(96.0), "older numbers do not win");
+    a.on_claude_usage(claude_usage_msg(92.0, 30.0, reset + 5 * 3600, now + 3));
+    assert_eq!(usage_toast(&a), Some(92), "a new window warns again");
+    assert_eq!(a.claude_window(false, reset + 6 * 3600), None, "after its reset the window shows as reset");
+}
+
+/// A click on the usage toast opens the Claude slide.
+#[test]
+fn claude_usage_toast_opens_the_slide() {
+    let mut a = test_app(1.0);
+    open_claude_slide(&mut a);
+    a.show(0);
+    a.hover = false;
+    show_toast(&mut a, ToastKind::Claude(claude::Show::Usage { pct: 91, resets_at: notif::now_unix() as i64 + 3600 }));
+    assert!(a.toast_click(CX, 20.0));
+    assert!(a.is_slide(SlideId::Claude));
+}
+
+/// Our status line: added and removed from Settings, never over someone else's, and gone with Remove.
+#[test]
+fn claude_usage_row_sets_our_status_line() {
+    let dir = std::env::temp_dir().join(format!("hesewake-claude-status-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("settings.json"), "{\"model\":\"opus\"}").unwrap();
+    claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = Some(dir.clone()));
+    let read = || serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+
+    let mut a = test_app(1.0);
+    a.open_settings();
+    assert!(!a.settings_rows(2).iter().any(|r| r.label == "Claude usage"), "only while connected");
+    a.claude_button();
+    assert_eq!(a.claude_link, claude_setup::Link::On);
+    assert!(a.settings_rows(2).iter().any(|r| r.label == "Claude usage"));
+    a.claude_usage_toggle();
+    assert_eq!(a.claude_status, claude_setup::StatusLink::On);
+    let cmd = read()["statusLine"]["command"].as_str().unwrap().to_string();
+    assert_eq!(cmd, "\"C:/Program Files/Hesewake Notch/hesewake-notch.exe\" --claude-statusline", "forward slashes, quoted for the spaces");
+    assert_eq!(read()["model"], "opus", "the rest kept");
+    a.claude_usage_toggle();
+    assert_eq!(a.claude_status, claude_setup::StatusLink::Off);
+    assert!(read().get("statusLine").is_none());
+
+    // turned on again, then Remove takes it out with the hooks
+    a.claude_usage_toggle();
+    a.claude_button();
+    assert_eq!(a.claude_link, claude_setup::Link::Off);
+    assert_eq!(a.claude_status, claude_setup::StatusLink::Off);
+    assert!(read().get("statusLine").is_none() && read().get("hooks").is_none());
+
+    // someone else's status line is never replaced
+    std::fs::write(dir.join("settings.json"), "{\"statusLine\":{\"type\":\"command\",\"command\":\"~/my-line.sh\"}}").unwrap();
+    a.claude_button();
+    a.claude_status = claude_setup::read_status();
+    assert_eq!(a.claude_status, claude_setup::StatusLink::Taken);
+    assert_eq!(a.claude_usage_sub(), "Your own status line is set");
+    a.claude_usage_toggle();
+    assert_eq!(read()["statusLine"]["command"], "~/my-line.sh");
+    a.claude_button();
+    assert_eq!(read()["statusLine"]["command"], "~/my-line.sh", "Remove leaves it too");
+
+    claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn claude_status_command_and_moved_exe() {
+    assert_eq!(claude_setup::status_command("C:\\Tools\\hesewake-notch.exe", None), "C:/Tools/hesewake-notch.exe --claude-statusline");
+    assert_eq!(
+        claude_setup::status_command("C:\\Program Files\\Hesewake Notch\\hesewake-notch.exe", Some("C:\\PROGRA~1\\HESEWA~1\\HESEWA~1.EXE")),
+        "C:/PROGRA~1/HESEWA~1/HESEWA~1.EXE --claude-statusline",
+        "the short path has no spaces: it works in Git Bash and PowerShell"
+    );
+    let mut v = serde_json::json!({});
+    claude_setup::connect(&mut v, "C:\\Old\\hesewake-notch.exe");
+    claude_setup::set_status(&mut v, &claude_setup::status_command("C:\\Old\\hesewake-notch.exe", None), true);
+    claude_setup::connect(&mut v, "C:\\New\\hesewake-notch.exe");
+    assert_eq!(v["statusLine"]["command"], "C:/New/hesewake-notch.exe --claude-statusline", "Fix points our status line at the new exe too");
+    let mut theirs = serde_json::json!({ "statusLine": { "type": "command", "command": "bash ~/line.sh" } });
+    assert_eq!(claude_setup::set_status(&mut theirs, "x --claude-statusline", true), claude_setup::StatusLink::Taken);
+    claude_setup::disconnect(&mut theirs);
+    assert_eq!(theirs["statusLine"]["command"], "bash ~/line.sh");
+}
+
+/// Sessions on the slide: a click on a row brings it to the front (and answers a waiting prompt); the wheel scrolls.
+#[test]
+fn claude_slide_rows_and_scroll() {
+    let mut a = test_app(1.0);
+    open_claude_slide(&mut a);
+    a.claude.list = vec![
+        claude_session("s1", "hesewake-notch", claude::State::NeedsYou, 0),
+        claude_session("s2", "api", claude::State::Working, 0),
+        claude_session("s3", "docs", claude::State::Done, 0),
+        claude_session("s4", "web", claude::State::Idle, 0),
+        claude_session("s5", "infra", claude::State::Error, 0),
+    ];
+    let (x, y) = claude_slide::row_pos(0);
+    assert!(a.claude_click(x + 40.0, y + 10.0));
+    assert_eq!(a.claude.get("s1").map(|s| s.state), Some(claude::State::Answered), "the prompt counts as answered");
+    assert!(a.claude_wheel(true));
+    assert!(a.claude_wheel(true));
+    assert!(!a.claude_wheel(true), "five sessions, three rows: two steps");
+    assert_eq!(a.claude_scroll, 2);
+    assert!(a.claude_click(x + 40.0, y + 10.0), "the first visible row is now the third session");
+    assert!(!a.claude_click(x + 40.0, claude_slide::row_pos(3).1 + 10.0), "below the rows");
+}
+
+/// New session: a recent folder starts Claude there (and moves to the top), Other folder opens the picker, and a click
+/// elsewhere closes the list.
+#[test]
+fn claude_new_session_list() {
+    let mut a = test_app(1.0);
+    open_claude_slide(&mut a);
+    a.claude_recent = vec!["C:\\code\\notch".into(), "C:\\code\\api".into()];
+    let _ = claude_slide::launched();
+    let (bx, by, bw, bh) = claude_slide::NEW_BTN;
+    assert!(a.claude_click(bx + bw / 2.0, by + bh / 2.0));
+    assert!(a.claude_new);
+    let (x, y) = claude_slide::row_pos(1);
+    assert!(a.claude_click(x + 40.0, y + 10.0));
+    assert_eq!(claude_slide::launched(), vec!["C:\\code\\api".to_string()]);
+    assert!(!a.claude_new);
+    assert_eq!(a.claude_recent[0], "C:\\code\\api", "newest first");
+    a.claude_click(bx + bw / 2.0, by + bh / 2.0);
+    let (x, y) = claude_slide::row_pos(2);
+    assert!(a.claude_click(x + 40.0, y + 10.0), "Other folder...");
+    assert!(!a.claude_new);
+    assert!(claude_slide::launched().is_empty(), "the picker decides");
+    a.claude_click(bx + bw / 2.0, by + bh / 2.0);
+    assert!(a.claude_click(RX - 10.0, 150.0));
+    assert!(!a.claude_new, "a click outside closes the list");
+}
+
+/// The hooks' folders become the recent folders for New session.
+#[test]
+fn claude_hooks_fill_the_recent_folders() {
+    let mut a = test_app(1.0);
+    let msg = |kind, cwd: &str, subagent| claude_hook::Msg {
+        v: claude_hook::VERSION,
+        kind,
+        session: "s1".into(),
+        project: "p".into(),
+        cwd: cwd.into(),
+        text: String::new(),
+        hwnd: 0,
+        subagent,
+        pid: 0,
+    };
+    a.on_claude(&msg(claude_hook::EventKind::SessionStart, "C:\\code\\notch", false));
+    a.on_claude(&msg(claude_hook::EventKind::Prompt, "C:\\code\\api", false));
+    a.on_claude(&msg(claude_hook::EventKind::Tool, "C:\\code\\tools", false));
+    a.on_claude(&msg(claude_hook::EventKind::Prompt, "C:\\code\\sub", true));
+    assert_eq!(a.claude_recent, ["C:\\code\\api", "C:\\code\\notch"], "prompts and starts of main sessions only");
+}
+
+#[test]
+fn snap_claude_slide() {
+    let _lang = i18n::restore_on_drop();
+    let now = notif::now_unix() as i64;
+    for (lang, pre) in [(i18n::EN, ""), (i18n::ID, "id-")] {
+        i18n::set(lang);
+        let fill_slide = move |a: &mut App| {
+            a.cfg.lang = lang;
+            open_claude_slide(a);
+            a.claude_link = claude_setup::Link::On;
+            a.claude_status = claude_setup::StatusLink::On;
+            a.claude.list = vec![
+                claude_session("s1", "hesewake-notch", claude::State::Working, 7),
+                claude_session("s2", "api-gateway-with-a-long-name", claude::State::NeedsYou, 7),
+                claude_session("s3", "docs", claude::State::Done, 0),
+            ];
+            a.claude_usage = Some(claude_usage_msg(41.2, 18.0, now + 2 * 3600, now));
+        };
+        shot(&format!("{pre}claude-slide"), 1.0, fill_slide);
+        shot(&format!("{pre}claude-slide-new"), 1.0, |a| {
+            fill_slide(a);
+            a.claude_recent = vec!["C:\\Users\\me\\code\\hesewake-notch".into(), "D:\\work\\api-gateway".into(), "C:\\Users\\me\\notes".into(), "C:\\old".into()];
+            a.claude_new = true;
+        });
+        shot(&format!("{pre}claude-slide-empty"), 1.0, |a| {
+            a.cfg.lang = lang;
+            open_claude_slide(a);
+            a.claude_link = claude_setup::Link::On;
+        });
+        shot(&format!("{pre}claude-toast-usage"), 1.0, |a| {
+            a.cfg.lang = lang;
+            show_toast(a, ToastKind::Claude(claude::Show::Usage { pct: 91, resets_at: now + 2 * 3600 }));
+        });
+        shot(&format!("{pre}claude-settings-usage"), 1.0, |a| {
+            a.cfg.lang = lang;
+            open_settings_tab(a, 2);
+            a.claude_link = claude_setup::Link::On;
+            a.claude_status = claude_setup::StatusLink::On;
+            while a.settings_rows_wheel(true) {}
+        });
+    }
+    shot("claude-slide-warn", 1.0, |a| {
+        open_claude_slide(a);
+        a.claude_link = claude_setup::Link::On;
+        a.claude_status = claude_setup::StatusLink::On;
+        a.claude.list = vec![claude_session("s1", "hesewake-notch", claude::State::Working, 7)];
+        a.claude_usage = Some(claude_usage_msg(93.0, 64.0, now + 40 * 60, now));
+    });
+    shot("claude-slide-not-connected", 1.0, |a| open_claude_slide(a));
+    shot("claude-slide", 1.5, |a| {
+        open_claude_slide(a);
+        a.claude_link = claude_setup::Link::On;
+        a.claude.list = vec![claude_session("s1", "hesewake-notch", claude::State::Working, 7), claude_session("s2", "api", claude::State::Done, 7)];
+        a.claude_usage = Some(claude_usage_msg(41.0, 18.0, now + 2 * 3600, now));
+    });
 }

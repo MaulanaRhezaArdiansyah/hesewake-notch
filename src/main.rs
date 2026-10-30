@@ -61,6 +61,8 @@ mod cjk;
 mod claude;
 mod claude_hook;
 mod claude_setup;
+mod claude_slide;
+mod claude_usage;
 mod clipboard;
 mod clock;
 mod config;
@@ -251,6 +253,14 @@ struct App {
     claude: claude::Sessions,
     /// Whether the hooks are in Claude Code's settings (read when Settings opens).
     claude_link: claude_setup::Link,
+    /// Whether our status line is set, the newest usage numbers, and the 5-hour window already warned about.
+    claude_status: claude_setup::StatusLink,
+    claude_usage: Option<claude_usage::Usage>,
+    claude_warned: i64,
+    /// Claude slide: recent project folders, the session list scroll, and whether the New session list is open.
+    claude_recent: Vec<String>,
+    claude_scroll: usize,
+    claude_new: bool,
     /// A newer release, once the update check found one.
     update: Option<update::Release>,
     update_last: Option<Instant>,
@@ -389,6 +399,10 @@ fn main() -> Result<()> {
     // Claude Code hooks start the exe with these: no window, no single-instance check, nothing printed.
     if std::env::args().any(|a| a == claude_setup::HOOK_ARG) {
         claude_hook::run_hook();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == claude_setup::STATUS_ARG) {
+        claude_usage::run_statusline();
         return Ok(());
     }
     if std::env::args().any(|a| a == "--claude-disconnect") {
@@ -628,6 +642,12 @@ fn main() -> Result<()> {
             agenda_scroll: 0,
             claude: claude::Sessions::default(),
             claude_link: claude_setup::Link::Off,
+            claude_status: claude_setup::StatusLink::Off,
+            claude_usage: None,
+            claude_warned: 0,
+            claude_recent: claude_slide::load_recent(),
+            claude_scroll: 0,
+            claude_new: false,
             update: None,
             update_last: None,
             update_busy: false,

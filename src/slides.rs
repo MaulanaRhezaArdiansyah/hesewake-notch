@@ -17,13 +17,15 @@ pub(crate) enum SlideId {
     Clipboard,
     /// What's left on today's calendar. Hidden by default.
     Agenda,
+    /// Claude Code sessions, usage and New session (claude_slide.rs). Hidden by default.
+    Claude,
     /// Hanya muncul (di akhir) selama dibuka lewat item menu "Settings"; tidak ada di carousel saat tertutup.
     Settings,
 }
 
 impl SlideId {
     /// Slide yang bisa diatur pengguna (urutan bawaan).
-    pub(crate) const USER: [SlideId; 10] = [
+    pub(crate) const USER: [SlideId; 11] = [
         SlideId::Music,
         SlideId::Water,
         SlideId::Todo,
@@ -34,11 +36,12 @@ impl SlideId {
         SlideId::Timer,
         SlideId::Clipboard,
         SlideId::Agenda,
+        SlideId::Claude,
     ];
 
     /// Aktif secara bawaan? (slide opsional dimulai tersembunyi)
     pub(crate) fn default_on(self) -> bool {
-        !matches!(self, SlideId::System | SlideId::Timer | SlideId::Clipboard | SlideId::Agenda)
+        !matches!(self, SlideId::System | SlideId::Timer | SlideId::Clipboard | SlideId::Agenda | SlideId::Claude)
     }
 
     pub(crate) fn key(self) -> &'static str {
@@ -53,6 +56,7 @@ impl SlideId {
             SlideId::Timer => "timer",
             SlideId::Clipboard => "clipboard",
             SlideId::Agenda => "agenda",
+            SlideId::Claude => "claude",
             SlideId::Settings => "settings",
         }
     }
@@ -69,6 +73,7 @@ impl SlideId {
             SlideId::Timer => "Timer",
             SlideId::Clipboard => "Clipboard",
             SlideId::Agenda => "Agenda",
+            SlideId::Claude => "Claude",
             SlideId::Settings => crate::i18n::tr("Settings"),
         }
     }
@@ -148,8 +153,8 @@ mod tests {
         assert_eq!(c[3], (SlideId::Ledge, true));
         // slide opsional yang baru muncul di versi baru tetap tersembunyi
         assert_eq!(
-            &c[c.len() - 4..],
-            &[(SlideId::System, false), (SlideId::Timer, false), (SlideId::Clipboard, false), (SlideId::Agenda, false)]
+            &c[c.len() - 5..],
+            &[(SlideId::System, false), (SlideId::Timer, false), (SlideId::Clipboard, false), (SlideId::Agenda, false), (SlideId::Claude, false)]
         );
     }
 
@@ -165,7 +170,7 @@ mod tests {
     fn roundtrips() {
         let c = parse_slides("scrap,!ledge,music,water,todo,notifs");
         assert_eq!(parse_slides(&format_slides(&c)), c);
-        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer,!clipboard,!agenda");
+        assert_eq!(format_slides(&c), "scrap,!ledge,music,water,todo,notifs,!system,!timer,!clipboard,!agenda,!claude");
     }
 
     #[test]

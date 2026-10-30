@@ -384,10 +384,20 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
         }
         WM_COPYDATA => {
             let cds = lp.0 as *const windows::Win32::System::DataExchange::COPYDATASTRUCT;
-            if cds.is_null() || (*cds).dwData != claude_hook::COPY_ID || (*cds).lpData.is_null() {
+            if cds.is_null() || (*cds).lpData.is_null() || !matches!((*cds).dwData, claude_hook::COPY_ID | claude_usage::COPY_USAGE) {
                 return DefWindowProcW(hwnd, msg, wp, lp);
             }
             let bytes = std::slice::from_raw_parts((*cds).lpData as *const u8, (*cds).cbData as usize);
+            if (*cds).dwData == claude_usage::COPY_USAGE {
+                if let Some(u) = claude_usage::decode(bytes) {
+                    with_app(|a| {
+                        a.on_claude_usage(u);
+                        present(a);
+                        schedule(a);
+                    });
+                }
+                return LRESULT(1);
+            }
             if let Some(m) = claude_hook::decode(bytes) {
                 with_app(|a| {
                     a.on_claude(&m);
@@ -413,6 +423,15 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 present(a);
                 schedule(a);
             });
+            LRESULT(0)
+        }
+        claude_slide::WM_CLAUDE_FOLDER => {
+            if let Some(dir) = claude_slide::take_picked() {
+                with_app(|a| {
+                    a.claude_launch(&dir);
+                    present(a);
+                });
+            }
             LRESULT(0)
         }
         calendar::WM_CALENDAR => {

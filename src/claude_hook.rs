@@ -248,11 +248,15 @@ pub(crate) fn is_ours(hwnd: isize) -> bool {
 
 /// Send `m` to the notch window `hwnd`. False when there is no window or it doesn't answer within 500 ms.
 pub(crate) fn deliver(hwnd: isize, m: &Msg) -> bool {
+    send(hwnd, COPY_ID, &encode(m))
+}
+
+/// Send `bytes` as a `WM_COPYDATA` with `id` to the notch window `hwnd` (also used for the usage numbers).
+pub(crate) fn send(hwnd: isize, id: usize, bytes: &[u8]) -> bool {
     if hwnd == 0 {
         return false;
     }
-    let bytes = encode(m);
-    let cds = COPYDATASTRUCT { dwData: COPY_ID, cbData: bytes.len() as u32, lpData: bytes.as_ptr() as *mut c_void };
+    let cds = COPYDATASTRUCT { dwData: id, cbData: bytes.len() as u32, lpData: bytes.as_ptr() as *mut c_void };
     let mut result = 0usize;
     let sent = unsafe {
         SendMessageTimeoutW(HWND(hwnd as *mut c_void), WM_COPYDATA, WPARAM(0), LPARAM(&cds as *const _ as isize), SMTO_ABORTIFHUNG, 500, Some(&mut result))

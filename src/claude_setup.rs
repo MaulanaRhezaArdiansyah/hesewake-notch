@@ -28,12 +28,87 @@ pub(crate) const EVENTS: [(&str, Option<&str>); 8] = [
 ];
 
 pub(crate) const HOOK_ARG: &str = "--claude-hook";
+/// Argument of our status line command (claude_usage.rs).
+pub(crate) const STATUS_ARG: &str = "--claude-statusline";
+
+/// Whether Claude Code's status line is ours.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum StatusLink {
+    Off,
+    On,
+    /// The person has a status line of their own: it is never replaced.
+    Taken,
+}
+
+/// The shell command of our status line. Claude Code runs it through Git Bash (or PowerShell when Git Bash is
+/// missing): forward slashes, and the short 8.3 path when the full path has spaces (it works in both shells), else
+/// the full path in quotes.
+pub(crate) fn status_command(exe: &str, short: Option<&str>) -> String {
+    let path = match short {
+        Some(s) if !s.is_empty() && !s.contains(' ') && exe.contains(' ') => s,
+        _ => exe,
+    }
+    .replace('\\', "/");
+    let path = if path.contains(' ') { format!("\"{path}\"") } else { path };
+    format!("{path} {STATUS_ARG}")
+}
+
+/// The short (8.3) form of `path`, when Windows has one.
+fn short_path(path: &str) -> Option<String> {
+    if cfg!(test) {
+        return None;
+    }
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+    let mut buf = [0u16; 1024];
+    let n = unsafe { GetShortPathNameW(&HSTRING::from(path), Some(&mut buf)) } as usize;
+    (n > 0 && n < buf.len()).then(|| String::from_utf16_lossy(&buf[..n]))
+}
+
+fn status_cmd_for(exe: &str) -> String {
+    status_command(exe, short_path(exe).as_deref())
+}
+
+fn is_our_status(sl: &Value) -> bool {
+    sl.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(STATUS_ARG) && c.to_ascii_lowercase().contains(EXE_PREFIX))
+}
+
+pub(crate) fn status_link(v: &Value) -> StatusLink {
+    match v.get("statusLine") {
+        None | Some(Value::Null) => StatusLink::Off,
+        Some(sl) if is_our_status(sl) => StatusLink::On,
+        Some(_) => StatusLink::Taken,
+    }
+}
+
+/// Add (`on`) or remove our status line with command `cmd`. Someone else's status line is never touched.
+pub(crate) fn set_status(v: &mut Value, cmd: &str, on: bool) -> StatusLink {
+    let now = status_link(v);
+    let Some(root) = v.as_object_mut() else { return now };
+    match (now, on) {
+        (StatusLink::Taken, _) => StatusLink::Taken,
+        (_, true) => {
+            root.insert("statusLine".into(), serde_json::json!({ "type": "command", "command": cmd, "padding": 0 }));
+            StatusLink::On
+        }
+        (StatusLink::On, false) => {
+            root.shift_remove("statusLine");
+            StatusLink::Off
+        }
+        (s, false) => s,
+    }
+}
 /// Our hook commands run an exe whose name starts with this (also renamed copies and other editions).
 const EXE_PREFIX: &str = "hesewake-notch";
 
 /// Add our hooks for `exe` (any older ones of ours are replaced).
 pub(crate) fn connect(v: &mut Value, exe: &str) {
+    // a status line of ours (maybe for a moved exe) is kept, pointing at this exe
+    let had_status = status_link(v) == StatusLink::On;
     disconnect(v);
+    if had_status {
+        set_status(v, &status_cmd_for(exe), true);
+    }
     let Some(root) = v.as_object_mut() else { return };
     let hooks = root.entry("hooks").or_insert_with(|| Value::Object(Default::default()));
     if !hooks.is_object() {
@@ -69,8 +144,13 @@ fn is_ours(h: &Value) -> bool {
     named && arg
 }
 
-/// Remove our hooks and anything left empty by that; everything else stays.
+/// Remove our hooks (and our status line) and anything left empty by that; everything else stays.
 pub(crate) fn disconnect(v: &mut Value) {
+    if status_link(v) == StatusLink::On {
+        if let Some(root) = v.as_object_mut() {
+            root.shift_remove("statusLine");
+        }
+    }
     let Some(root) = v.as_object_mut() else { return };
     let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else { return };
     for list in hooks.values_mut() {
@@ -175,6 +255,29 @@ pub(crate) fn apply_with(on: bool, exe: &str) -> Result<Link, String> {
     if v == before {
         return Ok(link(&v, exe));
     }
+    save(&path, &v)?;
+    Ok(link(&v, exe))
+}
+
+/// Whether our status line is set (an unreadable file counts as off).
+pub(crate) fn read_status() -> StatusLink {
+    load().map(|v| status_link(&v)).unwrap_or(StatusLink::Off)
+}
+
+/// Add (`on`) or remove our status line for the running exe.
+pub(crate) fn apply_status(on: bool) -> Result<StatusLink, String> {
+    let path = settings_path().ok_or("no settings folder")?;
+    let mut v = load()?;
+    let before = v.clone();
+    let s = set_status(&mut v, &status_cmd_for(&current_exe()), on);
+    if v != before {
+        save(&path, &v)?;
+    }
+    Ok(s)
+}
+
+/// Write the settings: a backup of the person's original file once, then a temporary file renamed over it.
+fn save(path: &std::path::Path, v: &Value) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -186,8 +289,8 @@ pub(crate) fn apply_with(on: bool, exe: &str) -> Result<Link, String> {
     let text = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
     let tmp = path.with_file_name("settings.json.hesewake-tmp");
     std::fs::write(&tmp, text + "\n").map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-    Ok(link(&v, exe))
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]

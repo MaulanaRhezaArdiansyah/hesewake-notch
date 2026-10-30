@@ -180,6 +180,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
                 SlideId::Clipboard => a.slide_clipboard(&mut g, ox, al),
                 SlideId::Agenda => a.slide_agenda(&mut g, ox, al),
+                SlideId::Claude => a.slide_claude(&mut g, ox, al),
             }
         }
         if !a.lyric_screen() {

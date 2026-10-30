@@ -490,9 +490,15 @@ impl App {
             if !in_rect(x, y, CX - w / 2.0, 0.0, w, h) {
                 return false;
             }
+            let usage = matches!(show, claude::Show::Usage { .. });
             let session = show.session().to_string();
-            self.claude_focus(&session);
             self.end_toast();
+            if usage {
+                self.show_id(SlideId::Claude);
+                self.peek_until = Some(Instant::now() + Duration::from_secs(8));
+            } else {
+                self.claude_focus(&session);
+            }
             return true;
         }
         if let ToastKind::Update(note) = &ts.kind {
