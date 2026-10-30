@@ -228,6 +228,8 @@ unsafe fn poll(a: &mut App) {
                 changed = true;
                 if to_notif {
                     a.show_id(SlideId::Notifications);
+                } else if inside {
+                    a.dl_on_hover();
                 }
             }
         }

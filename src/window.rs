@@ -460,6 +460,17 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             });
             LRESULT(0)
         }
+        downloads::WM_DOWNLOADS => {
+            if let Some((list, finished)) = downloads::take_update() {
+                with_app(|a| {
+                    a.dl_apply(list, finished);
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(0)
+        }
         privacy::WM_PRIVACY => {
             with_app(|a| {
                 a.privacy_apply();

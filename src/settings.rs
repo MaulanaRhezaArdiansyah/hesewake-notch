@@ -34,6 +34,8 @@ pub(crate) struct Settings {
     pub(crate) slide_hotkeys: bool,
     /// Ctrl+Alt+M mutes the default microphone for every app (mic.rs).
     pub(crate) mic_hotkey: bool,
+    /// Running downloads in the Downloads folder: speed in the notch, list on Ledge, toast when done (downloads.rs).
+    pub(crate) downloads: bool,
     /// HUD saat volume / kecerahan berubah dari luar (tombol keyboard, mixer).
     pub(crate) hud_volume: bool,
     pub(crate) hud_brightness: bool,
@@ -77,6 +79,7 @@ impl Default for Settings {
             privacy_dot: true,
             slide_hotkeys: true,
             mic_hotkey: true,
+            downloads: true,
             hud_volume: true,
             hud_brightness: true,
             weather_on: true,
@@ -112,6 +115,7 @@ impl Settings {
                 "privacy_dot" => s.privacy_dot = flag,
                 "slide_hotkeys" => s.slide_hotkeys = flag,
                 "mic_hotkey" => s.mic_hotkey = flag,
+                "downloads" => s.downloads = flag,
                 "hud_volume" => s.hud_volume = flag,
                 "hud_brightness" => s.hud_brightness = flag,
                 "weather" => s.weather_on = flag,
@@ -165,7 +169,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\ndownloads={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -176,6 +180,7 @@ impl Settings {
             self.privacy_dot as u8,
             self.slide_hotkeys as u8,
             self.mic_hotkey as u8,
+            self.downloads as u8,
             self.hud_volume as u8,
             self.hud_brightness as u8,
             self.weather_on as u8,
@@ -286,6 +291,14 @@ mod tests {
         assert_eq!(Settings::parse(&s.serialize()).lang, crate::i18n::ID);
         assert_eq!(Settings::parse("lang=99").lang, crate::i18n::EN, "unknown = English");
         assert_eq!(Settings::parse("lang=x").lang, crate::i18n::EN);
+    }
+
+    #[test]
+    fn downloads_roundtrip_and_default() {
+        assert!(Settings::parse("minimal=1\n").downloads, "old file = on");
+        let mut s = Settings::default();
+        s.downloads = false;
+        assert!(!Settings::parse(&s.serialize()).downloads);
     }
 
     #[test]

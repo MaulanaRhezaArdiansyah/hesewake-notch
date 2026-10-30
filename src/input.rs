@@ -106,6 +106,10 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 }
                 present(a);
             }
+            SlideId::Ledge if !a.dls.is_empty() => {
+                a.dl_ledge_click(x, y);
+                present(a);
+            }
             SlideId::Ledge => {
                 let mut hit: Option<(usize, bool)> = None;
                 for i in 0..a.shelf.len() {

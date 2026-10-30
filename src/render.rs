@@ -139,6 +139,7 @@ pub(crate) fn draw(a: &mut App) {
         a.draw_collapsed(&mut g, w, h, ca);
         if a.toast.is_none() {
             a.draw_privacy_dots(&mut g, w, h, ca);
+            a.draw_download_strip(&mut g, w, h, ca);
         }
     }
     if p > 0.04 {
