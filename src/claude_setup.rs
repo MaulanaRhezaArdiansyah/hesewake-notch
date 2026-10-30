@@ -69,8 +69,10 @@ fn status_cmd_for(exe: &str) -> String {
     status_command(exe, short_path(exe).as_deref())
 }
 
+/// Our status line is recognised by its argument alone: the command may hold the short 8.3 path
+/// (`.../HESEWA~3/HESEWA~1.EXE`), which no longer shows the exe name.
 fn is_our_status(sl: &Value) -> bool {
-    sl.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(STATUS_ARG) && c.to_ascii_lowercase().contains(EXE_PREFIX))
+    sl.get("command").and_then(Value::as_str).is_some_and(|c| c.split_whitespace().any(|w| w == STATUS_ARG))
 }
 
 pub(crate) fn status_link(v: &Value) -> StatusLink {

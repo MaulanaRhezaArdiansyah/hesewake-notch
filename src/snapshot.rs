@@ -1890,6 +1890,18 @@ fn claude_usage_row_sets_our_status_line() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A status line with the short 8.3 path (for a folder with spaces) is still ours: the toggle and Remove work on it.
+#[test]
+fn claude_short_path_status_line_is_ours() {
+    let short = "C:/Users/me/AppData/Local/Programs/HESEWA~3/HESEWA~1.EXE --claude-statusline";
+    let mut v = serde_json::json!({ "statusLine": { "type": "command", "command": short, "padding": 0 } });
+    assert_eq!(claude_setup::status_link(&v), claude_setup::StatusLink::On);
+    assert_eq!(claude_setup::set_status(&mut v, short, false), claude_setup::StatusLink::Off);
+    assert!(v.get("statusLine").is_none());
+    let theirs = serde_json::json!({ "statusLine": { "type": "command", "command": "bash ~/line.sh --claude-statusline-x" } });
+    assert_eq!(claude_setup::status_link(&theirs), claude_setup::StatusLink::Taken, "only the exact argument counts");
+}
+
 #[test]
 fn claude_status_command_and_moved_exe() {
     assert_eq!(claude_setup::status_command("C:\\Tools\\hesewake-notch.exe", None), "C:/Tools/hesewake-notch.exe --claude-statusline");
