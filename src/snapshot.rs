@@ -137,6 +137,11 @@ fn test_app(s: f32) -> App {
         vol_t: past,
         bright_seen: false,
         vol_state: (0, false),
+        outs: output::Outputs::default(),
+        out_open: false,
+        out_scroll: 0,
+        out_t: past,
+        out_acc: 0,
         order: slides::visible_order(&cfg.slides, false),
         settings_open: false,
         settings_prev: None,
@@ -1263,6 +1268,222 @@ fn rows_tab_scrolls_to_the_last_rows() {
     a.settings_rows_wheel(true);
     a.settings_set_tab(2);
     assert_eq!(a.sui.rows_scroll, 0);
+}
+
+// ---------------------------------------------------------------- audio output switcher
+
+fn three_outputs() {
+    output::set_fake(
+        &[
+            ("spk", "Speakers (Realtek(R) Audio)", false),
+            ("hp", "Headphones (WH-1000XM4 Stereo)", true),
+            ("mon", "LG ULTRAGEAR (NVIDIA High Definition Audio)", false),
+        ],
+        Some("spk"),
+    );
+}
+
+/// The Music slide with three playback devices, Speakers being the default.
+fn music_with_outputs(a: &mut App) {
+    three_outputs();
+    a.out_refresh();
+    open_slide(a, SlideId::Music);
+}
+
+fn default_output() -> Option<String> {
+    output::with_fake(|f| f.cur.clone())
+}
+
+/// A click on the output button opens the list; a click on a row makes that device the default for every role.
+#[test]
+fn output_button_opens_the_list_and_picks_a_device() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    assert!(!a.out_list_shown());
+    assert!(a.out_click(output::BTN.0, output::BTN.1));
+    assert!(a.out_list_shown());
+    let (rx, ry) = output::row_pos(1);
+    assert!(a.out_click(rx + 60.0, ry + 12.0));
+    assert_eq!(default_output().as_deref(), Some("hp"));
+    assert_eq!(output::with_fake(|f| f.calls.len()), 3, "Console, Multimedia and Communications");
+    assert!(!a.out_list_shown(), "the list closes after a pick");
+    assert_eq!(a.outs.cur.as_deref(), Some("hp"));
+    assert!(a.out_t.elapsed() < Duration::from_secs(1), "the overlay shows the new device");
+}
+
+/// The list closes again on the button, on a click outside it (which does nothing else) and on a slide change.
+#[test]
+fn output_list_closes_on_button_outside_click_and_slide_change() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    a.out_click(output::BTN.0, output::BTN.1);
+    assert!(a.out_click(output::BTN.0, output::BTN.1));
+    assert!(!a.out_list_shown(), "the button closes it again");
+    a.out_click(output::BTN.0, output::BTN.1);
+    assert!(a.out_click(RX - 10.0, 60.0), "a click outside only closes the list");
+    assert!(!a.out_list_shown());
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0, "nothing was switched");
+    a.out_click(output::BTN.0, output::BTN.1);
+    a.step(1);
+    assert!(!a.out_open, "another slide closes it");
+    a.step(-1);
+    assert!(!a.out_list_shown());
+    a.out_click(output::BTN.0, output::BTN.1);
+    a.hover = false;
+    assert!(!a.out_list_shown(), "never drawn while the notch is closed");
+    a.hover = true;
+    a.lyric_mode = true;
+    assert!(!a.out_list_shown(), "nor in the lyrics view");
+    assert!(!a.out_click(output::BTN.0, output::BTN.1), "the lyrics view has no output button");
+}
+
+/// The wheel on the button moves to the next (down) or previous (up) device, wrapping around.
+#[test]
+fn output_wheel_on_the_button_cycles_devices() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    let (bx, by) = output::BTN;
+    for want in ["hp", "mon", "spk"] {
+        assert!(a.out_wheel(bx, by, -120));
+        assert_eq!(default_output().as_deref(), Some(want));
+        assert_eq!(a.outs.cur.as_deref(), Some(want));
+    }
+    assert!(a.out_wheel(bx, by, 120));
+    assert_eq!(default_output().as_deref(), Some("mon"), "wheel up goes back");
+    assert!(!a.out_wheel(MCX, MCY, -120), "elsewhere on the controls the wheel still sets the volume");
+}
+
+/// Plugging and unplugging devices updates the list; when the last one goes the list closes.
+#[test]
+fn output_list_follows_devices_added_and_removed() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    a.out_click(output::BTN.0, output::BTN.1);
+    // speakers unplugged: Windows moves the default to the headphones
+    output::with_fake(|f| {
+        f.list.retain(|d| d.id != "spk");
+        f.cur = Some("hp".into());
+    });
+    a.out_refresh();
+    assert_eq!(a.outs.list.len(), 2);
+    assert_eq!(a.outs.current().map(|d| d.id.as_str()), Some("hp"));
+    assert!(a.out_list_shown());
+    output::with_fake(|f| f.list.push(output::Device { id: "usb".into(), name: "Speakers (USB Audio)".into(), phones: false }));
+    a.out_refresh();
+    assert_eq!(a.outs.list.len(), 3, "a new device shows up");
+    output::with_fake(|f| {
+        f.list.clear();
+        f.cur = None;
+    });
+    a.out_refresh();
+    assert!(!a.out_list_shown(), "no devices left: the list closes");
+    assert!(a.outs.current().is_none());
+}
+
+/// If Windows refuses the switch, the sound settings open; nothing else happens.
+#[test]
+fn output_switch_failure_opens_sound_settings() {
+    let mut a = test_app(1.0);
+    music_with_outputs(&mut a);
+    output::with_fake(|f| f.refuse = true);
+    let _ = sys::opened();
+    a.out_pick("hp");
+    assert_eq!(sys::opened(), vec!["ms-settings:sound".to_string()]);
+    assert_eq!(a.outs.cur.as_deref(), Some("spk"), "still the old device");
+    assert!(a.out_t.elapsed() > Duration::from_secs(2), "no overlay");
+}
+
+/// Picking the current device, or the wheel with only one device, switches nothing; the wheel still shows the name.
+#[test]
+fn output_single_device_changes_nothing() {
+    let mut a = test_app(1.0);
+    output::set_fake(&[("spk", "Speakers (Realtek(R) Audio)", false)], Some("spk"));
+    a.out_refresh();
+    open_slide(&mut a, SlideId::Music);
+    assert!(a.out_wheel(output::BTN.0, output::BTN.1, -120), "taken, so the volume does not move");
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0);
+    assert!(a.out_t.elapsed() < Duration::from_secs(1), "shows which device plays");
+    a.out_pick("spk");
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0, "already the default");
+}
+
+/// Without any playback device the button opens the Windows sound settings.
+#[test]
+fn output_without_devices_opens_sound_settings() {
+    let mut a = test_app(1.0);
+    output::set_fake(&[], None);
+    a.out_refresh();
+    open_slide(&mut a, SlideId::Music);
+    let _ = sys::opened();
+    assert!(a.out_click(output::BTN.0, output::BTN.1));
+    assert!(!a.out_list_shown());
+    assert_eq!(sys::opened(), vec!["ms-settings:sound".to_string()]);
+}
+
+/// More devices than rows: the wheel over the list scrolls it, and rows map to the scrolled devices.
+#[test]
+fn output_list_scrolls_with_many_devices() {
+    let mut a = test_app(1.0);
+    let names: Vec<(String, String)> = (0..6).map(|i| (format!("d{i}"), format!("Speakers {i} (USB Audio)"))).collect();
+    let list: Vec<(&str, &str, bool)> = names.iter().map(|(id, n)| (id.as_str(), n.as_str(), false)).collect();
+    output::set_fake(&list, Some("d0"));
+    a.out_refresh();
+    open_slide(&mut a, SlideId::Music);
+    a.out_click(output::BTN.0, output::BTN.1);
+    let (px, py) = (output::PANEL.0 + 40.0, output::PANEL.1 + 40.0);
+    assert!(a.out_wheel(px, py, -120));
+    assert_eq!(a.out_scroll, 1);
+    for _ in 0..5 {
+        a.out_wheel(px, py, -120);
+    }
+    assert_eq!(a.out_scroll, 6 - output::MAX_ROWS, "stops at the last row");
+    assert_eq!(output::with_fake(|f| f.calls.len()), 0, "scrolling the list switches nothing");
+    let (rx, ry) = output::row_pos(0);
+    a.out_click(rx + 60.0, ry + 12.0);
+    assert_eq!(default_output().as_deref(), Some("d2"));
+}
+
+#[test]
+fn snap_output() {
+    shot("music-output-speaker", 1.0, music_with_outputs);
+    shot("music-output-headphones", 1.0, |a| {
+        music_with_outputs(a);
+        output::with_fake(|f| f.cur = Some("hp".into()));
+        a.out_refresh();
+    });
+    for s in SCALES {
+        shot("music-output-list", s, |a| {
+            music_with_outputs(a);
+            a.out_click(output::BTN.0, output::BTN.1);
+        });
+    }
+    shot("music-output-switched", 1.0, |a| {
+        music_with_outputs(a);
+        a.out_pick("hp");
+        a.out_t = Instant::now() - Duration::from_millis(300);
+    });
+    // the volume overlay is as wide as the output overlay, so it covers the output button too
+    shot("music-volume-overlay", 1.0, |a| {
+        music_with_outputs(a);
+        a.vol_state = (64, false);
+        a.vol_t = Instant::now() - Duration::from_millis(300);
+    });
+    shot("music-output-many", 1.0, |a| {
+        output::set_fake(
+            &[
+                ("a", "Speakers (Realtek(R) Audio)", false),
+                ("b", "Headset Earphone (Jabra Evolve2 65 with a long product name)", true),
+                ("c", "LG ULTRAGEAR (NVIDIA High Definition Audio)", false),
+                ("d", "Headphones (AirPods Pro)", true),
+                ("e", "Digital Output (S/PDIF)", false),
+            ],
+            Some("d"),
+        );
+        a.out_refresh();
+        open_slide(a, SlideId::Music);
+        a.out_click(output::BTN.0, output::BTN.1);
+        a.out_wheel(output::PANEL.0 + 40.0, output::PANEL.1 + 40.0, -120);
+    });
 }
 
 /// The lyrics mode shows where the lyrics came from ("via lrc.red"), in both languages.

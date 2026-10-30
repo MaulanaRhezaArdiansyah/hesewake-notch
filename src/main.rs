@@ -84,6 +84,7 @@ mod notif;
 mod notif_img;
 mod notifview;
 mod note;
+mod output;
 mod pace;
 mod perf;
 mod prayer;
@@ -270,6 +271,13 @@ struct App {
     /// Peristiwa kecerahan pertama (saat pendaftaran) hanya dicatat, tidak ditampilkan.
     bright_seen: bool,
     vol_state: (u8, bool),
+    /// Audio output switcher (output.rs): the devices, whether the list is open, its scroll, and the last switch.
+    outs: output::Outputs,
+    out_open: bool,
+    out_scroll: usize,
+    out_t: Instant,
+    /// Wheel delta on the output button not yet used (trackpads send small steps).
+    out_acc: i32,
     order: Vec<SlideId>,
     /// Slide Settings sedang dibuka (ada di carousel) dan slide asal sebelum dibuka.
     settings_open: bool,
@@ -628,6 +636,11 @@ fn main() -> Result<()> {
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,
             vol_state: (0, false),
+            outs: output::Outputs::default(),
+            out_open: false,
+            out_scroll: 0,
+            out_t: Instant::now() - Duration::from_secs(10),
+            out_acc: 0,
             order: slides::visible_order(&cfg.slides, false),
             settings_open: false,
             settings_prev: None,
@@ -637,6 +650,7 @@ fn main() -> Result<()> {
             cfg,
         };
         app.prayer_refresh();
+        app.out_refresh();
         let (tw, th) = target(&app);
         app.w = tw;
         app.h = th;

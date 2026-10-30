@@ -59,6 +59,7 @@ Swipe, scroll, drag, use the arrow buttons or click the dots to move through an 
 | <img src="https://api.iconify.design/lucide/mic-off.svg?color=%23ff453a" width="22"> | Mic mute       | `Ctrl` + `Alt` + `M` mutes the default microphone for every app, and again to unmute. While muted, a crossed-out mic stays in the notch, also when the mute was made elsewhere. Turn the key off in Settings > Alerts > Mic mute key. |
 |   <img src="https://api.iconify.design/lucide/waves.svg?color=%23ff453a" width="22">    | Drop animation | Dropping a file onto the notch makes its bottom edge ripple like water.                                             |
 |  <img src="https://api.iconify.design/lucide/palette.svg?color=%23ff453a" width="22">   | Artwork tint   | The Music slide picks up colors from the album cover for a soft glow.                                               |
+| <img src="https://api.iconify.design/lucide/headphones.svg?color=%23ff453a" width="22"> | Sound output   | The speaker / headphone button left of the playback controls lists the playback devices; a click on one makes it the Windows default for every app, including calls. The mouse wheel on the button moves to the next device. If Windows refuses, the sound settings open. |
 | <img src="https://api.iconify.design/lucide/languages.svg?color=%23ff453a" width="22"> | Romanize lyrics | Optional (Settings > Widgets): Japanese lyrics shown in romaji (Lindera IPADIC and WanaKana) and Korean lyrics in Revised Romanization (no dictionary needed). |
 | <img src="https://api.iconify.design/lucide/globe.svg?color=%23ff453a" width="22"> | Language       | English or Indonesian (Settings > General > Language). Applies right away, including the right-click menu.     |
 | <img src="https://api.iconify.design/lucide/download.svg?color=%23ff453a" width="22"> | Update check   | At startup and every 24 hours the app asks GitHub for the latest release and shows a toast once per new version, with **Download** to open the release page. Nothing is installed automatically. Right-click menu: **Check for updates**. Turn it off in Settings > Alerts > Update notice. |
@@ -97,6 +98,7 @@ The executable is created at `target\release\hesewake-notch.exe`. Japanese romaj
 | `render.rs`, `gfx.rs`                        | Frame drawing, notch shape, text and shape helpers                 |
 | `anim.rs`                                    | Spring animation, timers, hover, busy and media polling            |
 | `music.rs`                                   | Media thread, artwork and artwork tint, Music slide                |
+| `output.rs`                                  | Sound output switcher on the Music slide (IPolicyConfig)           |
 | `clock.rs`                                   | Clock and date helpers                                             |
 | `water.rs`, `todo.rs`, `shelf.rs`, `note.rs` | Water, To-do, Ledge and Scrap slides                               |
 | `i18n.rs`                                    | UI language: English text as the key, Indonesian table             |

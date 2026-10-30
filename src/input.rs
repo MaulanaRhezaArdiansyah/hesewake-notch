@@ -45,7 +45,11 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
             }
             SlideId::Music => {
                 let d = |px: f32, py: f32| ((x - px).powi(2) + (y - py).powi(2)).sqrt();
-                if a.media.sources > 1 && a.lyric_text().is_none() && in_rect(x, y, LX, 6.0, 190.0, 24.0) {
+                if a.out_click(x, y) {
+                    a.last = Instant::now();
+                    present(a);
+                    schedule(a);
+                } else if a.media.sources > 1 && a.lyric_text().is_none() && in_rect(x, y, LX, 6.0, 190.0, 24.0) {
                     let _ = a.tx.send(Cmd::CycleSource);
                 } else if d(MCX + 92.0, MCY) < 14.0 {
                     a.lyric_toggle_mode();

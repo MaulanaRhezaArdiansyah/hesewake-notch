@@ -217,6 +217,9 @@ unsafe fn poll(a: &mut App) {
                     && a.unread_count() > 0
                     && a.bell_pos().map_or(false, |(bx, by)| (x - bx).abs() < 14.0 && (y - by).abs() < 14.0);
                 a.hover = inside;
+                if !inside {
+                    a.out_close();
+                }
                 changed = true;
                 if to_notif {
                     a.show_id(SlideId::Notifications);
