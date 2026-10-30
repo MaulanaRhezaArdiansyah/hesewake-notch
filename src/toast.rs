@@ -77,6 +77,8 @@ pub(crate) enum ToastKind {
     Meeting { title: String, at: i64, link: Option<String> },
     /// A newer release is out, or the answer to "Check for updates".
     Update(update::Note),
+    /// A download finished: full path of the file, with Open / Show in folder (downloads.rs).
+    Downloaded { path: String },
 }
 
 pub(crate) struct Toast {
@@ -144,6 +146,7 @@ impl App {
             ToastKind::Update(update::Note::Downloading(_)) => 20.0,
             ToastKind::Update(update::Note::DownloadFailed(_)) => 12.0,
             ToastKind::Update(_) => 4.0,
+            ToastKind::Downloaded { .. } => 8.0,
             _ => 3.4,
         };
         perf::note(&format!("toast start {:?} mem={:.1}MB", kind, perf::mem_mb()));
@@ -187,6 +190,7 @@ impl App {
             Some(ToastKind::Water) => TOAST_WATER,
             Some(ToastKind::Meeting { .. }) => TOAST_MEETING,
             Some(ToastKind::Update(_)) => TOAST_UPDATE,
+            Some(ToastKind::Downloaded { .. }) => downloads::TOAST_DOWNLOAD,
             _ => TOAST_CHARGE,
         }
     }
@@ -240,6 +244,10 @@ impl App {
             self.draw_update_toast(g, (w, h), al, t, note);
             return;
         }
+        if let ToastKind::Downloaded { path } = &ts.kind {
+            self.draw_download_toast(g, (w, h), al, t, path);
+            return;
+        }
 
         // (warna aksen, judul, subjudul, fraksi ring, teks kanan)
         let (rgb, title, sub, frac, right) = match &ts.kind {
@@ -256,9 +264,12 @@ impl App {
                 (if *connected { BLUE } else { GREY }, name.clone(), s, pct.map_or(1.0, |p| p as f32 / 100.0), None)
             }
             ToastKind::Prayer { idx, at } => {
-                (prayer::GOLD, prayer::NAMES[*idx as usize % 5].to_string(), tr("Prayer time").to_string(), 1.0, Some(prayer::hhmm(*at)))
+                let (title, sub) = prayer::toast_text(*idx as usize, self.cfg.ramadan);
+                // while the adhan plays, its Stop button takes the place of the time
+                let right = (!self.adhan_playing()).then(|| prayer::hhmm(*at));
+                (prayer::GOLD, title.to_string(), sub.to_string(), 1.0, right)
             }
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(_) => {
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(_) | ToastKind::Downloaded { .. } => {
                 unreachable!()
             }
         };
@@ -285,7 +296,7 @@ impl App {
             ToastKind::Bluetooth { .. } => g.icon_bluetooth(rcx, cy, 17.0 * sc, &ic),
             ToastKind::Prayer { .. } => g.icon_crescent(rcx, cy, 18.0 * sc, &ic),
             ToastKind::Timer { .. } => g.icon_bell(rcx, cy, 17.0 * sc, (t * 22.0).sin() * (1.0 - t / 1.5).max(0.0), &ic),
-            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(_) => {}
+            ToastKind::Notification { .. } | ToastKind::Hud { .. } | ToastKind::Privacy { .. } | ToastKind::Water | ToastKind::Meeting { .. } | ToastKind::Update(_) | ToastKind::Downloaded { .. } => {}
         }
 
         // Teks: geser 6 px + fade dengan jeda singkat.
@@ -298,7 +309,12 @@ impl App {
         g.txt(&sub, tx, cy + 2.0, 12.0, GREY, al * k, max_w + 2.0);
 
         // Kanan: persen (charger) atau orb headphone dengan riak (Bluetooth).
-        if let Some(txt) = right {
+        if matches!(ts.kind, ToastKind::Prayer { .. }) && self.adhan_playing() {
+            let (bx, by, bw, bh) = prayer::toast_stop_rect(w, h);
+            let over = self.cursor_canvas().is_some_and(|(x, y)| in_rect(x, y, bx, by, bw, bh));
+            g.pill(bx, by, bw, bh, g.acc.deep, if over { 1.0 } else { 0.85 } * al * k, 1.0);
+            g.txt_c(tr("Stop"), bx + bw / 2.0, by + ty(bh, 13.0), 13.0, [255, 255, 255], al * k, bw, true);
+        } else if let Some(txt) = right {
             let col = if matches!(ts.kind, ToastKind::LowBattery { .. }) { ACCENT } else { [255, 255, 255] };
             let tw = g.width(&txt, 24.0);
             g.txt(&txt, x0 + w - 26.0 - tw - (1.0 - k) * -6.0, cy - 16.0, 24.0, col, al * k, 100.0);
@@ -457,8 +473,9 @@ impl App {
                 ToastKind::Water
                     | ToastKind::Meeting { .. }
                     | ToastKind::Update(update::Note::Available(_) | update::Note::Downloading(_) | update::Note::DownloadFailed(_))
+                    | ToastKind::Downloaded { .. }
             )
-        )
+        ) || (matches!(self.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Prayer { .. })) && self.adhan_playing())
     }
 
     pub(crate) fn end_toast(&mut self) {
@@ -472,6 +489,21 @@ impl App {
         let Some(ts) = &self.toast else { return false };
         if ts.t0.elapsed().as_secs_f32() < 0.35 {
             return false;
+        }
+        if matches!(ts.kind, ToastKind::Downloaded { .. }) {
+            return self.dl_toast_click(x, y);
+        }
+        if matches!(ts.kind, ToastKind::Prayer { .. }) && self.adhan_playing() {
+            let (w, h) = TOAST_CHARGE;
+            if !in_rect(x, y, CX - w / 2.0, 0.0, w, h) {
+                return false;
+            }
+            let (bx, by, bw, bh) = prayer::toast_stop_rect(w, h);
+            if in_rect(x, y, bx, by, bw, bh) {
+                self.adhan_stop();
+            }
+            self.end_toast();
+            return true;
         }
         if let ToastKind::Update(note) = &ts.kind {
             let (w, h) = TOAST_UPDATE;

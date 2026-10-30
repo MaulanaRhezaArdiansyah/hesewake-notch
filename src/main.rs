@@ -52,6 +52,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 // ---------------------------------------------------------------- modul (satu file per fitur)
 mod accent;
+mod adhan;
 mod anim;
 mod audio;
 mod bt;
@@ -63,6 +64,7 @@ mod clock;
 mod config;
 mod data;
 mod dict;
+mod downloads;
 mod dragdrop;
 mod eye;
 mod gfx;
@@ -84,6 +86,7 @@ mod notif;
 mod notif_img;
 mod notifview;
 mod note;
+mod output;
 mod pace;
 mod perf;
 mod prayer;
@@ -115,7 +118,7 @@ use clock::{CLOCK_FADE_IN, now_tm, today};
 use i18n::{fill, tr};
 use config::{ACCENT, TEXT_DIM, TEXT_FAINT, CL, CW, CX, DROP_AMP, DROP_ANIM_SECS, EXP_H, EXP_W, H, IDLE, LYRIC_SIZE, LX, NAVY, PLAYING, RX, THIN, W};
 use data::{data_path, migrate_old_data, trim_memory, write_data};
-use eye::{EYE_REST_MS, EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
+use eye::{EyeAnim, HOTKEY_ID, HOTKEY_PLAIN_H, IDLE_CYCLE_SECS, IdlePhase, SPLASH_FADE, SPLASH_SECS, build_eye_paths, splash_tick, toggle_idle_phase};
 use gfx::{Box4, Gfx, acc, dummy_path, ellipsize, in_rect, notch_path, paint, pixmap_from_rgba, decode_limited, rrect, ty, union_box, wrap_lines};
 use icon::{load_icon};
 use input::{click, context_menu};
@@ -167,6 +170,10 @@ struct App {
     /// Today's prayer times: (date+city key, minutes for Subuh..Isya), and the last prayer that already got a toast.
     prayer: Option<(u32, [u16; 5])>,
     prayer_fired: Option<(u32, usize)>,
+    /// Today's Terbit (minutes since midnight), next to `prayer`.
+    prayer_sun: u16,
+    /// The adhan plays until then (adhan.rs).
+    adhan_until: Option<Instant>,
     hover: bool,
     busy: bool,
     /// Mode "Minimal notch": garis tipis saat tidak ada musik, buka dengan hover.
@@ -265,11 +272,21 @@ struct App {
     priv_t: Instant,
     /// Mute state of the default microphone(s): None = no microphone (mic.rs).
     mic_muted: Option<bool>,
+    /// Running downloads (downloads.rs), and whether the pointer already opened Ledge for them.
+    dls: Vec<downloads::DlView>,
+    dl_seen: bool,
     /// Indikator volume di slide Music setelah scroll: waktu terakhir dan (persen, bisu).
     vol_t: Instant,
     /// Peristiwa kecerahan pertama (saat pendaftaran) hanya dicatat, tidak ditampilkan.
     bright_seen: bool,
     vol_state: (u8, bool),
+    /// Audio output switcher (output.rs): the devices, whether the list is open, its scroll, and the last switch.
+    outs: output::Outputs,
+    out_open: bool,
+    out_scroll: usize,
+    out_t: Instant,
+    /// Wheel delta on the output button not yet used (trackpads send small steps).
+    out_acc: i32,
     order: Vec<SlideId>,
     /// Slide Settings sedang dibuka (ada di carousel) dan slide asal sebelum dibuka.
     settings_open: bool,
@@ -489,6 +506,7 @@ fn main() -> Result<()> {
         keys::set_enabled(hwnd.0 as isize, cfg.lock_toast);
         privacy::set_enabled(cfg.privacy_dot);
         privacy::start(hwnd.0 as isize);
+        downloads::set_enabled(hwnd.0 as isize, cfg.downloads);
         audio::start_watch(hwnd.0 as isize);
         mic::start_watch(hwnd.0 as isize);
         {
@@ -531,6 +549,8 @@ fn main() -> Result<()> {
             last_min: st.wMinute,
             prayer: None,
             prayer_fired: None,
+            prayer_sun: 0,
+            adhan_until: None,
             hover: false,
             busy: is_busy(hwnd, cfg.busy_on_maximized, &mon),
             minimal: cfg.minimal,
@@ -625,10 +645,17 @@ fn main() -> Result<()> {
             priv_cam: demo_priv("cam"),
             priv_t: Instant::now() - Duration::from_secs(10),
             mic_muted: None,
+            dls: Vec::new(),
+            dl_seen: false,
             vol_t: Instant::now() - Duration::from_secs(10),
             bright_seen: false,
             vol_state: (0, false),
-            order: slides::visible_order(&cfg.slides, false),
+            outs: output::Outputs::default(),
+            out_open: false,
+            out_scroll: 0,
+            out_t: Instant::now() - Duration::from_secs(10),
+            out_acc: 0,
+            order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
             settings_open: false,
             settings_prev: None,
             sui: settingsview::SettingsUi::new(),
@@ -637,6 +664,7 @@ fn main() -> Result<()> {
             cfg,
         };
         app.prayer_refresh();
+        app.out_refresh();
         let (tw, th) = target(&app);
         app.w = tw;
         app.h = th;
