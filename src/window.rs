@@ -257,6 +257,16 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     }
                     return;
                 }
+                // Claude slide: the wheel scrolls the session list
+                if vertical && a.is_slide(SlideId::Claude) && !a.claude_new && a.claude.list.len() > claude_slide::ROWS {
+                    if a.last_wheel.elapsed() >= Duration::from_millis(90) {
+                        a.last_wheel = Instant::now();
+                        if a.claude_wheel(d < 0) {
+                            present(a);
+                        }
+                    }
+                    return;
+                }
                 if vertical && a.is_slide(SlideId::Agenda) && a.agenda_scrollable() {
                     if a.last_wheel.elapsed() >= Duration::from_millis(90) {
                         a.last_wheel = Instant::now();
