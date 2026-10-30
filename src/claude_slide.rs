@@ -81,10 +81,12 @@ fn wt_escape(s: &str) -> String {
 
 /// The programs to try for a new session in `dir`, all by absolute path: Windows Terminal (from the app alias
 /// folder), then the console. `claude` is the full path of Claude Code, or None to open just the terminal there.
-/// (program, arguments, working folder)
-pub(crate) fn launch_plan(dir: &str, claude: Option<&str>, system_root: &str, local_appdata: &str) -> Vec<(String, String, String)> {
+/// `shim`: claude is an npm `.cmd` / `.bat` shim, which starts `node` by name; it then runs in our own console
+/// child only, which inherits `NoDefaultCurrentDirectoryInExePath` (a tab of an already running Windows Terminal
+/// would not), so the project folder is never searched for `node`. (program, arguments, working folder)
+pub(crate) fn launch_plan(dir: &str, claude: Option<&str>, shim: bool, system_root: &str, local_appdata: &str) -> Vec<(String, String, String)> {
     let mut plan = Vec::new();
-    if !local_appdata.is_empty() {
+    if !local_appdata.is_empty() && !shim {
         let wt = format!("{local_appdata}\\Microsoft\\WindowsApps\\wt.exe");
         let cmd = claude.map_or(String::new(), |c| format!(" \"{}\"", wt_escape(c)));
         plan.push((wt, format!("-d \"{}\"{cmd}", wt_escape(dir)), dir.to_string()));
@@ -117,9 +119,14 @@ fn launch(dir: &str) {
     #[cfg(not(test))]
     {
         let env = |k: &str| std::env::var(k).unwrap_or_default();
-        let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-        let claude = find_on_path(&env("PATH"), &pathext, "claude").map(|p| p.to_string_lossy().into_owned());
-        for (exe, args, cwd) in launch_plan(dir, claude.as_deref(), &env("SystemRoot"), &env("LOCALAPPDATA")) {
+        let path = env("PATH");
+        // the native claude.exe first; an npm shim only when there is none
+        let native = find_on_path(&path, ".EXE", "claude");
+        let shim = native.is_none();
+        let claude = native.or_else(|| find_on_path(&path, ".CMD;.BAT", "claude")).map(|p| p.to_string_lossy().into_owned());
+        // children we start never look for programs in their working folder (the project)
+        std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
+        for (exe, args, cwd) in launch_plan(dir, claude.as_deref(), shim && claude.is_some(), &env("SystemRoot"), &env("LOCALAPPDATA")) {
             if std::path::Path::new(&exe).is_file() && shell_open(&exe, &args, &cwd) {
                 return;
             }
@@ -431,15 +438,19 @@ mod tests {
 
     #[test]
     fn folder_names_and_launch_plan() {
-        assert_eq!(folder_name("C:\\code\\hesewake-notch\\\"), "hesewake-notch");
+        assert_eq!(folder_name("C:\\code\\hesewake-notch\\"), "hesewake-notch");
         assert_eq!(folder_name("D:/work/api"), "api");
         let claude = "C:\\Users\\me\\.local\\bin\\claude.exe";
-        let plan = launch_plan("C:\\My Code\\a;b", Some(claude), "C:\\Windows", "C:\\Users\\me\\AppData\\Local");
+        let plan = launch_plan("C:\\My Code\\a;b", Some(claude), false, "C:\\Windows", "C:\\Users\\me\\AppData\\Local");
         assert_eq!(plan[0].0, "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe", "absolute path");
         assert_eq!(plan[0].1, format!("-d \"C:\\My Code\\a\\;b\" \"{claude}\""), "quoted, `;` escaped for Windows Terminal, claude by full path");
         assert_eq!(plan[1], ("C:\\Windows\\System32\\cmd.exe".to_string(), format!("/k \"{claude}\""), "C:\\My Code\\a;b".to_string()), "fallback: the console in the folder");
-        let plan = launch_plan("C:\\p", None, "C:\\Windows", "");
+        let plan = launch_plan("C:\\p", None, false, "C:\\Windows", "");
         assert_eq!(plan, vec![("C:\\Windows\\System32\\cmd.exe".to_string(), "/k".to_string(), "C:\\p".to_string())], "no claude found: just the terminal");
+        let shim = "C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd";
+        let plan = launch_plan("C:\\p", Some(shim), true, "C:\\Windows", "C:\\Users\\me\\AppData\\Local");
+        assert_eq!(plan.len(), 1, "an npm shim runs in our own console only");
+        assert_eq!(plan[0].0, "C:\\Windows\\System32\\cmd.exe");
     }
 
     /// `claude` is only looked up in absolute PATH folders: a `claude.cmd` in `.` or a relative folder is never used.
