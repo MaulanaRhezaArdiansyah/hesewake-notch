@@ -46,18 +46,10 @@ pub(crate) unsafe fn schedule(a: &mut App) {
     } else if a.media.playing && !a.expanded() && !a.busy {
         33
     } else if a.splash_t().is_some() && !a.media.playing {
-        if a.eye.active() {
-            16
-        } else {
-            EYE_REST_MS
-        }
+        a.eye.frame_ms(0.0)
     } else if a.idle() && a.idle_phase() == IdlePhase::Eye {
-        // 60 fps saat berkedip / glance, santai saat istirahat.
-        if a.eye.active() {
-            16
-        } else {
-            EYE_REST_MS
-        }
+        // 60 fps while blinking / glancing, ~12 fps at rest, nothing while nobody is at the computer
+        a.eye.frame_ms(sys::input_idle_secs())
     } else if a.idle() && a.idle_phase() == IdlePhase::Clock && a.idle_secs() < CLOCK_FADE_IN + 0.1 {
         33 // clock fade-in right after the eye phase
     } else {
@@ -315,6 +307,13 @@ unsafe fn poll(a: &mut App) {
     schedule(a);
 }
 
+/// Time steps for one frame `raw` seconds after the previous one: (step for the UI springs and fades, capped at
+/// 50 ms so a long pause does not jump them; step for the clock, the eye and its glow, which follows real time at the
+/// slower resting frame rate too).
+pub(crate) fn frame_dt(raw: f32) -> (f32, f32) {
+    (raw.min(0.05), raw.min(0.15))
+}
+
 pub(crate) unsafe fn tick(id: usize) {
     with_app(|a| {
         if id == 2 {
@@ -325,9 +324,9 @@ pub(crate) unsafe fn tick(id: usize) {
         a.lyric_update();
         a.toast_update();
         let now = Instant::now();
-        let dt = (now - a.last).as_secs_f32().min(0.05);
+        let (dt, clock_dt) = frame_dt((now - a.last).as_secs_f32());
         a.last = now;
-        a.t += dt;
+        a.t += clock_dt;
         a.water_ui_step(dt);
         a.lyric_scroll_step(dt);
         a.settings_ui_step(dt);
@@ -337,7 +336,7 @@ pub(crate) unsafe fn tick(id: usize) {
         // Only advance the eye once the notch is back to its small size, so the pop-open is actually seen.
         let eye_on = (a.splash_t().is_some() && !a.media.playing) || (a.idle() && a.idle_phase() == IdlePhase::Eye);
         if eye_on && a.h < IDLE.1 + 10.0 {
-            a.eye.update(dt);
+            a.eye.update(clock_dt);
         }
 
         let (tw, th) = target(a);
@@ -373,4 +372,18 @@ pub(crate) unsafe fn tick(id: usize) {
         present(a);
         schedule(a);
     });
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    #[test]
+    fn eye_and_glow_follow_real_time_at_the_resting_rate() {
+        let (ui, clock) = frame_dt(EYE_REST_MS as f32 / 1000.0);
+        assert!((clock - 0.083).abs() < 0.001, "the glow does not slow down at 12 fps");
+        assert_eq!(ui, 0.05, "UI springs keep their 50 ms cap");
+        assert_eq!(frame_dt(0.016), (0.016, 0.016));
+        assert_eq!(frame_dt(5.0).1, 0.15, "after a long pause nothing jumps far");
+    }
 }
