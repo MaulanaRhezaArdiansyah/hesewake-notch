@@ -160,6 +160,9 @@ impl App {
         // Drop zone: satu outline putih transparan, tanpa kartu per-item.
         g.stroke(&rrect(x, SH_Y, CW, SH_H, 14.0), &paint(255, 255, 255, 0.16 * al), 1.2);
 
+        if self.draw_ledge_downloads(g, ox, al) {
+            return; // the shelf items come back when the downloads are done
+        }
         if self.shelf.is_empty() {
             g.txt_c(
                 tr("Drop files or folders here"),

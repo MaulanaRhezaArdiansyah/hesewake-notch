@@ -143,6 +143,7 @@ pub(crate) fn draw(a: &mut App) {
         if a.toast.is_none() {
             a.draw_privacy_dots(&mut g, w, h, ca);
             a.draw_claude_chip(&mut g, w, h, ca);
+            a.draw_download_strip(&mut g, w, h, ca);
         }
     }
     if p > 0.04 {
@@ -181,6 +182,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Clipboard => a.slide_clipboard(&mut g, ox, al),
                 SlideId::Agenda => a.slide_agenda(&mut g, ox, al),
                 SlideId::Claude => a.slide_claude(&mut g, ox, al),
+                SlideId::Prayer => a.slide_prayer(&mut g, ox, al),
             }
         }
         if !a.lyric_screen() {
