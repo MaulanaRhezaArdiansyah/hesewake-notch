@@ -460,6 +460,17 @@ unsafe fn wndproc_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT
             });
             LRESULT(0)
         }
+        adhan::WM_ADHAN_FILE => {
+            if let Some(picked) = adhan::take_picked() {
+                with_app(|a| {
+                    a.adhan_picked(picked);
+                    a.cfg.save();
+                    present(a);
+                    schedule(a);
+                });
+            }
+            LRESULT(0)
+        }
         privacy::WM_PRIVACY => {
             with_app(|a| {
                 a.privacy_apply();

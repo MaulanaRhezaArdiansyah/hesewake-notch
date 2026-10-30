@@ -70,6 +70,8 @@ fn test_app(s: f32) -> App {
         reminding: false,
         prayer: None,
         prayer_fired: None,
+        prayer_sun: 0,
+        adhan_until: None,
         splash: None,
         // the idle clock has finished fading in (clock phase, see `idle_phase`)
         idle_base: 5.0,
@@ -137,7 +139,7 @@ fn test_app(s: f32) -> App {
         vol_t: past,
         bright_seen: false,
         vol_state: (0, false),
-        order: slides::visible_order(&cfg.slides, false),
+        order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
         settings_open: false,
         settings_prev: None,
         sui: settingsview::SettingsUi::new(),

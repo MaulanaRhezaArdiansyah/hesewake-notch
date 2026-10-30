@@ -336,7 +336,7 @@ impl App {
     /// The countdown label and its colour, fitted to `prayer::LABEL_W` ("Standup 8m", "Ashar 12m").
     pub(crate) fn countdown_text(&self, g: &mut Gfx) -> Option<(String, [u8; 3])> {
         match self.upcoming()? {
-            Upcoming::Prayer(i, m) => Some((format!("{} {}m", prayer::NAMES[i], m), prayer::GOLD)),
+            Upcoming::Prayer(i, m) => Some((format!("{} {}m", prayer::short_name(i, self.cfg.ramadan), m), prayer::GOLD)),
             Upcoming::Meeting(title, m) => {
                 let suffix = format!(" {m}m");
                 let room = prayer::LABEL_W - g.width(&suffix, 12.0);
