@@ -1706,7 +1706,7 @@ fn open_claude_slide(a: &mut App) {
             e.1 = true;
         }
     }
-    a.order = slides::visible_order(&a.cfg.slides, false);
+    a.order = slides::visible_order(&a.slide_cfg());
     open_slide(a, SlideId::Claude);
 }
 
