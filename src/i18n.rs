@@ -393,7 +393,6 @@ const ID_TEXT: &[(&str, &str)] = &[
     ("Needs you", "Butuh kamu"),
     ("Idle", "Diam"),
     ("Error", "Error"),
-    ("Not connected", "Belum tersambung"),
     ("Reconnect needed", "Perlu disambung ulang"),
     ("Bad settings.json", "settings.json rusak"),
     ("Connect", "Pasang"),
