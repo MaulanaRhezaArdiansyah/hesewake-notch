@@ -8,7 +8,7 @@ use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFre
 use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, SIGDN_FILESYSPATH};
 
 /// Message to the window: the folder dialog closed with a folder (`take_picked`).
-pub(crate) const WM_CLAUDE_FOLDER: u32 = WM_APP + 18;
+pub(crate) const WM_CLAUDE_FOLDER: u32 = WM_APP + 21;
 
 /// Recent project folders kept for New session.
 pub(crate) const RECENT_MAX: usize = 8;
