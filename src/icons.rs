@@ -566,6 +566,12 @@ impl Gfx {
                 pen.polyline(&[(-0.38, 0.0), (0.38, 0.0)], false);
                 pen.polyline(&[(0.0, -0.38), (0.0, 0.38)], false);
             }
+            SlideId::Claude => {
+                // a terminal: a window with a ">_" prompt
+                pen.rrect(-0.95, -0.8, 1.9, 1.6, 0.3);
+                pen.polyline(&[(-0.5, -0.32), (-0.15, 0.0), (-0.5, 0.32)], false);
+                pen.polyline(&[(0.05, 0.35), (0.5, 0.35)], false);
+            }
             SlideId::Prayer => {
                 // a crescent: the outer arc of the moon, back along the edge of the shadow
                 let mut pts = Vec::new();
