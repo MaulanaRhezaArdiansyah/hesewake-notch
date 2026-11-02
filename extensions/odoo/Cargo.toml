@@ -1,6 +1,6 @@
 [package]
 name = "hesewake-odoo"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Odoo tickets for Hesewake Notch, as an extension (docs/extensions.md)"
 license = "MIT"

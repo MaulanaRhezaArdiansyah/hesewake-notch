@@ -35,23 +35,31 @@ this extension has none of its own.
 
 ## Install
 
-1. Build it with `cargo build --release` in this folder (or take `hesewake-odoo.exe` from the *Odoo extension* workflow).
-2. Put the exe somewhere fixed, for example `%LOCALAPPDATA%\Programs\Hesewake Odoo\hesewake-odoo.exe`.
-3. Write `%APPDATA%\hesewake-notch\extensions\odoo\extension.json` (with the exe's full path; `\` doubled in JSON):
+Needs Hesewake Notch 0.13.0 or later.
 
-   ```json
-   {
-     "id": "odoo",
-     "name": "Odoo",
-     "version": "0.1.0",
-     "exe": "C:\\Users\\me\\AppData\\Local\\Programs\\Hesewake Odoo\\hesewake-odoo.exe",
-     "slide": true,
-     "settings": "window",
-     "processes": "none",
-     "proto": 1
-   }
-   ```
+1. Run `HesewakeOdoo-Setup-x.y.z.exe` (made by the *Odoo extension* workflow). It installs for this Windows user only, in
+   `%LOCALAPPDATA%\Programs\Hesewake Odoo`, and writes the notch's manifest
+   (`%APPDATA%\hesewake-notch\extensions\odoo\extension.json`).
+2. In the notch: *Settings > Extensions*, **Rescan**, then switch **Odoo** on.
+3. On the Odoo slide, press **Set up** (see *Setup* above).
 
-4. In the notch: *Settings > Extensions*, **Rescan**, then switch **Odoo** on.
+An upgrade is the same installer: it stops the running extension and the notch starts the new one by itself. Uninstalling
+(*Settings > Apps*) removes the manifest too, and asks whether to delete the settings and the saved key.
+
+Without the installer: build with `cargo build --release`, put the exe somewhere fixed and write the manifest yourself
+(the exe's full path, `\` doubled in JSON):
+
+```json
+{
+  "id": "odoo",
+  "name": "Odoo",
+  "version": "0.2.0",
+  "exe": "C:\\Users\\me\\AppData\\Local\\Programs\\Hesewake Odoo\\hesewake-odoo.exe",
+  "slide": true,
+  "settings": "window",
+  "processes": "none",
+  "proto": 1
+}
+```
 
 It talks only to the Odoo server that was set up (https) and to the notch, and starts no other programs.
