@@ -993,10 +993,18 @@ fn snap_claude_settings_row() {
                 a.claude_link = link;
                 a.claude_status = claude_setup::StatusLink::On;
                 a.sw_show_page(ALERTS);
+                settingswin::render(a); // the page height is known once it is drawn
                 settingswin::scroll_to_end(a);
             });
         }
     }
+    i18n::set(i18n::EN);
+    // the Slides page, scrolled to the Claude slide with its icon and description
+    sw_shot("claude-settings-slides", |a| {
+        a.sw_show_page(SLIDES);
+        settingswin::render(a);
+        settingswin::scroll_to_end(a);
+    });
 }
 
 /// Ctrl+Alt+M mutes every default microphone, the next press unmutes them, and each press shows the HUD.
