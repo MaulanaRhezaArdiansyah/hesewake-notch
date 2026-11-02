@@ -54,6 +54,13 @@ pub(crate) struct Settings {
     /// Adhan when a prayer starts: adhan::OFF / SYSTEM / FILE, and the file the user picked.
     pub(crate) adhan: u8,
     pub(crate) adhan_file: String,
+    /// Wibu mode: an image behind the expanded notch, the file the user picked, and how much it is darkened (wibu.rs).
+    pub(crate) wibu: bool,
+    pub(crate) wibu_file: String,
+    pub(crate) wibu_dim: u8,
+    /// Extensions the user turned on, and those whose toasts are muted (ids; extapp.rs).
+    pub(crate) ext_on: Vec<String>,
+    pub(crate) ext_mute: Vec<String>,
     /// Indeks di `scale::SIZES`: 0 = Auto (ikut scaling Windows), selebihnya ukuran tetap.
     pub(crate) notch_size: usize,
     /// Tampilan notch idle: 0 = bergantian jam/mata (10/15 menit), 1 = jam saja, 2 = mata saja.
@@ -72,6 +79,17 @@ pub(crate) struct Settings {
 pub(crate) const LEAD_MIN: i32 = -500;
 pub(crate) const LEAD_MAX: i32 = 1000;
 pub(crate) const LEAD_STEP: i32 = 50;
+
+/// `a,b,c` -> the valid extension ids among them, once each, at most 16.
+fn parse_ids(v: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in v.split(',').map(str::trim) {
+        if extproto::valid_id(id) && !out.iter().any(|x| x == id) && out.len() < 16 {
+            out.push(id.to_string());
+        }
+    }
+    out
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -97,6 +115,11 @@ impl Default for Settings {
             ramadan: false,
             adhan: adhan::OFF,
             adhan_file: String::new(),
+            wibu: false,
+            wibu_file: String::new(),
+            wibu_dim: wibu::DEFAULT_DIM,
+            ext_on: Vec::new(),
+            ext_mute: Vec::new(),
             notch_size: 0,
             idle_display: 0,
             accent: 0,
@@ -135,6 +158,15 @@ impl Settings {
                 "ramadan" => s.ramadan = flag,
                 "adhan" => s.adhan = v.parse::<u8>().unwrap_or(adhan::OFF).min(adhan::MODES - 1),
                 "adhan_file" => s.adhan_file = v.to_string(),
+                "wibu" => s.wibu = flag,
+                "wibu_file" => s.wibu_file = v.to_string(),
+                "wibu_dim" => {
+                    if let Ok(n) = v.parse::<u8>() {
+                        s.wibu_dim = wibu::snap_dim(n);
+                    }
+                }
+                "ext_on" => s.ext_on = parse_ids(v),
+                "ext_mute" => s.ext_mute = parse_ids(v),
                 "update_check" => s.update_check = flag,
                 "update_seen" => s.update_seen = v.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+')).take(32).collect(),
                 "monitor" => {
@@ -184,7 +216,7 @@ impl Settings {
 
     pub(crate) fn serialize(&self) -> String {
         format!(
-            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\ndownloads={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nimsak_terbit={}\nramadan={}\nadhan={}\nadhan_file={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
+            "minimal={}\nnotifications={}\nbusy_on_maximized={}\nlyric_lead_ms={}\nromaji_lyrics={}\nnotif_avatar={}\nlock_toast={}\nprivacy_dot={}\nslide_hotkeys={}\nmic_hotkey={}\ndownloads={}\nhud_volume={}\nhud_brightness={}\nweather={}\nweather_city={}\nprayer={}\nimsak_terbit={}\nramadan={}\nadhan={}\nadhan_file={}\nwibu={}\nwibu_file={}\nwibu_dim={}\next_on={}\next_mute={}\nmonitor={}\nnotch_size={}\nidle_display={}\naccent={}\nlang={}\nupdate_check={}\nupdate_seen={}\nslides={}\n",
             self.minimal as u8,
             self.notifications as u8,
             self.busy_on_maximized as u8,
@@ -205,6 +237,11 @@ impl Settings {
             self.ramadan as u8,
             self.adhan,
             self.adhan_file.replace(['\r', '\n'], ""),
+            self.wibu as u8,
+            self.wibu_file.replace(['\r', '\n'], ""),
+            self.wibu_dim,
+            self.ext_on.join(","),
+            self.ext_mute.join(","),
             self.monitor,
             self.notch_size,
             self.idle_display,
@@ -335,6 +372,42 @@ mod tests {
         assert!(back.ramadan && !back.imsak_terbit);
         assert_eq!((back.adhan, back.adhan_file.as_str()), (adhan::FILE, "C:\\Users\\me\\Music\\adzan = makkah.mp3"));
         assert_eq!(Settings::parse("adhan=9\n").adhan, adhan::MODES - 1, "out of range is clamped");
+    }
+
+    #[test]
+    fn wibu_roundtrip_and_defaults() {
+        let s = Settings::parse("minimal=1\n");
+        assert!(!s.wibu, "old file = off");
+        assert_eq!((s.wibu_file.as_str(), s.wibu_dim), ("", wibu::DEFAULT_DIM));
+        let mut s = Settings::default();
+        s.wibu = true;
+        s.wibu_file = "C:\\Users\\me\\Pictures\\a = b.png".into();
+        s.wibu_dim = 50;
+        let back = Settings::parse(&s.serialize());
+        assert!(back.wibu);
+        assert_eq!((back.wibu_file.as_str(), back.wibu_dim), ("C:\\Users\\me\\Pictures\\a = b.png", 50));
+        assert_eq!(Settings::parse("wibu_dim=63").wibu_dim, 60, "nearest choice");
+        assert_eq!(Settings::parse("wibu_dim=0").wibu_dim, 50);
+        assert_eq!(Settings::parse("wibu_dim=255").wibu_dim, 80);
+        assert_eq!(Settings::parse("wibu_dim=x").wibu_dim, wibu::DEFAULT_DIM);
+    }
+
+    #[test]
+    fn extension_switches_roundtrip() {
+        let s = Settings::parse("minimal=1
+");
+        assert!(s.ext_on.is_empty() && s.ext_mute.is_empty(), "old file = nothing on");
+        let mut s = Settings::default();
+        s.ext_on = vec!["example-issues".into(), "media-bridge".into()];
+        s.ext_mute = vec!["media-bridge".into()];
+        let back = Settings::parse(&s.serialize());
+        assert_eq!((back.ext_on, back.ext_mute), (s.ext_on.clone(), s.ext_mute.clone()));
+        let messy = Settings::parse("ext_on=a, b ,a,Bad_Id,,-x,c
+");
+        assert_eq!(messy.ext_on, vec!["a", "b", "c"], "valid ids, once each");
+        let many = (0..30).map(|i| format!("e{i}")).collect::<Vec<_>>().join(",");
+        assert_eq!(Settings::parse(&format!("ext_on={many}
+")).ext_on.len(), 16);
     }
 
     #[test]

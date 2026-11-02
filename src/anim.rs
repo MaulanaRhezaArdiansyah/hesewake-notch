@@ -34,12 +34,15 @@ fn settled(a: &App) -> bool {
 /// Timer: 16 ms saat bergerak / animasi droplet / mid-blink, 40 ms saat mata istirahat (glow mengalir),
 /// 33 ms untuk equalizer, dan mati kalau tidak ada yang bergerak.
 pub(crate) unsafe fn schedule(a: &mut App) {
+    if a.hwnd == 0 {
+        return; // no window (tests)
+    }
     let pulsing = a.drop_pulse.map_or(false, |t| t.elapsed().as_secs_f32() < DROP_ANIM_SECS);
     let want = if a.display_off {
         0
     } else if pulsing {
         16
-    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.settings_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.timer_animating() || a.clip_animating() {
+    } else if !settled(a) || a.lyric_fading() || a.art_fading() || a.toast.is_some() || a.water_animating() || a.lyric_scroll_animating() || a.bell_animating() || a.notif_ui_animating() || a.privacy_animating() || a.vol_overlay_active() || a.sys_animating() || a.timer_animating() || a.clip_animating() {
         16
     } else if let Some(ms) = Some(a.weather_frame_ms(sys::input_idle_secs())).filter(|&ms| ms > 0) {
         ms // the weather slot: 16 ms while it changes, 20 fps while a moving icon shows
@@ -91,10 +94,10 @@ unsafe fn poll(a: &mut App) {
     if a.toast_update() {
         redraw = true;
     }
-    if a.settings_open && settled(a) && a.settings_autoclose() {
+    a.notif_ui_step();
+    if a.tick_n % 5 == 0 && a.ext_tick() {
         redraw = true;
     }
-    a.notif_ui_step();
     if a.tick_n % 5 == 0 && a.monitor_follow() {
         redraw = true;
     }
@@ -149,7 +152,7 @@ unsafe fn poll(a: &mut App) {
     if a.splash.is_none() {
         if let Some(n) = a.demo_slide.take() {
             if n == usize::MAX {
-                a.open_settings();
+                a.open_settings_window();
             } else {
                 a.show(n);
             }
@@ -204,32 +207,10 @@ unsafe fn poll(a: &mut App) {
     if !a.menu_open {
         let mut p = POINT::default();
         if GetCursorPos(&mut p).is_ok() {
-            let (zw, zh) = if a.hover || a.expanded() {
-                (EXP_W + 20.0, EXP_H + 8.0)
-            } else if a.thin() {
-                (a.w.max(THIN.0) + 60.0, 10.0)
-            } else {
-                (a.w.max(IDLE.0) + 12.0, a.h.max(IDLE.1) + 6.0)
-            };
             let x = (p.x - a.wx) as f32 / a.scale;
             let y = (p.y - a.wy) as f32 / a.scale;
-            // Toast dengan tombol (Water, rapat, pembaruan): hover di atasnya tidak boleh membuka notch (itu membatalkan toast-nya).
-            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh && !a.toast_has_button();
-            if inside != a.hover {
-                // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.
-                let to_notif = inside
-                    && a.unread_count() > 0
-                    && a.bell_pos().map_or(false, |(bx, by)| (x - bx).abs() < 14.0 && (y - by).abs() < 14.0);
-                a.hover = inside;
-                if !inside {
-                    a.out_close();
-                }
+            if a.pointer_step(x, y) {
                 changed = true;
-                if to_notif {
-                    a.show_id(SlideId::Notifications);
-                } else if inside {
-                    a.dl_on_hover();
-                }
             }
         }
     }
@@ -239,13 +220,20 @@ unsafe fn poll(a: &mut App) {
             a.busy = b;
             changed = true;
         }
+        let f = busy::fg_state(HWND(a.hwnd as *mut c_void), &a.mon);
+        if f != a.fg {
+            a.fg = f;
+            changed = true;
+        }
     }
     // Window TOPMOST bisa "tenggelam" (Start menu, taskbar, app fullscreen, explorer restart, dll).
     // Cek tiap ~1 detik; kalau flag topmost hilang, pasang lagi tanpa merebut fokus.
     if a.tick_n % 10 == 0 {
         let hwnd = HWND(a.hwnd as *mut c_void);
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-        if ex & WS_EX_TOPMOST.0 == 0 {
+        // The TOPMOST flag can stay while the window is pushed under ordinary windows (it then disappears from the screen
+        // although it still draws): check the z-order too.
+        if ex & WS_EX_TOPMOST.0 == 0 || buried(hwnd) {
             let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
     }
@@ -341,7 +329,6 @@ pub(crate) unsafe fn tick(id: usize) {
         a.t += clock_dt;
         a.water_ui_step(dt);
         a.lyric_scroll_step(dt);
-        a.settings_ui_step(dt);
         a.sys_step(dt);
         a.notif_ui_step();
 
@@ -379,7 +366,6 @@ pub(crate) unsafe fn tick(id: usize) {
             let k = a.slide.div_euclid(n) * n;
             a.slide -= k;
             a.sp -= k as f32;
-            a.settings_autoclose();
         }
         present(a);
         schedule(a);
@@ -398,4 +384,97 @@ mod frame_tests {
         assert_eq!(frame_dt(0.016), (0.016, 0.016));
         assert_eq!(frame_dt(5.0).1, 0.15, "after a long pause nothing jumps far");
     }
+}
+
+impl App {
+    /// Over a maximized or fullscreen window the notch always steps aside from the pointer: it sits on top of that window's
+    /// tabs and buttons, which must stay reachable. The same goes whenever the notch is thin because of a busy window
+    /// (an Adobe app, fullscreen), since that thin line is the "minimal notch" the pointer should be able to pass.
+    pub(crate) fn dodge_applies(&self) -> bool {
+        self.fg >= 1 || self.busy
+    }
+
+    /// The pointer is at (`x`, `y`) in canvas coordinates: open the notch when it comes near, close it when it leaves, or,
+    /// over a fullscreen / maximized window, step aside (turn thin, not expanding) so the window's own tabs and buttons under
+    /// the notch can be reached; aiming right at the thin line opens it. True if something changed.
+    pub(crate) fn pointer_step(&mut self, x: f32, y: f32) -> bool {
+        let a = self;
+        let mut changed = false;
+        if a.dodge_applies() && !a.held_open() {
+            if a.hover {
+                // Opened on purpose from the thin line: stays open while the pointer is in the open notch.
+                let inside = (x - CX).abs() <= (EXP_W + 20.0) / 2.0 && y >= 0.0 && y <= EXP_H + 8.0;
+                if !inside {
+                    a.hover = false;
+                    a.out_close();
+                    changed = true;
+                }
+                return changed;
+            }
+            // The thin line itself: aiming right at it opens the notch (the tabs below it stay reachable).
+            if (x - CX).abs() <= THIN.0 / 2.0 + 12.0 && y >= 0.0 && y <= THIN.1 + 1.0 && !a.toast_has_button() {
+                a.hover = true;
+                a.dodging = false;
+                a.dl_on_hover();
+                return true;
+            }
+            // the area of the notch as it is without the pointer (the thin line when it is already thin)
+            let fresh = if a.busy { (a.w.max(THIN.0) + 60.0, 10.0) } else { (a.w.max(IDLE.0) + 12.0, a.h.max(IDLE.1) + 6.0) };
+            let (zw, zh) = if a.dodging { a.dodge_zone } else { fresh };
+            let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh;
+            if inside != a.dodging {
+                a.dodging = inside;
+                if inside {
+                    a.dodge_zone = fresh;
+                }
+                changed = true;
+            }
+            return changed;
+        }
+        if a.dodging {
+            a.dodging = false;
+            changed = true;
+        }
+        let (zw, zh) = if a.hover || a.expanded() {
+            (EXP_W + 20.0, EXP_H + 8.0)
+        } else if a.thin() {
+            (a.w.max(THIN.0) + 60.0, 10.0)
+        } else {
+            (a.w.max(IDLE.0) + 12.0, a.h.max(IDLE.1) + 6.0)
+        };
+        // Toast dengan tombol (Water, rapat, pembaruan): hover di atasnya tidak boleh membuka notch (itu membatalkan toast-nya).
+        let inside = (x - CX).abs() <= zw / 2.0 && y >= 0.0 && y <= zh && !a.toast_has_button();
+        if inside != a.hover {
+            // Pointer masuk tepat di lonceng saat ada yang belum dibaca: buka langsung slide Notifications.
+            let to_notif = inside
+                && a.unread_count() > 0
+                && a.bell_pos().map_or(false, |(bx, by)| (x - bx).abs() < 14.0 && (y - by).abs() < 14.0);
+            a.hover = inside;
+            if !inside {
+                a.out_close();
+            }
+            changed = true;
+            if to_notif {
+                a.show_id(SlideId::Notifications);
+            } else if inside {
+                a.dl_on_hover();
+            }
+        }
+        changed
+    }
+}
+
+/// Is a visible window that is not topmost above `hwnd` in the z-order? A topmost window sits above all of those, so if one
+/// is, the notch has been pushed under it (and is hidden) in spite of its TOPMOST flag.
+unsafe fn buried(hwnd: HWND) -> bool {
+    let mut w = GetWindow(hwnd, GW_HWNDPREV).unwrap_or_default();
+    let mut n = 0;
+    while !w.0.is_null() && n < 500 {
+        if IsWindowVisible(w).as_bool() && GetWindowLongW(w, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 == 0 {
+            return true;
+        }
+        w = GetWindow(w, GW_HWNDPREV).unwrap_or_default();
+        n += 1;
+    }
+    false
 }

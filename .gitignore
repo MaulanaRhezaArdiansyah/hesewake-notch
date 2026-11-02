@@ -1,5 +1,6 @@
 # Hasil build Rust
 /target/
+/examples/hello-extension/target/
 
 # Kamus IPADIC Lindera (diunduh oleh scripts\fetch-dict.ps1)
 /dict/
@@ -10,3 +11,6 @@
 
 # Salinan exe untuk dijalankan lokal
 /dist/
+
+# Catatan pribadi untuk Claude Code (edisi Office, rencana internal)
+/CLAUDE.local.md

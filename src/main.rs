@@ -71,7 +71,13 @@ mod data;
 mod dict;
 mod downloads;
 mod dragdrop;
+mod ext;
+mod extapp;
+mod extslide;
 mod eye;
+mod extjob;
+mod extproto;
+mod filepick;
 mod gfx;
 mod hotkeys;
 mod i18n;
@@ -91,6 +97,7 @@ mod notif;
 mod notif_img;
 mod notifview;
 mod note;
+mod opts;
 mod output;
 mod pace;
 mod perf;
@@ -101,7 +108,7 @@ mod render;
 mod romaji;
 mod scale;
 mod settings;
-mod settingsview;
+mod settingswin;
 mod shelf;
 mod slides;
 #[cfg(test)]
@@ -110,10 +117,12 @@ mod sys;
 mod sysview;
 mod weather;
 mod todo;
+mod textfield;
 mod timer;
 mod toast;
 mod update;
 mod water;
+mod wibu;
 mod window;
 
 use accent::Accent;
@@ -179,6 +188,10 @@ struct App {
     prayer_sun: u16,
     /// The adhan plays until then (adhan.rs).
     adhan_until: Option<Instant>,
+    /// The image of Wibu mode, scaled to the canvas (wibu.rs).
+    wibu: wibu::Wibu,
+    /// Extensions: manifests, started programs and what they show (extapp.rs).
+    ext: extapp::ExtState,
     hover: bool,
     busy: bool,
     /// Mode "Minimal notch": garis tipis saat tidak ada musik, buka dengan hover.
@@ -218,6 +231,14 @@ struct App {
     lyric_idx: Option<usize>,
     lyric_w: f32,
     lyric_mode: bool,
+    /// What the foreground window is: 0 = ordinary, 1 = maximized, 2 = fullscreen (see `busy::fg_state`).
+    fg: u8,
+    /// The pointer is at the notch over a window it should dodge: the notch is drawn thin and does not expand.
+    dodging: bool,
+    /// Size of the area that keeps the notch dodging once it started (so it does not flicker at the edge as it shrinks).
+    dodge_zone: (f32, f32),
+    /// Mode lirik disematkan: notch tetap terbuka walau pointer pergi (hanya selama mode lirik, dan tidak di atas aplikasi layar penuh).
+    pinned: bool,
     lyric_mode_t0: Instant,
     lyric_scroll: f32,
     lyric_sv: f32,
@@ -305,10 +326,8 @@ struct App {
     /// Wheel delta on the output button not yet used (trackpads send small steps).
     out_acc: i32,
     order: Vec<SlideId>,
-    /// Slide Settings sedang dibuka (ada di carousel) dan slide asal sebelum dibuka.
-    settings_open: bool,
-    settings_prev: Option<SlideId>,
-    sui: settingsview::SettingsUi,
+    /// The Settings window (settingswin.rs).
+    sw: settingswin::Win,
     sys_ui: sysview::SysUi,
     /// Indeks tahap cuaca terakhir yang digambar (memicu transisi suhu <-> ikon).
     weather_idx: u64,
@@ -331,10 +350,15 @@ fn with_app<F: FnOnce(&mut App)>(f: F) {
 
 impl App {
     fn expanded(&self) -> bool {
-        self.hover
-            || self.editing
+        self.hover || self.held_open()
+    }
+
+    /// Open for a reason other than the pointer: typing, a drag, a peek (hotkey, notification) or the pinned lyrics.
+    fn held_open(&self) -> bool {
+        self.editing
             // menekan tombol di toast Water (Snooze/Drank) bukan gestur geser: toast tidak boleh dibatalkan sebelum klik selesai
             || (self.drag.is_some() && !self.toast_has_button())
+            || self.pinned_open()
             || self.peek_until.map_or(false, |t| Instant::now() < t)
     }
 
@@ -344,7 +368,7 @@ impl App {
 
     /// Notch menyusut jadi garis tipis: app penuh layar/Adobe (busy) atau mode Minimal saat tidak ada musik.
     fn thin(&self) -> bool {
-        self.busy || (self.minimal && !self.media.playing)
+        self.busy || self.dodging || (self.minimal && !self.media.playing)
     }
 
     fn ready(&self) -> bool {
@@ -581,6 +605,8 @@ fn main() -> Result<()> {
             prayer_fired: None,
             prayer_sun: 0,
             adhan_until: None,
+            wibu: wibu::Wibu::default(),
+            ext: extapp::ExtState::default(),
             hover: false,
             busy: is_busy(hwnd, cfg.busy_on_maximized, &mon),
             minimal: cfg.minimal,
@@ -622,6 +648,10 @@ fn main() -> Result<()> {
             lyric_idx: None,
             lyric_w: 0.0,
             lyric_mode: false,
+            fg: 0,
+            dodging: false,
+            dodge_zone: (0.0, 0.0),
+            pinned: false,
             lyric_mode_t0: Instant::now() - Duration::from_secs(10),
             lyric_scroll: 0.0,
             lyric_sv: 0.0,
@@ -693,16 +723,16 @@ fn main() -> Result<()> {
             out_scroll: 0,
             out_t: Instant::now() - Duration::from_secs(10),
             out_acc: 0,
-            order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
-            settings_open: false,
-            settings_prev: None,
-            sui: settingsview::SettingsUi::new(),
+            order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on)),
+            sw: settingswin::Win::new(),
             sys_ui: sysview::SysUi::new(),
             weather_idx: 0,
             cfg,
         };
         app.prayer_refresh();
         app.out_refresh();
+        app.wibu_apply();
+        app.ext_start();
         let (tw, th) = target(&app);
         app.w = tw;
         app.h = th;

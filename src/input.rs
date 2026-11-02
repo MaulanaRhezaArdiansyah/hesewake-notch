@@ -160,6 +160,12 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
                 a.claude_click(x, y);
                 present(a);
             }
+            SlideId::Ext(_) => {
+                if a.ext_click(x, y) {
+                    present(a);
+                    schedule(a);
+                }
+            }
             SlideId::Prayer => {
                 if a.prayer_click(x, y) {
                     present(a);
@@ -184,11 +190,6 @@ pub(crate) unsafe fn click(x: f32, y: f32) {
             }
             SlideId::Timer => {
                 a.timer_click(x, y);
-                present(a);
-                schedule(a);
-            }
-            SlideId::Settings => {
-                a.settings_click(x, y);
                 present(a);
                 schedule(a);
             }

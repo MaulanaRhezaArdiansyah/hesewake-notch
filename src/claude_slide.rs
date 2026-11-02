@@ -365,7 +365,7 @@ impl App {
         if list.is_empty() {
             let (x, y) = row_pos(0);
             g.txtb(tr("No Claude Code sessions"), x + ox, y + 18.0, 13.0, TEXT_DIM, al, LIST.2);
-            let hint = if self.claude_link == claude_setup::Link::On { tr("Start one with New session") } else { tr("Connect in Settings > Alerts") };
+            let hint = if self.claude_link == claude_setup::Link::On { tr("Start one with New session") } else { tr("Connect in Settings > HUD & alerts") };
             g.txt(hint, x + ox, y + 38.0, 11.0, TEXT_FAINT, al, LIST.2);
             return;
         }
