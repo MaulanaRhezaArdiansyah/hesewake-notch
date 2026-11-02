@@ -453,9 +453,9 @@ pub struct TestOk {
     pub stages: Vec<(u32, String)>,
 }
 
-fn run_test(cfg: &OdooCfg, key: &str) -> Result<TestOk, String> {
+pub fn run_test(cfg: &OdooCfg, key: &str) -> Result<TestOk, String> {
     if cfg.url.is_empty() || cfg.db.is_empty() || cfg.login.is_empty() {
-        return Err("odoo.json has no URL, database or login".to_string());
+        return Err("No server, database or login".to_string());
     }
     let uid = crate::odoo::authenticate(cfg, key)?;
     let probe = OdooCfg { uid, ..cfg.clone() };

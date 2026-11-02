@@ -11,7 +11,7 @@ use std::fmt::Display;
 const STALE_SECS: u64 = 60;
 /// Without a working setup, look again this often (for example after Odoo was set up in the Office edition).
 const SETUP_RECHECK_SECS: u64 = 300;
-const SETUP_MSG: &str = "Odoo is not set up. This uses the Office edition's odoo.json and API key.";
+const SETUP_MSG: &str = "Odoo is not set up yet. Press Set up and enter your server, login and API key.";
 
 pub enum Out {
     Send(Value),
@@ -19,6 +19,8 @@ pub enum Out {
     Save(OdooCfg),
     /// Read odoo.json and the key again, then call `Ui::reloaded`.
     Reload,
+    /// Open the setup window (server, database, login, API key); what it saves comes back to `Ui::setup_saved`.
+    OpenSetup,
 }
 
 enum Load<T> {
@@ -110,8 +112,8 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "{} min" => "{} mnt",
         "{} h" => "{} jam",
         "{} d" => "{} hari",
-        SETUP_MSG => "Odoo belum diatur. Extension ini memakai odoo.json dan API key edisi Office.",
-        "Check again" => "Periksa lagi",
+        SETUP_MSG => "Odoo belum diatur. Tekan Atur lalu isi server, login, dan API key.",
+        "Set up" => "Atur",
         "Stage" => "Tahap",
         "Project" => "Proyek",
         "Due" => "Tenggat",
@@ -130,6 +132,7 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "Test" => "Tes",
         "Alerts on" => "Notif nyala",
         "Alerts off" => "Notif mati",
+        "Account" => "Akun",
         "Connection" => "Koneksi",
         "Stages" => "Tahap",
         "Server" => "Server",
@@ -145,8 +148,6 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "Click a stage to show or hide it" => "Klik tahap untuk menampilkan atau menyembunyikannya",
         "New \u{b7} {}" => "Baru \u{b7} {}",
         "{} tickets changed" => "{} tiket berubah",
-        "Odoo settings" => "Pengaturan Odoo",
-        "On the Odoo slide" => "Di slide Odoo",
         "Not set up" => "Belum diatur",
         "Connecting" => "Menyambung",
         "Error: {}" => "Galat: {}",
@@ -232,6 +233,27 @@ impl Ui {
         out
     }
 
+    /// The setup window connected and handed over its settings (the key is already in Credential Manager).
+    pub fn setup_saved(&mut self, cfg: OdooCfg) -> Vec<Out> {
+        let mut out = Vec::new();
+        self.cfg = cfg;
+        self.key = true;
+        self.err = None;
+        self.testing = false;
+        self.tasks.clear();
+        self.loaded_at = None;
+        self.new_ids.clear();
+        out.push(Out::Save(self.cfg.clone()));
+        let n = self.cfg.active_stages().count();
+        self.test = Some(Ok(fill(self.t("Connected \u{b7} {} stages"), &[&n])));
+        // what a new account already has is not news
+        self.quiet = true;
+        self.refresh_now(&mut out);
+        self.page_to(&mut out);
+        self.status_to(&mut out);
+        out
+    }
+
     /// A message from the notch (`quit` is handled by `main.rs`).
     pub fn on_msg(&mut self, m: &Value) -> Vec<Out> {
         let mut out = Vec::new();
@@ -267,6 +289,7 @@ impl Ui {
                         self.page_to(&mut out);
                     }
                 }
+                View::Settings if matches!(id.as_str(), "-server" | "-login" | "-key") => out.push(Out::OpenSetup),
                 View::Settings => {
                     let sid = id.strip_prefix('s').and_then(|s| s.parse::<u32>().ok());
                     if let Some(st) = sid.and_then(|sid| self.cfg.stages.iter_mut().find(|s| s.id == sid)) {
@@ -332,7 +355,7 @@ impl Ui {
                     self.view = View::Settings;
                     self.page_to(&mut out);
                 }
-                "setup" => out.push(Out::Reload),
+                "setup" | "account" => out.push(Out::OpenSetup),
                 "test" => {
                     self.testing = true;
                     self.test = None;
@@ -346,14 +369,8 @@ impl Ui {
                 }
                 _ => {}
             },
-            "config" => {
-                // the settings are a page of the slide; a click on the toast opens the slide
-                self.view = View::Settings;
-                self.page_to(&mut out);
-                if !self.visible {
-                    out.push(Out::Send(json!({"t": "toast", "title": self.t("Odoo settings"), "sub": self.t("On the Odoo slide")})));
-                }
-            }
+            // Settings > Extensions > Settings: the account; the stages and the rest are on the slide's Settings page
+            "config" => out.push(Out::OpenSetup),
             "lang" => {
                 self.id_lang = m["lang"] == "id";
                 self.page_to(&mut out);
@@ -555,7 +572,7 @@ impl Ui {
         let rev = self.next_rev();
         let title = self.t("Tic|kets");
         if !self.ready() {
-            return json!({"t": "slide", "rev": rev, "title": title, "state": "setup", "message": self.t(SETUP_MSG), "setup_label": self.t("Check again")});
+            return json!({"t": "slide", "rev": rev, "title": title, "state": "setup", "message": self.t(SETUP_MSG), "setup_label": self.t("Set up")});
         }
         if self.loaded_at.is_none() {
             return match (&self.err, self.loading) {
@@ -697,6 +714,7 @@ impl Ui {
             "t": "slide", "rev": rev, "title": self.t("Set|tings"), "back": true,
             "stepper": {"label": fill(self.t("Every {} min"), &[&self.cfg.interval_min]), "prev": true, "next": true},
             "actions": [
+                {"id": "account", "label": self.t("Account")},
                 {"id": "test", "label": self.t("Test")},
                 {"id": "alerts", "label": if self.cfg.alerts { self.t("Alerts on") } else { self.t("Alerts off") }}
             ],
@@ -940,6 +958,22 @@ mod tests {
     }
 
     #[test]
+    fn the_setup_window_connects_quietly() {
+        let mut u = Ui::new(OdooCfg::default(), false, false);
+        u.now = 10;
+        u.start();
+        let out = u.setup_saved(cfg());
+        assert!(u.ready());
+        assert!(out.iter().any(|o| matches!(o, Out::Save(c) if c.configured())));
+        assert!(matches!(works(&out)[..], [Cmd::Refresh(_)]));
+        assert_eq!(pages(&out)[0]["state"], "loading");
+        // the account rows of the slide's Settings page open the window too
+        u.view = View::Settings;
+        assert!(matches!(u.on_msg(&json!({"t": "row", "id": "-key"}))[..], [Out::OpenSetup]));
+        assert!(matches!(u.on_msg(&json!({"t": "action", "id": "account"}))[..], [Out::OpenSetup]));
+    }
+
+    #[test]
     fn without_setup_it_asks_and_looks_again() {
         let mut u = Ui::new(OdooCfg::default(), false, true);
         u.now = 10;
@@ -947,9 +981,10 @@ mod tests {
         assert!(works(&out).is_empty());
         let p = pages(&out)[0];
         assert_eq!(p["state"], "setup");
-        assert_eq!(p["setup_label"], "Periksa lagi");
+        assert_eq!(p["setup_label"], "Atur");
         assert!(sent(&out).iter().any(|v| v["t"] == "status" && v["text"] == "Belum diatur"));
-        assert!(matches!(u.on_msg(&json!({"t": "action", "id": "setup"}))[..], [Out::Reload]));
+        assert!(matches!(u.on_msg(&json!({"t": "action", "id": "setup"}))[..], [Out::OpenSetup]));
+        assert!(matches!(u.on_msg(&json!({"t": "config"}))[..], [Out::OpenSetup]));
         u.now += SETUP_RECHECK_SECS;
         assert!(matches!(u.tick()[..], [Out::Reload]));
         let out = u.reloaded(cfg(), true);

@@ -1,6 +1,7 @@
 //! Odoo tickets for Hesewake Notch, as an extension (docs/extensions.md): my tickets per stage, a ticket's page, the
 //! daily report, and toasts for new tickets and tickets that changed stage. It does what the Office edition's Tickets
-//! slide did, with that edition's settings (`odoo.json`) and API key.
+//! slide did. Its own setup window (`setupwin.rs`) asks for the server, login and API key; an Office edition's existing
+//! settings and key are used as they are.
 //!
 //! One thread owns the pipe: it reads only when `PeekNamedPipe` says a frame is there, so it can also write on its own
 //! schedule (the monitor) without the blocked-read problem of a plain pipe handle. The network runs on a second thread.
@@ -10,6 +11,7 @@
 mod cfg;
 mod cred;
 mod odoo;
+mod setupwin;
 mod tickets;
 mod ui;
 
@@ -103,16 +105,22 @@ fn set_time(ui: &mut ui::Ui) {
     ui.today = l[..10].to_string();
 }
 
-fn apply(pipe: &mut File, ui: &mut ui::Ui, work: &Sender<tickets::Cmd>, out: Vec<ui::Out>) -> io::Result<()> {
+struct Chans {
+    work: Sender<tickets::Cmd>,
+    setup: Sender<cfg::OdooCfg>,
+}
+
+fn apply(pipe: &mut File, ui: &mut ui::Ui, ch: &Chans, out: Vec<ui::Out>) -> io::Result<()> {
     let mut q: VecDeque<ui::Out> = out.into();
     while let Some(o) = q.pop_front() {
         match o {
             ui::Out::Send(v) => send(pipe, v)?,
             ui::Out::Work(c) => {
-                let _ = work.send(c);
+                let _ = ch.work.send(c);
             }
             ui::Out::Save(c) => c.save(),
             ui::Out::Reload => q.extend(ui.reloaded(cfg::OdooCfg::load(), cred::has_key())),
+            ui::Out::OpenSetup => setupwin::open(ui.cfg.clone(), ui.id_lang, ch.setup.clone()),
         }
     }
     Ok(())
@@ -131,11 +139,13 @@ fn run() -> io::Result<()> {
     let (work_tx, work_rx) = channel();
     let (evt_tx, evt_rx) = channel();
     std::thread::spawn(move || tickets::worker(work_rx, evt_tx));
+    let (setup_tx, setup_rx) = channel();
+    let ch = Chans { work: work_tx, setup: setup_tx };
 
     let mut ui = ui::Ui::new(cfg::OdooCfg::load(), cred::has_key(), welcome["lang"] == "id");
     set_time(&mut ui);
     let out = ui.start();
-    apply(&mut pipe, &mut ui, &work_tx, out)?;
+    apply(&mut pipe, &mut ui, &ch, out)?;
     let mut last_tick = Instant::now();
     loop {
         let mut busy = false;
@@ -151,7 +161,7 @@ fn run() -> io::Result<()> {
                 }
                 set_time(&mut ui);
                 let out = ui.on_msg(&msg);
-                apply(&mut pipe, &mut ui, &work_tx, out)?;
+                apply(&mut pipe, &mut ui, &ch, out)?;
             }
             Some(_) => {}
         }
@@ -159,13 +169,19 @@ fn run() -> io::Result<()> {
             busy = true;
             set_time(&mut ui);
             let out = ui.on_evt(e);
-            apply(&mut pipe, &mut ui, &work_tx, out)?;
+            apply(&mut pipe, &mut ui, &ch, out)?;
+        }
+        while let Ok(c) = setup_rx.try_recv() {
+            busy = true;
+            set_time(&mut ui);
+            let out = ui.setup_saved(c);
+            apply(&mut pipe, &mut ui, &ch, out)?;
         }
         if last_tick.elapsed() >= Duration::from_secs(1) {
             last_tick = Instant::now();
             set_time(&mut ui);
             let out = ui.tick();
-            apply(&mut pipe, &mut ui, &work_tx, out)?;
+            apply(&mut pipe, &mut ui, &ch, out)?;
         }
         if !busy {
             std::thread::sleep(Duration::from_millis(40));

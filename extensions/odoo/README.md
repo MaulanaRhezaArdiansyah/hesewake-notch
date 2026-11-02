@@ -11,16 +11,27 @@ edition's Tickets slide did:
   with a day stepper and **Copy** (the same text as the Office edition).
 - **Monitor**: the list is refreshed every 1, 5, 15, 30 or 60 minutes; new tickets and stage changes come as a toast and a dot
   on the slide's navigation dot.
-- **Settings** (a page of the slide, or *Settings > Extensions > Settings*): the refresh interval, toasts on or off, which
-  stages are shown, and **Test**, which logs in again and reloads the stages.
+- **Setup window**: server address, database, login and API key. **Connect** logs in first and saves only what works.
+- **Settings** (a page of the slide): **Account** (the setup window), the refresh interval, toasts on or off, which stages
+  are shown, and **Test**, which logs in again and reloads the stages.
 
 ## Setup
 
-It uses the Office edition's setup:
+The first time, the slide shows **Set up** (also *Settings > Extensions > Settings*, or **Account** on the slide's Settings
+page). It opens a small window:
 
-- `%APPDATA%\hesewake-notch-office\odoo.json` is copied once to `%APPDATA%\hesewake-notch-odoo\odoo.json`; changes made in
-  the extension's settings go to that copy only. The last list (for the monitor) is kept next to it.
-- The API key is read from Windows Credential Manager, target `HesewakeNotchOffice/Odoo`. It is never written anywhere else.
+- **Server address**: `https://` and the Odoo address, for example `https://company.odoo.com`.
+- **Database**: the Odoo database name.
+- **Login**: the email you log in to Odoo with.
+- **API key**: made in Odoo under *your profile > Preferences > Account Security > New API Key*. It is kept in Windows
+  Credential Manager (target `HesewakeOdoo/Odoo`) and never written anywhere else. Left empty, the saved key is kept.
+
+**Connect** logs in, finds your user and the stages, and only then saves. The stages are all shown at first (except ones
+named like "done"); hide the ones that are not yours on the slide's Settings page.
+
+Settings are in `%APPDATA%\hesewake-notch-odoo\odoo.json`, next to the last list (for the monitor). An Office edition's
+setup is picked up as it is: its `odoo.json` is copied there once, and its key (`HesewakeNotchOffice/Odoo`) is read when
+this extension has none of its own.
 
 ## Install
 
@@ -43,4 +54,4 @@ It uses the Office edition's setup:
 
 4. In the notch: *Settings > Extensions*, **Rescan**, then switch **Odoo** on.
 
-It talks only to the Odoo server in `odoo.json` (https) and to the notch, and starts no other programs.
+It talks only to the Odoo server that was set up (https) and to the notch, and starts no other programs.

@@ -121,6 +121,33 @@ impl OdooCfg {
         }
     }
 
+    /// The settings for another server or login, from the setup window. The same server keeps its stage and project
+    /// choices; what belongs to the person (the team, the automatic accounts) starts over, and Test fills in the user.
+    pub fn for_account(&self, url: &str, db: &str, login: &str) -> OdooCfg {
+        let norm = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
+        let same_server = norm(&self.url) == norm(url) && self.db == db;
+        if same_server && self.login.eq_ignore_ascii_case(login) {
+            return OdooCfg { url: url.to_string(), db: db.to_string(), login: login.to_string(), ..self.clone() };
+        }
+        let mut c = OdooCfg {
+            url: url.to_string(),
+            db: db.to_string(),
+            login: login.to_string(),
+            interval_min: self.interval_min,
+            alerts: self.alerts,
+            tz_offset_min: self.tz_offset_min,
+            ..OdooCfg::default()
+        };
+        if same_server {
+            c.project_ids = self.project_ids.clone();
+            c.stages = self.stages.clone();
+            c.report_exclude_ids = self.report_exclude_ids.clone();
+            c.queue_ids = self.queue_ids.clone();
+            c.stage_subtype = self.stage_subtype;
+        }
+        c
+    }
+
     /// Complete enough to use (the key is checked on its own).
     pub fn configured(&self) -> bool {
         !self.url.is_empty() && !self.db.is_empty() && !self.login.is_empty() && self.uid > 0
@@ -237,5 +264,25 @@ mod tests {
         c.step_interval(true);
         assert_eq!(c.interval_min, 1);
         assert_eq!(c.interval_secs(), 60);
+    }
+    #[test]
+    fn another_account_starts_over() {
+        let mut c = OdooCfg { url: "https://a.example.com".into(), db: "a".into(), login: "me@a".into(), uid: 7, partner_id: 9, ..OdooCfg::default() };
+        c.project_ids = vec![2];
+        c.team_user_ids = vec![5];
+        c.stages = vec![StageCfg { id: 1, name: "TODO".into(), on: true }];
+        c.interval_min = 5;
+        // the same account (the URL written a little differently) keeps everything
+        let same = c.for_account("https://A.example.com/", "a", "ME@a");
+        assert_eq!((same.uid, same.team_user_ids.clone(), same.url.as_str()), (7, vec![5], "https://A.example.com/"));
+        // another person on the same server keeps the server's choices, not the person's
+        let other = c.for_account("https://a.example.com", "a", "you@a");
+        assert_eq!((other.uid, other.partner_id, other.project_ids.clone(), other.stages.len()), (0, 0, vec![2], 1));
+        assert!(other.team_user_ids.is_empty());
+        assert_eq!(other.interval_min, 5);
+        // another server keeps only the choices that are not about it
+        let new = c.for_account("https://b.example.com", "b", "me@b");
+        assert!(new.project_ids.is_empty() && new.stages.is_empty() && new.uid == 0);
+        assert_eq!(new.interval_min, 5);
     }
 }
