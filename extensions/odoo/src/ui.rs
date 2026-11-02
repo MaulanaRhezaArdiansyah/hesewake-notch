@@ -948,7 +948,7 @@ mod tests {
         assert!(out.iter().any(|o| matches!(o, Out::Save(c) if c.interval_min == 30)));
         let out = u.on_msg(&json!({"t": "action", "id": "alerts"}));
         assert!(!u.cfg.alerts);
-        assert_eq!(pages(&out)[0]["actions"][1]["label"], "Alerts off");
+        assert_eq!(pages(&out)[0]["actions"][2]["label"], "Alerts off");
         u.on_msg(&json!({"t": "action", "id": "test"}));
         let ok = tickets::TestOk { uid: 5, partner_id: 9, stage_subtype: 3, stages: vec![(19, "TODO".into()), (30, "QA".into())] };
         let out = u.on_evt(Evt::Test(Ok(ok)));

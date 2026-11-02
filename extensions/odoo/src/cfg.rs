@@ -124,8 +124,7 @@ impl OdooCfg {
     /// The settings for another server or login, from the setup window. The same server keeps its stage and project
     /// choices; what belongs to the person (the team, the automatic accounts) starts over, and Test fills in the user.
     pub fn for_account(&self, url: &str, db: &str, login: &str) -> OdooCfg {
-        let norm = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
-        let same_server = norm(&self.url) == norm(url) && self.db == db;
+        let same_server = self.same_server(url, db);
         if same_server && self.login.eq_ignore_ascii_case(login) {
             return OdooCfg { url: url.to_string(), db: db.to_string(), login: login.to_string(), ..self.clone() };
         }
@@ -146,6 +145,13 @@ impl OdooCfg {
             c.stage_subtype = self.stage_subtype;
         }
         c
+    }
+
+    /// The server and database these settings are for (the URL compared without case or a last `/`). Nothing set up is
+    /// no server.
+    pub fn same_server(&self, url: &str, db: &str) -> bool {
+        let norm = |u: &str| u.trim().trim_end_matches('/').to_ascii_lowercase();
+        !self.url.trim().is_empty() && norm(&self.url) == norm(url) && self.db == db
     }
 
     /// Complete enough to use (the key is checked on its own).
@@ -281,6 +287,8 @@ mod tests {
         assert!(other.team_user_ids.is_empty());
         assert_eq!(other.interval_min, 5);
         // another server keeps only the choices that are not about it
+        assert!(c.same_server("https://A.example.com/", "a") && !c.same_server("https://a.example.com", "b"));
+        assert!(!OdooCfg::default().same_server("", ""));
         let new = c.for_account("https://b.example.com", "b", "me@b");
         assert!(new.project_ids.is_empty() && new.stages.is_empty() && new.uid == 0);
         assert_eq!(new.interval_min, 5);

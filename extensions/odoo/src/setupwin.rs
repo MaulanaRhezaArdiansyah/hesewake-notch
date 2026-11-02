@@ -364,11 +364,14 @@ unsafe fn connect(hwnd: HWND) {
         let _ = SetFocus(edits[field]);
         return;
     }
+    // the saved key goes only to the server it was saved for: another address or database needs the key typed again
+    let saved_for_this = cfg.same_server(&url, &db);
     let (use_key, new_key) = if key.is_empty() {
-        match cred::get_key() {
+        match cred::get_key().filter(|_| saved_for_this) {
             Some(k) => (k, None),
             None => {
-                set_status(t("Enter your API key", "Isi API key"), true);
+                set_status(t("Enter the API key for this server", "Isi API key untuk server ini"), true);
+                let _ = SetFocus(edits[3]);
                 return;
             }
         }
