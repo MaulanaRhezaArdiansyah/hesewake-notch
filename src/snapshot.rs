@@ -72,6 +72,8 @@ fn test_app(s: f32) -> App {
         prayer_fired: None,
         prayer_sun: 0,
         adhan_until: None,
+        wibu: wibu::Wibu::default(),
+        ext: extapp::ExtState::default(),
         splash: None,
         // the idle clock has finished fading in (clock phase, see `idle_phase`)
         idle_base: 5.0,
@@ -87,6 +89,10 @@ fn test_app(s: f32) -> App {
         lyric_idx: None,
         lyric_w: 0.0,
         lyric_mode: false,
+        fg: 0,
+        dodging: false,
+        dodge_zone: (0.0, 0.0),
+        pinned: false,
         lyric_mode_t0: past,
         lyric_scroll: 0.0,
         lyric_sv: 0.0,
@@ -154,10 +160,8 @@ fn test_app(s: f32) -> App {
         out_scroll: 0,
         out_t: past,
         out_acc: 0,
-        order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on), false),
-        settings_open: false,
-        settings_prev: None,
-        sui: settingsview::SettingsUi::new(),
+        order: slides::visible_order(&slides::effective(&cfg.slides, cfg.prayer_on)),
+        sw: settingswin::Win::new(),
         sys_ui: sysview::SysUi::new(),
         weather_idx: 0,
         cfg,
@@ -304,81 +308,6 @@ fn snap_slide_music_empty() {
     shot("slide-music-empty", 1.0, |a| open_slide(a, SlideId::Music));
 }
 
-/// Open Settings on tab `tab`. Toggle knobs are snapped to their real state while the slide is still hidden,
-/// just like when the app opens Settings.
-fn open_settings_tab(a: &mut App, tab: u8) {
-    a.open_settings();
-    a.sui.tab = tab;
-    a.settings_ui_step(0.0);
-    a.hover = true;
-}
-
-#[test]
-fn snap_settings() {
-    for tab in 0..4u8 {
-        shot(&format!("settings-tab{tab}"), 1.0, |a| open_settings_tab(a, tab));
-    }
-}
-
-/// Settings › Widgets with a long city name: the stepper grows to the left instead of cutting the name.
-#[test]
-fn snap_settings_long_city() {
-    for (name, city) in [("settings-city-short", "Jakarta"), ("settings-city-long", "Balikpapan"), ("settings-city-longest", "Bandar Lampung")] {
-        let i = weather::CITIES.iter().position(|c| c.0 == city).unwrap();
-        shot(name, 1.0, |a| {
-            a.cfg.weather_city = i;
-            open_settings_tab(a, 3);
-        });
-    }
-}
-
-/// Every stepper value is shown in full (no ellipsis) and never runs into its row's label: all cities, the
-/// lyric timing extremes, every notch size and idle display.
-#[test]
-fn stepper_values_fit_without_cutting() {
-    let _lang = i18n::restore_on_drop();
-    let mut a = test_app(1.0);
-    let mut g = Gfx::new(1.0);
-    let mut check = |a: &App, tab: u8| {
-        for r in a.settings_rows(tab) {
-            let settingsview::RowKind::Stepper(v) = &r.kind else { continue };
-            let f = settingsview::stepper_fit(&mut g, &r, v);
-            assert_eq!(&f.value, v, "{:?}: value was cut", r.label);
-            let label_end = 12.0 + g.width_ex(r.label, 12.0, true).max(g.width(r.sub, 11.0));
-            assert!(f.minus_x - 9.0 >= label_end + 4.0 - 0.01, "{:?} = {v:?}: the - button overlaps the label", r.label);
-            assert!(f.size >= 9.0, "{:?} = {v:?}: text too small", r.label);
-        }
-    };
-    for i in 0..weather::CITIES.len() {
-        a.cfg.weather_city = i;
-        check(&a, 4);
-    }
-    for lead in [settings::LEAD_MIN, settings::LEAD_MAX] {
-        a.cfg.lyric_lead_ms = lead;
-        check(&a, 1);
-    }
-    for lang in 0..i18n::LANGS.len() {
-        i18n::set(lang);
-        for n in 0..scale::SIZES.len() {
-            a.cfg.notch_size = n;
-            a.cfg.idle_display = n % settings::IDLE_DISPLAY_LABELS.len();
-            check(&a, 1);
-        }
-        for m in 0..monitors::mode_count() {
-            a.cfg.monitor = m;
-            check(&a, 1);
-        }
-        for ac in 0..accent::ACCENTS.len() {
-            a.cfg.accent = ac;
-            check(&a, 4);
-        }
-        for l in 0..i18n::LANGS.len() {
-            a.cfg.lang = l;
-            check(&a, 2);
-        }
-    }
-}
-
 // ---------------------------------------------------------------- calendar
 
 /// Jakarta time, UTC+7.
@@ -490,25 +419,6 @@ fn countdown_shows_whichever_comes_first() {
     assert_eq!(a.upcoming(), None);
 }
 
-/// Settings > Slides holds 10 slides in rows of 3: the wheel brings the 4th row into view, and its cells work.
-#[test]
-fn slides_grid_scrolls_to_the_tenth_slide() {
-    let mut a = test_app(1.0);
-    open_settings_tab(&mut a, 0);
-    assert_eq!(a.cfg.slides.len(), SlideId::USER.len());
-    assert!(settingsview::slide_cells_visible(9, 0).is_none(), "the 10th slide starts below the grid");
-    assert!(a.settings_slides_wheel(true));
-    assert_eq!(a.sui.slides_scroll, 1);
-    assert!(!a.settings_slides_wheel(true), "only one extra row");
-    let (x, y) = settingsview::slide_cells_visible(9, 1).expect("visible after scrolling");
-    assert!(settingsview::slide_cells_visible(0, 1).is_none(), "the first row scrolled out");
-    let was = a.cfg.slides[9].1;
-    a.settings_click(x + settingsview::SC_W - 10.0, y + 10.0);
-    assert_eq!(a.cfg.slides[9].1, !was, "its toggle works");
-    assert!(a.settings_slides_wheel(false));
-    assert_eq!(a.sui.slides_scroll, 0);
-}
-
 /// A day with meetings: one running with a Meet link, then two more today.
 fn with_meetings(a: &mut App) {
     let now = now_s();
@@ -555,14 +465,10 @@ fn snap_calendar() {
         a.cal = vec![event("Standup", now_s() + 30 * 3600, 15, None)];
         open_slide(a, SlideId::Agenda);
     });
-    shot("settings-calendar-off", 1.0, |a| open_settings_tab(a, 3));
-    shot("settings-calendar-synced", 1.0, |a| {
+    sw_shot("settingswin-calendar-off", page(CALENDAR));
+    sw_shot("settingswin-calendar-synced", |a| {
         with_meetings(a);
-        open_settings_tab(a, 3);
-    });
-    shot("settings-slides-scrolled", 1.0, |a| {
-        open_settings_tab(a, 0);
-        a.sui.slides_scroll = 1;
+        a.sw_show_page(CALENDAR);
     });
     let id = |a: &mut App| {
         a.cfg.lang = i18n::ID;
@@ -578,151 +484,11 @@ fn snap_calendar() {
         id(a);
         show_toast(a, ToastKind::Meeting { title: "Daily Standup".into(), at: now_s(), link: Some("https://meet.google.com/abc".into()) })
     });
-    shot("id-settings-calendar", 1.0, |a| {
+    sw_shot("id-settingswin-calendar", |a| {
         id(a);
         with_meetings(a);
-        open_settings_tab(a, 3);
+        a.sw_show_page(CALENDAR);
     });
-}
-
-/// The Calendar row in Settings > Widgets: Paste reads the clipboard, and every state's text fits, in both languages.
-#[test]
-fn calendar_row_pastes_and_fits_in_every_state() {
-    let _lang = i18n::restore_on_drop();
-    let mut a = test_app(1.0);
-    let row = |a: &App| a.settings_rows(3).into_iter().position(|r| r.label == i18n::tr("Calendar")).expect("Calendar row");
-    let i = row(&a);
-    let (cx, cy) = settingsview::cell_pos(i);
-    calendar::TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some("https://calendar.google.com/x/basic.ics".into()));
-    a.settings_click_rows(3, cx + settingsview::CELL_W - 30.0, cy + 17.0);
-    assert_eq!(a.cal_link.as_deref(), Some("https://calendar.google.com/x/basic.ics"), "Paste took the link from the clipboard");
-
-    let mut g = Gfx::new(1.0);
-    for lang in 0..i18n::LANGS.len() {
-        i18n::set(lang);
-        let states: [(&str, fn(&mut App)); 6] = [
-            ("no link", |a| a.cal_link = None),
-            ("nothing on the clipboard", |a| {
-                a.cal_link = None;
-                a.cal_paste_err = Some(Instant::now());
-            }),
-            ("loading", |a| {
-                a.cal_link = Some("https://x.com/a.ics".into());
-                a.cal_status = calendar::CalStatus::Loading;
-            }),
-            ("ready", |a| {
-                a.cal_status = calendar::CalStatus::Ready;
-                a.cal = (0..12).map(|k| event("Meeting", now_s() + k * 60, 10, None)).collect();
-            }),
-            ("failed", |a| a.cal_status = calendar::CalStatus::Failed),
-            ("confirm remove", |a| a.cal_confirm = Some(Instant::now())),
-        ];
-        for (name, set) in states {
-            set(&mut a);
-            let r = a.settings_rows(3).swap_remove(row(&a));
-            let w = settingsview::text_w(&r.kind);
-            assert!(g.width_ex(r.label, 12.0, true) <= w && g.width(r.sub, 11.0) <= w, "lang {lang}, {name}: {:?} / {:?}", r.label, r.sub);
-            let settingsview::RowKind::Button(b) = &r.kind else { panic!("{name}: a button") };
-            assert!(g.width_ex(b, 11.0, true) <= 46.0, "lang {lang}, {name}: button {b:?}");
-        }
-    }
-}
-
-/// Short values keep the old stepper; "Bandar Lampung" moves the "-" button left and clicking it still steps back.
-#[test]
-fn moved_minus_button_is_still_clickable() {
-    let mut a = test_app(1.0);
-    let row = |a: &App| a.settings_rows(3).into_iter().position(|r| r.label == "City").unwrap();
-    let i = row(&a);
-    let minus_x = |a: &mut App| {
-        let r = a.settings_rows(3).swap_remove(i);
-        let settingsview::RowKind::Stepper(v) = &r.kind else { unreachable!() };
-        settingsview::stepper_fit(a.gfx.as_mut().unwrap(), &r, v).minus_x
-    };
-    a.cfg.weather_city = 0; // Jakarta
-    assert_eq!(minus_x(&mut a), settingsview::STEP_PLUS_X - settingsview::STEP_MIN_SPAN);
-
-    let long = weather::CITIES.iter().position(|c| c.0 == "Bandar Lampung").unwrap();
-    a.cfg.weather_city = long;
-    let mx = minus_x(&mut a);
-    assert!(mx < settingsview::STEP_PLUS_X - settingsview::STEP_MIN_SPAN, "the - button should move left");
-    let (cx, cy) = settingsview::cell_pos(i);
-    a.settings_click_rows(3, cx + mx, cy + 17.0);
-    assert_eq!(a.cfg.weather_city, long - 1, "clicking the moved - button steps back");
-    a.cfg.weather_city = long;
-    a.settings_click_rows(3, cx + settingsview::STEP_PLUS_X, cy + 17.0);
-    assert_eq!(a.cfg.weather_city, (long + 1) % weather::CITIES.len(), "+ still steps forward");
-}
-
-/// Every slide name fits in its Settings > Slides cell instead of running into the chevrons.
-#[test]
-fn slide_names_fit_settings_cells() {
-    let _lang = i18n::restore_on_drop();
-    let mut g = Gfx::new(1.0);
-    for lang in 0..i18n::LANGS.len() {
-        i18n::set(lang);
-        for id in SlideId::USER {
-            let w = g.width_ex(id.short_label(), 11.0, true);
-            assert!(w <= settingsview::SLIDE_NAME_W, "{:?} is {w:.1} px wide", id.short_label());
-        }
-    }
-}
-
-/// Every Settings row's label and sub-label fit to the left of its control (no ellipsis needed).
-#[test]
-fn settings_text_fits_cells() {
-    let _lang = i18n::restore_on_drop();
-    let a = test_app(1.0);
-    let mut g = Gfx::new(1.0);
-    for lang in 0..i18n::LANGS.len() {
-        i18n::set(lang);
-        for tab in 1..=3u8 {
-            for r in a.settings_rows(tab) {
-                let w = settingsview::text_w(&r.kind);
-                let (lw, sw) = (g.width_ex(r.label, 12.0, true), g.width(r.sub, 11.0));
-                assert!(lw <= w, "tab {tab}: label {:?} {lw:.1} px > {w} px", r.label);
-                assert!(sw <= w, "tab {tab}: sub {:?} {sw:.1} px > {w} px", r.sub);
-            }
-        }
-    }
-}
-
-/// The Settings tabs sit right of the title and inside the notch, in every language.
-#[test]
-fn settings_tabs_fit_next_to_the_title() {
-    let _lang = i18n::restore_on_drop();
-    let mut g = Gfx::new(1.0);
-    for lang in 0..i18n::LANGS.len() {
-        i18n::set(lang);
-        let tabs = settingsview::tab_rects(&mut g);
-        let title_end = LX + g.width_ex(i18n::tr("Settings"), 15.0, true);
-        assert!(tabs[0].0 >= title_end + 8.0, "lang {lang}: tabs start at {:.1}, title ends at {title_end:.1}", tabs[0].0);
-        let (x, w) = tabs[tabs.len() - 1];
-        assert!(x + w <= RX + 0.01, "lang {lang}: tabs end at {:.1} > {RX}", x + w);
-    }
-}
-
-/// The Language row in Settings > General switches the whole UI right away, and back.
-#[test]
-fn language_row_switches_the_ui() {
-    let _lang = i18n::restore_on_drop();
-    let mut a = test_app(1.0);
-    let i = a.settings_rows(1).iter().position(|r| r.label == "Language").expect("Language row in General");
-    let (cx, cy) = settingsview::cell_pos(i);
-    a.settings_click_rows(1, cx + settingsview::STEP_PLUS_X, cy + 17.0);
-    assert_eq!(a.cfg.lang, i18n::ID);
-    assert_eq!(i18n::current(), i18n::ID, "applied right away");
-    assert_eq!(a.settings_rows(1)[i].label, "Bahasa");
-    assert_eq!(a.settings_rows(3)[1].label, "Kota");
-    assert_eq!(SlideId::Todo.label(), "Tugas");
-    assert_eq!(clock::day_short(1), "Sen");
-    assert_eq!(clock::month(4), "Mei");
-    assert_eq!(timer::fmt_preset(90 * 60), "1 j 30 mnt");
-    a.settings_click_rows(1, cx + settingsview::STEP_PLUS_X, cy + 17.0);
-    assert_eq!(a.cfg.lang, i18n::EN);
-    assert_eq!(a.settings_rows(3)[1].label, "City");
-    assert_eq!(clock::day_short(1), "Mon");
-    assert_eq!(timer::fmt_preset(90 * 60), "1 h 30 min");
 }
 
 /// The main screens in Indonesian, for review.
@@ -733,12 +499,6 @@ fn snap_indonesian() {
         a.cfg.lang = i18n::ID;
         i18n::set(i18n::ID);
     };
-    for tab in 0..4u8 {
-        shot(&format!("id-settings-tab{tab}"), 1.0, |a| {
-            id(a);
-            open_settings_tab(a, tab);
-        });
-    }
     for (name, slide) in [("id-todo", SlideId::Todo), ("id-water", SlideId::Water), ("id-system", SlideId::System), ("id-notifs", SlideId::Notifications), ("id-music", SlideId::Music), ("id-clipboard", SlideId::Clipboard), ("id-ledge", SlideId::Ledge), ("id-scrap", SlideId::Scrap)] {
         shot(name, 1.0, |a| {
             id(a);
@@ -803,16 +563,16 @@ fn snap_prayer() {
         a.tm.start(Instant::now() - Duration::from_secs(61));
     });
     shot("toast-prayer", 1.0, |a| show_toast(a, ToastKind::Prayer { idx: 2, at: 15 * 60 + 12 }));
-    // the "Prayer times" row in Settings > Extras: see settings-tab3
+    // the "Prayer times" row in Settings > Weather & prayer: see settingswin-7-weather
 }
 
 #[test]
 fn snap_accents() {
     for (i, ac) in accent::ACCENTS.iter().enumerate() {
         let n = ac.name.to_lowercase();
-        shot(&format!("accent-{n}-settings"), 1.0, |a| {
+        sw_shot(&format!("accent-{n}-settingswin"), |a| {
             a.cfg.accent = i;
-            open_settings_tab(a, 1);
+            a.sw_show_page(LOOK);
         });
         shot(&format!("accent-{n}-todo"), 1.0, |a| {
             a.cfg.accent = i;
@@ -889,12 +649,12 @@ fn snap_water_accents() {
 
 #[test]
 fn snap_slide_hotkeys() {
-    // Settings > Slides with each slide's shortcut, and General with the "Slide hotkeys" toggle
-    shot("hotkeys-settings-slides", 1.0, |a| open_settings_tab(a, 0));
-    shot("hotkeys-settings-general", 1.0, |a| open_settings_tab(a, 1));
-    shot("hotkeys-settings-slides-off", 1.0, |a| {
+    // the Slides page with each slide's shortcut, and General with the "Slide hotkeys" toggle
+    sw_shot("hotkeys-settingswin-slides", page(SLIDES));
+    sw_shot("hotkeys-settingswin-general", page(GENERAL));
+    sw_shot("hotkeys-settingswin-slides-off", |a| {
         a.cfg.slide_hotkeys = false;
-        open_settings_tab(a, 0);
+        a.sw_show_page(SLIDES);
     });
     // Ctrl+Alt+3 from the idle notch
     shot("hotkeys-open-third", 1.0, |a| {
@@ -1182,6 +942,7 @@ fn thin_line_marks_needs_you() {
     assert!(thin_pixels(&mut a) > 10, "waiting: an orange mark on the thin line");
 }
 
+/// Settings > HUD & alerts > Claude Code: the button connects, removes, and leaves a broken settings.json alone.
 #[test]
 fn claude_row_connects_and_disconnects() {
     let dir = std::env::temp_dir().join(format!("hesewake-claude-row-{}", std::process::id()));
@@ -1190,34 +951,30 @@ fn claude_row_connects_and_disconnects() {
     std::fs::write(dir.join("settings.json"), "{\"model\":\"opus\"}").unwrap();
     claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = Some(dir.clone()));
     let read = || std::fs::read_to_string(dir.join("settings.json")).unwrap();
+    let press = |a: &mut App| {
+        settingswin::scroll_to_end(a);
+        settingswin::render(a);
+        sw_press(a, settingswin::Hit::Press(opts::Rid::ClaudeCode));
+    };
 
-    let mut a = test_app(1.0);
-    a.open_settings();
+    let mut a = sw_shot("settingswin-test-claude", page(ALERTS));
     assert_eq!(a.claude_link, claude_setup::Link::Off);
-    let i = a.settings_rows(2).iter().position(|r| r.label == "Claude Code").expect("Claude Code row in Alerts");
-    assert_eq!(a.settings_rows(2)[i].sub, "Not connected");
-    // the last row of Alerts: scroll it into view
-    a.sui.tab = 2;
-    while a.settings_rows_wheel(true) {}
-    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("scrolled into view");
-    let button = (cx + settingsview::CELL_W - 30.0, cy + 17.0);
+    assert_eq!(settingswin::row_sub(&a, ALERTS, opts::Rid::ClaudeCode).as_deref(), Some("Not connected"));
 
-    a.settings_click_rows(2, button.0, button.1);
+    press(&mut a);
     assert_eq!(a.claude_link, claude_setup::Link::On);
     assert!(read().contains("--claude-hook"), "hooks written");
     assert!(read().contains("\"model\": \"opus\""), "the rest kept");
-    assert_eq!(a.settings_rows(2)[i].sub, "Connected");
+    assert_eq!(settingswin::row_sub(&a, ALERTS, opts::Rid::ClaudeCode).as_deref(), Some("Connected"));
 
-    a.settings_click_rows(2, button.0, button.1);
+    press(&mut a);
     assert_eq!(a.claude_link, claude_setup::Link::Off);
     assert!(!read().contains("--claude-hook"), "hooks removed");
 
     std::fs::write(dir.join("settings.json"), "{ broken").unwrap();
-    a.open_settings();
-    a.settings_open = false;
-    a.open_settings();
+    a.claude_link = claude_setup::read_link();
     assert_eq!(a.claude_link, claude_setup::Link::Invalid);
-    a.settings_click_rows(2, button.0, button.1);
+    press(&mut a);
     assert_eq!(read(), "{ broken", "an invalid file is never written");
 
     claude_setup::TEST_DIR.with(|t| *t.borrow_mut() = None);
@@ -1229,12 +986,14 @@ fn snap_claude_settings_row() {
     let _lang = i18n::restore_on_drop();
     let links = [("off", claude_setup::Link::Off), ("on", claude_setup::Link::On), ("moved", claude_setup::Link::Moved), ("invalid", claude_setup::Link::Invalid)];
     for (lang, prefix) in [(i18n::EN, "claude"), (i18n::ID, "id-claude")] {
-        i18n::set(lang);
         for (name, link) in links {
-            shot(&format!("{prefix}-settings-row-{name}"), 1.0, |a| {
-                open_settings_tab(a, 2);
-                while a.settings_rows_wheel(true) {}
+            sw_shot(&format!("{prefix}-settings-row-{name}"), |a| {
+                a.cfg.lang = lang;
+                i18n::set(lang);
                 a.claude_link = link;
+                a.claude_status = claude_setup::StatusLink::On;
+                a.sw_show_page(ALERTS);
+                settingswin::scroll_to_end(a);
             });
         }
     }
@@ -1295,20 +1054,6 @@ fn mute_from_elsewhere_shows_in_the_notch() {
     a.mic_apply(Some(false));
     let dot = a.priv_extra();
     assert!(dot > 0.0 && dot < muted, "unmuted and in use: the orange dot again ({dot} < {muted})");
-}
-
-/// Settings > Alerts has the "Mic mute key" toggle, on by default.
-#[test]
-fn mic_hotkey_row_in_alerts() {
-    let mut a = test_app(1.0);
-    let rows = a.settings_rows(2);
-    let i = rows.iter().position(|r| r.label == "Mic mute key").expect("row in Alerts");
-    assert!(matches!(rows[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
-    open_settings_tab(&mut a, 2);
-    assert!(a.settings_rows_wheel(true), "the 8th row sits below the grid until it scrolls");
-    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("visible after scrolling");
-    a.settings_click_rows(2, cx + settingsview::CELL_W - 20.0, cy + 17.0);
-    assert!(!a.cfg.mic_hotkey);
 }
 
 /// The mic HUD's name and state fit side by side in every language.
@@ -1452,19 +1197,6 @@ fn update_toast_download_opens_the_release() {
 }
 
 #[test]
-fn update_row_in_alerts() {
-    let mut a = test_app(1.0);
-    let i = a.settings_rows(2).iter().position(|r| r.label == "Update notice").expect("Update notice row in Alerts");
-    open_settings_tab(&mut a, 2);
-    assert!(settingsview::row_cell_visible(i, 0).is_none(), "the 7th row starts below the grid");
-    assert!(a.settings_rows_wheel(true));
-    let (cx, cy) = settingsview::row_cell_visible(i, a.sui.rows_scroll).expect("visible after scrolling");
-    assert!(a.cfg.update_check, "on by default");
-    a.settings_click_rows(2, cx + settingsview::CELL_W - 30.0, cy + 17.0);
-    assert!(!a.cfg.update_check);
-}
-
-#[test]
 fn snap_update_toasts() {
     let _lang = i18n::restore_on_drop();
     for (lang, prefix) in [(i18n::EN, "update"), (i18n::ID, "id-update")] {
@@ -1472,41 +1204,174 @@ fn snap_update_toasts() {
         shot(&format!("{prefix}-toast-available"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
         shot(&format!("{prefix}-toast-up-to-date"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::UpToDate)));
         shot(&format!("{prefix}-toast-failed"), 1.0, |a| show_toast(a, ToastKind::Update(update::Note::Failed)));
-        shot(&format!("{prefix}-settings-alerts"), 1.0, |a| open_settings_tab(a, 2));
+        sw_shot(&format!("{prefix}-settingswin-general"), |a| {
+            a.cfg.lang = lang;
+            a.sw_show_page(GENERAL);
+        });
     }
     shot("update-toast-available", 1.5, |a| show_toast(a, ToastKind::Update(update::Note::Available(release("0.9.0")))));
 }
 
-/// General has 9 rows: the first six show, the wheel brings the rest into view, and rows keep working there.
+// ---------------------------------------------------------------- Wibu mode
+/// An opaque picture in one color, at canvas size (what the loader hands over).
+fn wibu_bg(s: f32, rgb: [u8; 3]) -> Pixmap {
+    let (w, h) = scale::canvas(s);
+    let mut pm = Pixmap::new(w as u32, h as u32).unwrap();
+    pm.fill(Color::from_rgba8(rgb[0], rgb[1], rgb[2], 255));
+    pm
+}
+
+fn wibu_on(a: &mut App, rgb: [u8; 3]) {
+    a.cfg.wibu = true;
+    a.cfg.wibu_file = "C:\\x.png".into();
+    a.wibu.bg = Some(wibu_bg(a.scale, rgb));
+}
+
+/// The canvas after drawing `a` at its target size.
+fn drawn(a: &mut App) -> Vec<u8> {
+    let (w, h) = anim::target(a);
+    (a.w, a.h) = (w, h);
+    a.sp = a.slide as f32;
+    render::draw(a);
+    a.gfx.as_ref().unwrap().pm.data().to_vec()
+}
+
 #[test]
-fn rows_tab_scrolls_to_the_last_rows() {
+fn wibu_shows_darkened_behind_the_open_notch() {
+    for s in SCALES {
+        let mut a = test_app(s);
+        open_slide(&mut a, SlideId::Todo);
+        wibu_on(&mut a, [255, 255, 255]);
+        let px = drawn(&mut a);
+        let pw = a.gfx.as_ref().unwrap().pm.width() as usize;
+        // an empty spot inside the notch, right of the slide's content
+        let (x, y) = (((CX + EXP_W / 2.0 - 6.0) * s) as usize, ((EXP_H - 30.0) * s) as usize);
+        let at = &px[(y * pw + x) * 4..(y * pw + x) * 4 + 4];
+        assert!((70..=90).contains(&at[0]), "70% dim of white, got {at:?}");
+        assert_eq!(at[3], 255);
+        assert_eq!(&px[..4], &[0, 0, 0, 0], "outside the notch stays transparent");
+        let right = (CX + EXP_W / 2.0 + 15.0) * s;
+        let y = (EXP_H / 2.0 * s) as usize;
+        assert_eq!(px[(y * pw + right as usize) * 4 + 3], 0, "right of the notch stays transparent");
+    }
+}
+
+/// The small notch and toasts look exactly as without the mode.
+#[test]
+fn wibu_leaves_the_small_notch_and_toasts_alone() {
+    let states: [fn(&mut App); 3] = [
+        |_| {},
+        |a| a.media = Media { title: "Song".into(), playing: true, ..Media::default() },
+        |a| show_toast(a, ToastKind::Hud { kind: HudKind::Caps, on: true }),
+    ];
+    // magenta appears nowhere else in these states (their animations run on the clock, so no two frames are equal)
+    let magenta = |px: &[u8]| px.chunks_exact(4).filter(|p| p[0] as u16 > p[1] as u16 + 30 && p[2] as u16 > p[1] as u16 + 30).count();
+    for setup in states {
+        let mut a = test_app(1.0);
+        setup(&mut a);
+        wibu_on(&mut a, [255, 0, 255]);
+        assert_eq!(magenta(&drawn(&mut a)), 0, "the image must not show");
+    }
     let mut a = test_app(1.0);
-    open_settings_tab(&mut a, 1);
-    assert_eq!(a.settings_rows(1).len(), 9);
-    assert!(a.rows_scrollable());
-    assert!(settingsview::row_cell_visible(8, 0).is_none(), "the 9th row starts below the grid");
-    assert!(a.settings_rows_wheel(true));
-    assert!(a.settings_rows_wheel(true));
-    assert_eq!(a.sui.rows_scroll, 2, "9 rows = 5 rows of cells, 3 show");
-    assert!(!a.settings_rows_wheel(true), "nothing left to scroll");
-    assert!(settingsview::row_cell_visible(0, a.sui.rows_scroll).is_none(), "the first row scrolled out");
-    assert!(settingsview::row_cell_visible(8, a.sui.rows_scroll).is_some(), "the last row is in view");
-    let (x, y) = settingsview::row_cell_visible(6, a.sui.rows_scroll).expect("Minimal notch is visible");
-    let was = a.minimal;
-    a.settings_click_rows(1, x + settingsview::CELL_W - 30.0, y + 17.0);
-    assert_eq!(a.minimal, !was, "its toggle works after scrolling");
-    shot("settings-general-scrolled", 1.0, |a| {
-        open_settings_tab(a, 1);
-        a.settings_rows_wheel(true);
-        a.settings_rows_wheel(true);
+    open_slide(&mut a, SlideId::Todo);
+    wibu_on(&mut a, [255, 0, 255]);
+    assert!(magenta(&drawn(&mut a)) > 10_000, "the open notch does show it");
+}
+
+/// While the notch opens, the image fades in with it, and more dim means darker.
+#[test]
+fn wibu_follows_expand_progress_and_dim() {
+    let bright_at = |h: f32, dim: u8| {
+        let mut a = test_app(1.0);
+        open_slide(&mut a, SlideId::Todo);
+        wibu_on(&mut a, [255, 255, 255]);
+        a.cfg.wibu_dim = dim;
+        a.sp = a.slide as f32;
+        (a.w, a.h) = (EXP_W, h);
+        render::draw(&mut a);
+        let g = a.gfx.as_ref().unwrap();
+        let (x, y) = ((CX + EXP_W / 2.0 - 6.0) as usize, (h - 30.0) as usize);
+        g.pm.data()[(y * g.pm.width() as usize + x) * 4]
+    };
+    assert!(bright_at(EXP_H, 70) > bright_at(100.0, 70));
+    assert!(bright_at(EXP_H, 50) > bright_at(EXP_H, 80));
+}
+
+/// After a scale change the old image no longer fits: nothing is drawn until the new one arrives.
+#[test]
+fn wibu_skips_an_image_of_the_old_scale() {
+    let mut a = test_app(1.5);
+    open_slide(&mut a, SlideId::Todo);
+    wibu_on(&mut a, [255, 255, 255]);
+    a.wibu.bg = Some(wibu_bg(1.0, [255, 255, 255]));
+    let mut plain = test_app(1.5);
+    open_slide(&mut plain, SlideId::Todo);
+    assert!(drawn(&mut a) == drawn(&mut plain));
+}
+
+/// A missing file: black notch, the mode stays on, and the row says what is wrong.
+#[test]
+fn wibu_missing_file_keeps_the_notch_black() {
+    let mut a = test_app(1.0);
+    open_slide(&mut a, SlideId::Todo);
+    a.wibu_picked(Some("C:\\does\\not\\exist.png".into()));
+    assert!(a.cfg.wibu && a.wibu.failed && a.wibu.bg.is_none());
+    a.cfg.wibu = true;
+    assert_eq!(settingswin::row_sub(&a, LOOK, opts::Rid::WibuFile).as_deref(), Some(i18n::tr("Can't read the image")));
+    let mut plain = test_app(1.0);
+    open_slide(&mut plain, SlideId::Todo);
+    assert!(drawn(&mut a) == drawn(&mut plain));
+}
+
+#[test]
+fn wibu_file_dialog_answers() {
+    let mut a = test_app(1.0);
+    a.cfg.wibu = true;
+    a.wibu_picked(None);
+    assert!(!a.cfg.wibu, "cancelled with no file: off again");
+    a.cfg.wibu = true;
+    a.cfg.wibu_file = "C:\\Pictures\\a.png".into();
+    a.wibu_picked(None);
+    assert!(a.cfg.wibu, "cancelling a change keeps the mode");
+    assert_eq!(a.cfg.wibu_file, "C:\\Pictures\\a.png", "and the file");
+}
+
+/// Turning it off frees the image; the two extra rows come and go with it.
+#[test]
+fn wibu_rows_and_toggle() {
+    use opts::Rid;
+    let has = |a: &App, r: Rid| settingswin::rows_on(a, LOOK).iter().any(|row| row.0 == r);
+    let mut a = test_app(1.0);
+    assert!(has(&a, Rid::Wibu) && !has(&a, Rid::WibuFile) && !has(&a, Rid::WibuDim), "off: only the toggle");
+    wibu_on(&mut a, [1, 2, 3]);
+    assert!(has(&a, Rid::WibuFile) && has(&a, Rid::WibuDim), "on: the image and dim rows");
+    assert_eq!(settingswin::row_sub(&a, LOOK, Rid::WibuFile).as_deref(), Some(i18n::tr("JPG, PNG or WebP")));
+    a.sw_show_page(LOOK);
+    settingswin::render(&mut a);
+    settingswin::scroll_to_end(&mut a);
+    settingswin::render(&mut a);
+    sw_press(&mut a, settingswin::Hit::Step(Rid::WibuDim, false));
+    assert_eq!(a.cfg.wibu_dim, 60, "the dim steps down from 70");
+    sw_press(&mut a, settingswin::Hit::Press(Rid::Wibu));
+    assert!(!a.cfg.wibu);
+    assert!(a.wibu.bg.is_none(), "the image is released");
+    assert!(!has(&a, Rid::WibuFile) && !has(&a, Rid::WibuDim));
+}
+
+/// A bright picture behind every slide, for checking readability by eye (SNAPSHOT_DIR), in the worst case.
+#[test]
+fn snap_wibu_on_a_white_image() {
+    let ids: Vec<SlideId> = test_app(1.0).order.clone();
+    for id in ids {
+        shot(&format!("wibu-white-{id:?}"), 1.0, |a| {
+            open_slide(a, id);
+            wibu_on(a, [255, 255, 255]);
+        });
+    }
+    sw_shot("wibu-settings-look", |a| {
+        wibu_on(a, [255, 255, 255]);
+        a.sw_show_page(LOOK);
     });
-    assert!(a.settings_rows_wheel(false));
-    assert!(a.settings_rows_wheel(false));
-    assert_eq!(a.sui.rows_scroll, 0);
-    // changing tab starts at the top again
-    a.settings_rows_wheel(true);
-    a.settings_set_tab(2);
-    assert_eq!(a.sui.rows_scroll, 0);
 }
 
 // ---------------------------------------------------------------- audio output switcher
@@ -1841,7 +1706,7 @@ fn open_claude_slide(a: &mut App) {
             e.1 = true;
         }
     }
-    a.order = slides::visible_order(&a.cfg.slides, false);
+    a.order = slides::visible_order(&a.slide_cfg());
     open_slide(a, SlideId::Claude);
 }
 
@@ -1895,11 +1760,10 @@ fn claude_usage_row_sets_our_status_line() {
     let read = || serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
 
     let mut a = test_app(1.0);
-    a.open_settings();
-    assert!(!a.settings_rows(2).iter().any(|r| r.label == "Claude usage"), "only while connected");
+    assert!(!settingswin::rows_on(&a, ALERTS).iter().any(|r| r.0 == opts::Rid::ClaudeUsage), "only while connected");
     a.claude_button();
     assert_eq!(a.claude_link, claude_setup::Link::On);
-    assert!(a.settings_rows(2).iter().any(|r| r.label == "Claude usage"));
+    assert!(settingswin::rows_on(&a, ALERTS).iter().any(|r| r.0 == opts::Rid::ClaudeUsage && r.1 == "Claude usage"));
     a.claude_usage_toggle();
     assert_eq!(a.claude_status, claude_setup::StatusLink::On);
     let cmd = read()["statusLine"]["command"].as_str().unwrap().to_string();
@@ -2081,13 +1945,6 @@ fn snap_claude_slide() {
             a.cfg.lang = lang;
             show_toast(a, ToastKind::Claude(claude::Show::Usage { pct: 91, resets_at: now + 2 * 3600 }));
         });
-        shot(&format!("{pre}claude-settings-usage"), 1.0, |a| {
-            a.cfg.lang = lang;
-            open_settings_tab(a, 2);
-            a.claude_link = claude_setup::Link::On;
-            a.claude_status = claude_setup::StatusLink::On;
-            while a.settings_rows_wheel(true) {}
-        });
     }
     shot("claude-slide-warn", 1.0, |a| {
         open_claude_slide(a);
@@ -2218,11 +2075,16 @@ fn ledge_rows_show_the_download_in_its_folder() {
     assert!(!a.dl_ledge_click(x + 40.0, downloads::ledge_row(2).1 + 10.0), "below the last row");
 }
 
+/// Settings > HUD & alerts has "Download progress", on by default; turning it off clears the running downloads.
 #[test]
-fn download_rows_in_alerts() {
-    let a = test_app(1.0);
-    let i = a.settings_rows(2).iter().position(|r| r.label == "Download progress").expect("row in Alerts");
-    assert!(matches!(a.settings_rows(2)[i].kind, settingsview::RowKind::Toggle(true)), "on by default");
+fn download_row_in_alerts() {
+    let mut a = sw_shot("settingswin-test-downloads", page(ALERTS));
+    assert!(settingswin::rows_on(&a, ALERTS).iter().any(|r| r.0 == opts::Rid::Downloads && r.1 == "Download progress"));
+    assert!(a.opt_on(opts::Rid::Downloads), "on by default");
+    a.dl_apply(vec![dl("movie.mkv", 800_000_000, 4_100_000)], Vec::new());
+    sw_press(&mut a, settingswin::Hit::Press(opts::Rid::Downloads));
+    assert!(!a.cfg.downloads);
+    assert!(a.dls.is_empty(), "nothing left in the notch or on Ledge");
 }
 
 #[test]
@@ -2279,17 +2141,18 @@ fn prayer_day(a: &mut App) {
 /// The Prayer slide is in the carousel only while prayer times are on, and the slide hotkey numbers follow.
 #[test]
 fn prayer_slide_follows_the_prayer_times_setting() {
-    let mut a = test_app(1.0);
+    // weather off: with it on, the page would fetch the weather over the network
+    let mut a = sw_shot("settingswin-test-prayer", |a| {
+        a.cfg.weather_on = false;
+        a.sw_show_page(WEATHER);
+    });
     assert!(a.order.contains(&SlideId::Prayer), "on by default");
-    let i = a.settings_rows(3).iter().position(|r| r.label == "Prayer times").expect("row in Widgets");
-    let (cx, cy) = settingsview::cell_pos(i);
-    a.sui.tab = 3;
-    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    sw_press(&mut a, settingswin::Hit::Press(opts::Rid::Prayer));
     assert!(!a.cfg.prayer_on);
     assert!(!a.order.contains(&SlideId::Prayer), "gone with prayer times off");
     let p = a.cfg.slides.iter().position(|&(s, _)| s == SlideId::Prayer).unwrap();
     assert_eq!(hotkeys::number(&a.slide_cfg(), p), None, "and no hotkey number");
-    a.settings_click_rows(3, cx + settingsview::CELL_W - 20.0, cy + 17.0);
+    sw_press(&mut a, settingswin::Hit::Press(opts::Rid::Prayer));
     assert!(a.order.contains(&SlideId::Prayer), "back");
 }
 
@@ -2429,14 +2292,19 @@ fn snap_prayer_slide() {
             a.adhan_until = Some(Instant::now() + Duration::from_secs(60));
             show_toast(a, ToastKind::Prayer { idx: 2, at: 892 });
         });
-        shot(&format!("{pre}prayer-settings-widgets"), 1.0, |a| {
+        // the Weather & prayer page scrolled down to the prayer rows, with an adhan file picked
+        let mut a = sw_shot(&format!("{pre}prayer-settingswin-top"), |a| {
             set(a);
             a.cfg.adhan = adhan::FILE;
             a.cfg.adhan_file = "C:\\Users\\me\\Music\\Adzan Makkah.mp3".into();
-            open_settings_tab(a, 3);
-            a.settings_rows_wheel(true);
-            a.settings_rows_wheel(true);
+            a.sw_show_page(WEATHER);
         });
+        settingswin::scroll_to_end(&mut a);
+        settingswin::render(&mut a);
+        assert!(settingswin::cut(&a).is_empty(), "{pre}: cut {:?}", settingswin::cut(&a));
+        if let (Some(dir), Some(pm)) = (std::env::var_os("SNAPSHOT_DIR"), settingswin::canvas(&a)) {
+            pm.save_png(std::path::Path::new(&dir).join(format!("{pre}prayer-settingswin@100.png"))).expect("save png");
+        }
     }
     shot("prayer-slide", 1.5, |a| {
         prayer_day(a);
@@ -2467,4 +2335,1383 @@ fn snap_prayer_slide() {
         a.cfg.ramadan = true;
         a.cfg.weather_on = false;
     });
+}
+
+/// The Music slide no longer has the big clock, weekday and date block, so the controls use the full width.
+#[test]
+fn music_slide_has_no_clock_block() {
+    assert_eq!(music::MW, RX - music::MX, "text and controls reach the right edge");
+    // the small clock on the top row (not drawn over a lyric line)
+    shot("music-small-clock", 1.0, |a| {
+        a.media.title = "Song".into();
+        open_slide(a, SlideId::Music);
+    });
+    shot("music-no-clock", 1.0, |a| {
+        a.media.title = "Song".into();
+        a.media.artist = "Artist".into();
+        open_slide(a, SlideId::Music);
+    });
+}
+
+/// The pin keeps the lyrics view open when the pointer leaves, but only while the lyrics view is on and not over a
+/// fullscreen app; the pin button toggles it, and leaving the lyrics view lets go of it.
+#[test]
+fn pinned_lyrics_view_stays_open() {
+    let mut a = test_app(1.0);
+    a.media.title = "Song".into();
+    a.lyrics = lyrics::Lyrics::Synced(lyrics::parse_lrc("[00:01.00]First line
+[00:05.00]Second line"), lyrics::Source::Lrclib);
+    open_slide(&mut a, SlideId::Music);
+    a.hover = false;
+    a.lyric_mode = true;
+    assert!(!a.expanded(), "the pointer is away and nothing is pinned");
+    assert!(a.lyric_click(lyricview::X_PIN, lyricview::Y_PIN), "the pin button is handled");
+    assert!(a.pinned && a.expanded(), "pinned: stays open without the pointer");
+    a.busy = true;
+    assert!(!a.expanded(), "over a fullscreen app the notch shrinks anyway");
+    a.busy = false;
+    shot("lyrics-pinned", 1.0, |b| {
+        b.media.title = "Song".into();
+        b.media.artist = "Artist".into();
+        b.lyrics = lyrics::Lyrics::Synced(lyrics::parse_lrc("[00:01.00]First line
+[00:05.00]Second line
+[00:09.00]Third line"), lyrics::Source::Lrclib);
+        b.lyric_mode = true;
+        b.pinned = true;
+        open_slide(b, SlideId::Music);
+    });
+    a.lyric_toggle_mode();
+    assert!(!a.lyric_mode && !a.pinned && !a.expanded(), "leaving the lyrics view unpins");
+    a.lyric_toggle_mode();
+    assert!(!a.pinned, "it does not come back by itself");
+    assert!(a.lyric_click(lyricview::X_PIN, lyricview::Y_PIN) && a.pinned);
+    assert!(a.lyric_click(lyricview::X_PIN, lyricview::Y_PIN) && !a.pinned, "a second click unpins");
+}
+
+/// Over a fullscreen or maximized window the notch steps aside when the pointer comes to it (no setting), so that window's
+/// tabs and buttons under it can be reached.
+#[test]
+fn notch_dodges_the_pointer_over_fullscreen_and_maximized_windows() {
+    let mut a = test_app(1.0);
+    // an ordinary window: the pointer opens the notch as always
+    a.fg = 0;
+    assert!(a.pointer_step(CX, 5.0));
+    assert!(a.hover && !a.dodging);
+    assert!(a.pointer_step(CX, 600.0));
+    assert!(!a.hover);
+
+    // fullscreen: thin already; the pointer at it does not expand it
+    a.fg = 2;
+    a.busy = true;
+    a.pointer_step(CX, 8.0);
+    assert!(a.dodging && !a.hover && !a.expanded() && a.thin(), "near the thin line it stays minimal");
+    a.pointer_step(CX, 300.0);
+    assert!(!a.dodging, "the pointer left");
+    // aiming right at the thin line opens the slide; it stays while the pointer is in the open notch and closes after
+    a.pointer_step(CX, 2.0);
+    assert!(a.hover && a.expanded() && !a.dodging, "the thin line opens the notch");
+    a.pointer_step(CX + 100.0, 120.0);
+    assert!(a.hover, "inside the open notch");
+    a.pointer_step(CX, 500.0);
+    assert!(!a.hover && !a.dodging, "left the open notch");
+    // not at the thin line's width: beside it nothing opens
+    a.pointer_step(CX + THIN.0 / 2.0 + 40.0, 2.0);
+    assert!(!a.hover);
+    a.pointer_step(CX, 600.0);
+
+    // maximized (the usual way of working): the normal notch turns thin while the pointer is near it, so tabs are reachable
+    a.fg = 1;
+    a.busy = false;
+    a.pointer_step(CX, 10.0);
+    assert!(a.dodging && !a.hover && a.thin() && !a.expanded());
+    // ... and aiming at the thin line it became opens the slide
+    a.pointer_step(CX, 1.0);
+    assert!(a.hover && !a.dodging);
+    a.pointer_step(CX, 600.0);
+    assert!(!a.hover);
+    a.pointer_step(CX, 10.0);
+    assert!(a.dodging);
+    // it does not flicker at the edge of the area while it shrinks
+    let edge = a.dodge_zone.0 / 2.0 - 1.0;
+    a.w = 10.0;
+    a.pointer_step(CX + edge, 10.0);
+    assert!(a.dodging);
+    a.pointer_step(CX + edge + 40.0, 10.0);
+    assert!(!a.dodging);
+    a.pointer_step(CX, 600.0);
+
+    // thin because of a busy window (an Adobe app) over a window that is not maximized: the thin line stays minimal too
+    a.fg = 0;
+    a.busy = true;
+    a.pointer_step(CX, 8.0);
+    assert!(a.dodging && !a.hover && !a.expanded());
+    a.pointer_step(CX, 300.0);
+    assert!(!a.dodging);
+    a.busy = false;
+
+    // a peek (hotkey, notification) is not undone by dodging
+    a.fg = 1;
+    a.peek_until = Some(Instant::now() + Duration::from_secs(5));
+    a.pointer_step(CX, 5.0);
+    assert!(a.expanded() && !a.dodging);
+}
+
+// ---------------------------------------------------------------- Settings window
+
+/// Settings window pages, in sidebar order.
+const GENERAL: usize = 0;
+const LOOK: usize = 1;
+const SLIDES: usize = 2;
+const SCREENS: usize = 3;
+const MUSIC: usize = 4;
+const ALERTS: usize = 6;
+const WEATHER: usize = 7;
+const CALENDAR: usize = 8;
+
+/// Draw the Settings window (setup picks the page) and save it as `<name>@100.png` when asked.
+fn sw_shot(name: &str, setup: impl FnOnce(&mut App)) -> App {
+    let mut a = test_app(1.0);
+    setup(&mut a);
+    settingswin::render(&mut a);
+    let pm = settingswin::canvas(&a).expect("canvas");
+    assert_eq!((pm.width(), pm.height()), (820, 560), "{name}");
+    if let Some(dir) = std::env::var_os("SNAPSHOT_DIR") {
+        std::fs::create_dir_all(&dir).expect("create snapshot folder");
+        pm.save_png(std::path::Path::new(&dir).join(format!("{name}@100.png"))).expect("save png");
+    }
+    a
+}
+
+fn page(i: usize) -> impl FnOnce(&mut App) {
+    move |a: &mut App| a.sw_show_page(i)
+}
+
+fn indonesian(a: &mut App) {
+    a.cfg.lang = i18n::ID;
+    i18n::set(i18n::ID);
+}
+
+/// Click on `hit` in the last drawn frame (it must be there), the way the window does.
+fn sw_press(a: &mut App, hit: settingswin::Hit) {
+    let (x, y) = settingswin::hit_center(a, hit).unwrap_or_else(|| panic!("{hit:?} is not on the page"));
+    assert_eq!(a.sw_hit(x, y), Some(hit), "the click at the centre of {hit:?} lands on it");
+    a.sw_click(hit);
+    settingswin::render(a);
+}
+
+#[test]
+fn snap_settings_window() {
+    for (i, sec) in settingswin::SECS.iter().enumerate() {
+        let a = sw_shot(&format!("settingswin-{i}-{sec:?}").to_lowercase(), page(i));
+        assert!(settingswin::hit_center(&a, settingswin::Hit::Nav(i)).is_some(), "{sec:?}: sidebar item");
+        assert!(settingswin::hit_center(&a, settingswin::Hit::Close).is_some());
+    }
+    let _lang = i18n::restore_on_drop();
+    for (i, sec) in settingswin::SECS.iter().enumerate() {
+        sw_shot(&format!("id-settingswin-{i}-{sec:?}").to_lowercase(), |a| {
+            indonesian(a);
+            a.sw_show_page(i);
+        });
+    }
+}
+
+/// Every setting has a row (toggle, choice, stepper or button) on one of the window's pages.
+#[test]
+fn every_setting_has_a_row() {
+    let a = test_app(1.0);
+    let rows: Vec<opts::Rid> = (0..settingswin::SECS.len()).flat_map(|i| settingswin::rows_on(&a, i)).map(|r| r.0).collect();
+    for r in opts::Rid::ALL {
+        // the dictionary row only shows while there is something to do with it (get it, or delete a downloaded one)
+        if r == opts::Rid::Dictionary && dict::removable().is_none() && romaji::available() {
+            continue;
+        }
+        // the adhan file row only shows with the adhan set to "File" (see adhan_file_row_follows_the_choice)
+        if r == opts::Rid::AdhanFile {
+            continue;
+        }
+        // the Wibu image and dim rows only show with Wibu mode on (see wibu_rows_follow_the_toggle)
+        if matches!(r, opts::Rid::WibuFile | opts::Rid::WibuDim) {
+            continue;
+        }
+        // Claude usage only shows while Claude Code is connected (see claude_usage_row_sets_our_status_line)
+        if r == opts::Rid::ClaudeUsage {
+            continue;
+        }
+        assert!(rows.contains(&r), "{r:?} has no row in the Settings window");
+    }
+    let mut seen = std::collections::HashSet::new();
+    assert!(rows.iter().all(|r| seen.insert(*r)), "a setting shows on two rows");
+}
+
+/// No label, description, slide name or choice is cut, on any page, in either language: also with the longest city,
+/// every calendar state and the slide hotkeys off.
+#[test]
+fn settings_window_text_fits() {
+    let _lang = i18n::restore_on_drop();
+    let longest = (0..weather::CITIES.len()).max_by_key(|&i| weather::CITIES[i].0.len()).unwrap();
+    let states: [(&str, fn(&mut App)); 15] = [
+        ("defaults", |_| {}),
+        ("longest city", |a| a.cfg.weather_city = (0..weather::CITIES.len()).max_by_key(|&i| weather::CITIES[i].0.len()).unwrap()),
+        ("hotkeys off", |a| a.cfg.slide_hotkeys = false),
+        ("calendar: nothing on the clipboard", |a| a.cal_paste_err = Some(Instant::now())),
+        ("calendar: loading", |a| {
+            a.cal_link = Some("https://x.com/a.ics".into());
+            a.cal_status = calendar::CalStatus::Loading;
+        }),
+        ("calendar: ready", with_meetings),
+        ("calendar: failed", |a| {
+            a.cal_link = Some("https://x.com/a.ics".into());
+            a.cal_status = calendar::CalStatus::Failed;
+        }),
+        ("calendar: press again to remove", |a| {
+            with_meetings(a);
+            a.cal_confirm = Some(Instant::now());
+        }),
+        ("wibu: on, no file", |a| a.cfg.wibu = true),
+        ("wibu: on, unreadable", |a| {
+            a.cfg.wibu = true;
+            a.cfg.wibu_file = r"C:/x.png".into();
+            a.wibu.failed = true;
+        }),
+        ("adhan: file, none picked", |a| a.cfg.adhan = adhan::FILE),
+        ("adhan: file picked", |a| {
+            a.cfg.adhan = adhan::FILE;
+            a.cfg.adhan_file = r"C:\Users\me\Music\Adzan Makkah.mp3".into();
+        }),
+        ("update: checking", |a| a.update_busy = true),
+        ("update: available", |a| a.update = Some(release_with_installer("10.20.30"))),
+        ("update: downloading", |a| show_toast(a, ToastKind::Update(update::Note::Downloading(63)))),
+    ];
+    assert!(longest > 0);
+    for lang in 0..i18n::LANGS.len() {
+        i18n::set(lang);
+        for (name, set) in states {
+            for i in 0..settingswin::SECS.len() {
+                let mut a = test_app(1.0);
+                a.cfg.lang = lang;
+                set(&mut a);
+                a.sw_show_page(i);
+                settingswin::render(&mut a);
+                assert!(settingswin::cut(&a).is_empty(), "lang {lang}, {name}, page {i}: cut {:?}", settingswin::cut(&a));
+            }
+        }
+    }
+}
+
+/// Toggles and choices change the setting right away (and the notch with it), and a second press puts it back.
+#[test]
+fn settings_window_changes_apply_right_away() {
+    use opts::Rid;
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-test-look", page(LOOK));
+    sw_press(&mut a, Hit::Press(Rid::Minimal));
+    assert!(a.minimal && a.cfg.minimal, "minimal notch on");
+    assert_eq!(anim::target(&a), THIN, "the idle notch is a thin line now");
+    sw_press(&mut a, Hit::Press(Rid::Minimal));
+    assert!(!a.minimal);
+    sw_press(&mut a, Hit::Pick(Rid::Accent, 3));
+    assert_eq!(a.cfg.accent, 3);
+    assert_eq!(a.gfx.as_ref().unwrap().acc.main, accent::get(3).main, "the notch was redrawn in the new accent");
+    sw_press(&mut a, Hit::Pick(Rid::IdleDisplay, 2));
+    assert_eq!(a.cfg.idle_display, 2);
+    assert!(a.idle_phase() == IdlePhase::Eye, "eyes right away");
+    assert!(settingswin::hit_center(&a, Hit::Pick(Rid::NotchSize, 5)).is_some(), "200%");
+
+    let mut a = sw_shot("settingswin-test-screens", page(SCREENS));
+    sw_press(&mut a, Hit::Press(Rid::ThinMaximized));
+    assert!(a.cfg.busy_on_maximized);
+    assert!(settingswin::hit_center(&a, Hit::Step(Rid::Monitor, true)).is_some());
+
+    let mut a = sw_shot("settingswin-test-general", page(GENERAL));
+    sw_press(&mut a, Hit::Press(Rid::SlideHotkeys));
+    assert!(!a.cfg.slide_hotkeys);
+    sw_press(&mut a, Hit::Press(Rid::UpdateCheck));
+    assert!(!a.cfg.update_check, "update notice was on by default");
+    assert!(settingswin::hit_center(&a, Hit::Press(Rid::Autostart)).is_some());
+
+    let mut a = sw_shot("settingswin-test-music", page(MUSIC));
+    sw_press(&mut a, Hit::Step(Rid::LyricTiming, true));
+    assert_eq!(a.cfg.lyric_lead_ms, settings::Settings::default().lyric_lead_ms + settings::LEAD_STEP);
+    sw_press(&mut a, Hit::Press(Rid::Romaji));
+    assert!(a.cfg.romaji_lyrics);
+
+    let mut a = sw_shot("settingswin-test-alerts", page(ALERTS));
+    for (r, get) in [
+        (Rid::HudVolume, (|a: &App| a.cfg.hud_volume) as fn(&App) -> bool),
+        (Rid::HudBrightness, |a| a.cfg.hud_brightness),
+        (Rid::LockKeys, |a| a.cfg.lock_toast),
+        (Rid::PrivacyDot, |a| a.cfg.privacy_dot),
+        (Rid::MicMute, |a| a.cfg.mic_hotkey),
+    ] {
+        let was = get(&a);
+        sw_press(&mut a, Hit::Press(r));
+        assert_eq!(get(&a), !was, "{r:?}");
+    }
+
+    // weather off first: with it on, a new city would fetch the weather over the network
+    let mut a = sw_shot("settingswin-test-weather", |a| {
+        a.cfg.weather_on = false;
+        a.sw_show_page(WEATHER);
+    });
+    sw_press(&mut a, Hit::Step(Rid::City, true));
+    assert_eq!(a.cfg.weather_city, 1);
+    sw_press(&mut a, Hit::Step(Rid::City, false));
+    assert_eq!(a.cfg.weather_city, 0);
+    sw_press(&mut a, Hit::Press(Rid::Prayer));
+    assert!(!a.cfg.prayer_on);
+    assert!(settingswin::hit_center(&a, Hit::Press(Rid::Weather)).is_some());
+}
+
+/// A long city name widens the stepper to the left; its "-" button still takes the click.
+#[test]
+fn long_city_stepper_still_clickable() {
+    use settingswin::Hit;
+    let i = weather::CITIES.iter().position(|c| c.0 == "Bandar Lampung").unwrap();
+    let mut a = sw_shot("settingswin-city-longest", |a| {
+        a.cfg.weather_on = false;
+        a.cfg.weather_city = i;
+        a.sw_show_page(WEATHER);
+    });
+    sw_press(&mut a, Hit::Step(opts::Rid::City, false));
+    assert_eq!(a.cfg.weather_city, i - 1);
+}
+
+/// The Language choice switches the whole UI right away, and back.
+#[test]
+fn language_choice_switches_the_ui() {
+    use settingswin::Hit;
+    let _lang = i18n::restore_on_drop();
+    let mut a = sw_shot("settingswin-test-language", page(GENERAL));
+    sw_press(&mut a, Hit::Pick(opts::Rid::Language, i18n::ID));
+    assert_eq!(a.cfg.lang, i18n::ID);
+    assert_eq!(i18n::current(), i18n::ID, "applied right away");
+    assert!(settingswin::rows_on(&a, GENERAL).iter().any(|r| r.1 == "Bahasa"));
+    assert!(settingswin::rows_on(&a, WEATHER).iter().any(|r| r.1 == "Kota"));
+    assert_eq!(SlideId::Todo.label(), "Tugas");
+    assert_eq!(clock::day_short(1), "Sen");
+    assert_eq!(timer::fmt_preset(90 * 60), "1 j 30 mnt");
+    sw_press(&mut a, Hit::Pick(opts::Rid::Language, i18n::EN));
+    assert_eq!(a.cfg.lang, i18n::EN);
+    assert!(settingswin::rows_on(&a, WEATHER).iter().any(|r| r.1 == "City"));
+    assert_eq!(clock::day_short(1), "Mon");
+}
+
+/// The Calendar button pastes the link from the clipboard; pressed twice it removes it.
+#[test]
+fn calendar_button_pastes_and_removes() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-test-calendar", page(CALENDAR));
+    calendar::TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some("https://calendar.google.com/x/basic.ics".into()));
+    sw_press(&mut a, Hit::Press(opts::Rid::Calendar));
+    assert_eq!(a.cal_link.as_deref(), Some("https://calendar.google.com/x/basic.ics"), "Paste took the link from the clipboard");
+    sw_press(&mut a, Hit::Press(opts::Rid::Calendar));
+    assert!(a.cal_link.is_some(), "the first press only asks to press again");
+    sw_press(&mut a, Hit::Press(opts::Rid::Calendar));
+    assert!(a.cal_link.is_none(), "removed");
+}
+
+/// The Slides page lists all ten slides; it scrolls to the last one, whose toggle and arrows work.
+#[test]
+fn slides_page_scrolls_to_the_last_slide() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-test-slides", page(SLIDES));
+    let n = a.cfg.slides.len();
+    assert_eq!(n, SlideId::USER.len(), "every slide is listed");
+    assert!(settingswin::content_h(&a) > 560.0, "the slide list is taller than the window");
+    assert!(settingswin::hit_center(&a, Hit::SlideToggle(n - 1)).is_none(), "the last slide starts below the window");
+    assert!(settingswin::hit_center(&a, Hit::SlideMove(0, true)).is_none(), "the first slide can't move up");
+    settingswin::scroll_to_end(&mut a);
+    settingswin::render(&mut a);
+    assert!(settingswin::hit_center(&a, Hit::SlideMove(n - 1, false)).is_none(), "the last slide can't move down");
+    // the slide before last (the last one is Prayer, which also follows the prayer times setting)
+    let i = n - 2;
+    let it = a.cfg.slides[i];
+    sw_press(&mut a, Hit::SlideToggle(i));
+    assert_eq!(a.cfg.slides[i].1, !it.1);
+    assert_eq!(a.order.contains(&it.0), !it.1, "the carousel follows");
+    sw_press(&mut a, Hit::SlideMove(i, true));
+    assert_eq!(a.cfg.slides[i - 1].0, it.0, "moved up");
+}
+
+/// The last enabled slide can't be turned off (the carousel never ends up empty).
+#[test]
+fn one_slide_always_stays_on() {
+    let mut a = test_app(1.0);
+    for i in 0..a.cfg.slides.len() {
+        a.slide_toggle(i);
+    }
+    assert_eq!(a.cfg.slides.iter().filter(|s| s.1).count(), 1);
+    assert_eq!(a.order.len(), 1);
+}
+
+/// The Adhan sound choice: "File" adds the file row (Choose, before a file is picked; the dialog itself only runs in
+/// the app), the picked file shows by name (Change), and Off takes the row away again.
+#[test]
+fn adhan_file_row_follows_the_choice() {
+    use opts::Rid;
+    use settingswin::Hit;
+    let file_row = |a: &App| settingswin::rows_on(a, WEATHER).into_iter().find(|r| r.0 == Rid::AdhanFile);
+    let mut a = sw_shot("settingswin-test-adhan", |a| {
+        a.cfg.weather_on = false;
+        a.sw_show_page(WEATHER);
+    });
+    settingswin::scroll_to_end(&mut a);
+    settingswin::render(&mut a);
+    assert!(file_row(&a).is_none(), "off by default: no file row");
+    sw_press(&mut a, Hit::Pick(Rid::Adhan, adhan::FILE as usize));
+    assert_eq!(a.cfg.adhan, adhan::FILE);
+    assert!(file_row(&a).is_some(), "the file row is there");
+    a.adhan_picked(Some(r"C:\Users\me\Music\Adzan Makkah.mp3".into()));
+    assert_eq!(settingswin::row_sub(&a, WEATHER, Rid::AdhanFile).as_deref(), Some("Adzan Makkah.mp3"), "the file's name, not its folder");
+    settingswin::scroll_to_end(&mut a);
+    settingswin::render(&mut a);
+    assert!(settingswin::hit_center(&a, Hit::Press(Rid::AdhanFile)).is_some(), "Change");
+    sw_press(&mut a, Hit::Pick(Rid::Adhan, adhan::OFF as usize));
+    assert_eq!(a.cfg.adhan, adhan::OFF);
+    assert!(file_row(&a).is_none());
+}
+
+/// About > Updates: checks on request (like the menu item), installs or downloads the release found, and has no
+/// button while a check or a download runs.
+#[test]
+fn about_page_updates() {
+    use settingswin::Hit;
+    let about = settingswin::SECS.len() - 1;
+    let mut a = sw_shot("settingswin-about-updates", page(about));
+    let _ = update::fetches();
+    sw_press(&mut a, Hit::Update);
+    assert_eq!(update::fetches(), vec![true], "a manual check: it always answers with a toast");
+    assert!(a.update_busy);
+    assert!(settingswin::hit_center(&a, Hit::Update).is_none(), "no second check while one runs");
+    a.on_update(true, Some(release("0.0.1")));
+    assert!(update_note(&a) == Some(update::Note::UpToDate), "the answer is the usual toast");
+
+    // a newer release with an installer: the button installs it (the download itself is `update_install`, covered by
+    // update_install_flow; starting one here would leave its busy flag set for that test), and has no button while
+    // the download runs
+    let r = release_with_installer("99.0.0");
+    let mut a = sw_shot("settingswin-about-update-available", |a| {
+        a.update = Some(r.clone());
+        a.sw_show_page(about);
+    });
+    assert!(settingswin::hit_center(&a, Hit::Update).is_some());
+    assert_eq!(a.sw_update_action(), Some(settingswin::UpdateAction::Install(r.clone())));
+    show_toast(&mut a, ToastKind::Update(update::Note::Downloading(40)));
+    settingswin::render(&mut a);
+    assert_eq!(a.sw_update_action(), None);
+    assert!(settingswin::hit_center(&a, Hit::Update).is_none(), "no button while downloading");
+
+    // without an installer: Download opens the release page
+    let plain = release("99.0.0");
+    let mut a = sw_shot("settingswin-about-update-download", |a| {
+        a.update = Some(plain.clone());
+        a.sw_show_page(about);
+    });
+    let _ = sys::opened();
+    sw_press(&mut a, Hit::Update);
+    assert_eq!(sys::opened(), vec![plain.url]);
+    assert!(update::installs().is_empty());
+
+    let _lang = i18n::restore_on_drop();
+    sw_shot("id-settingswin-about-update-available", |a| {
+        indonesian(a);
+        a.update = Some(release_with_installer("99.0.0"));
+        a.sw_show_page(about);
+    });
+}
+
+// ---------------------------------------------------------------- extension slides
+fn ext_msg(j: serde_json::Value) -> extproto::FromExt {
+    match extproto::parse(j.to_string().as_bytes()) {
+        extproto::Parsed::Msg(m) => m,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// An extension is on, connected, and has sent `j` (a `slide` or a `detail`); its slide is the one shown.
+fn ext_setup(a: &mut App, j: serde_json::Value) {
+    a.ext.test_add("example-issues", "Issues", true);
+    a.cfg.ext_on.push("example-issues".into());
+    a.apply_slide_cfg();
+    open_slide(a, SlideId::Ext(0));
+    ext_feed(a, j);
+}
+
+fn ext_feed(a: &mut App, j: serde_json::Value) {
+    a.ext.list[0].connected = true;
+    match ext_msg(j) {
+        extproto::FromExt::Slide(s) => {
+            a.ext.list[0].slide = Some(s);
+            a.ext.list[0].detail = None;
+        }
+        extproto::FromExt::Detail(d) => a.ext.list[0].detail = Some(d),
+        other => panic!("{other:?}"),
+    }
+}
+
+fn ext_showing(j: serde_json::Value) -> App {
+    let mut a = test_app(1.0);
+    ext_setup(&mut a, j);
+    ext_draw(&mut a);
+    a
+}
+
+fn ext_draw(a: &mut App) {
+    let (w, h) = anim::target(a);
+    (a.w, a.h) = (w, h);
+    a.sp = a.slide as f32;
+    render::draw(a);
+}
+
+fn ext_click_on(a: &mut App, want: &extslide::ExtHit) -> bool {
+    let r = a.ext.list[0].view.hits.borrow().iter().find(|h| &h.4 == want).map(|h| (h.0 + h.2 / 2.0, h.1 + h.3 / 2.0));
+    let (x, y) = r.unwrap_or_else(|| panic!("{want:?} was not drawn"));
+    a.ext_click(x, y)
+}
+
+fn ext_sent(a: &App) -> Vec<serde_json::Value> {
+    a.ext.sent.iter().map(|(_, f)| serde_json::from_slice(&f[4..]).unwrap()).collect()
+}
+
+fn ext_issues() -> serde_json::Value {
+    serde_json::json!({
+        "t": "slide", "rev": 1, "title": "Is|sues",
+        "tabs": [{"id": "all", "label": "All", "count": 3}, {"id": "todo", "label": "To do"}],
+        "tab": "all",
+        "actions": [{"id": "refresh", "label": "Refresh"}, {"id": "report", "label": "Report"}],
+        "rows": [
+            {"id": "128", "text": "#128 Fix crash on startup", "sub": "To do", "mark": true},
+            {"id": "127", "text": "#127 Update the installer", "sub": "In progress"},
+            {"id": "126", "text": "#126 A very long title that has to be cut with an ellipsis before it runs into the stage name", "sub": "Review"}
+        ],
+        "foot": "Updated just now"
+    })
+}
+
+fn ext_ticket() -> serde_json::Value {
+    serde_json::json!({
+        "t": "detail", "rev": 2, "for": "128", "title": "#128 Fix crash on startup",
+        "meta": [{"k": "Project", "v": "Installer"}, {"k": "Stage", "v": "To do"}, {"k": "Due", "v": "2026-11-05"}],
+        "body": "The app closes when the settings file is empty. Steps: open the settings file, empty it and start the app.",
+        "notes": [{"who": "Dewi", "when": "2026-10-31 14:02", "text": "Reproduced on 0.12.0."}],
+        "buttons": [{"id": "open", "label": "Open", "link": "https://tracker.example/issues/128"}, {"id": "copy", "label": "Copy", "copy": "#128 Fix crash on startup"}, {"id": "more", "label": "More"}],
+        "foot": "2 attachments"
+    })
+}
+
+#[test]
+fn extension_slides_follow_what_is_on() {
+    let mut a = test_app(1.0);
+    let before = a.order.clone();
+    a.ext.test_add("a-ext", "A", true);
+    a.ext.test_add("b-bg", "B", false);
+    a.ext.test_add("c-ext", "C", true);
+    a.apply_slide_cfg();
+    assert_eq!(a.order, before, "nothing on: no extension slides");
+    a.cfg.ext_on = vec!["b-bg".into(), "c-ext".into()];
+    a.apply_slide_cfg();
+    assert_eq!(a.order.len(), before.len() + 1, "a background extension has no slide");
+    assert_eq!(a.order.last(), Some(&SlideId::Ext(2)), "the slide is the third in the list, after the built-in ones");
+    a.cfg.ext_on.push("a-ext".into());
+    a.apply_slide_cfg();
+    assert_eq!(&a.order[before.len()..], &[SlideId::Ext(0), SlideId::Ext(2)], "in the order of the list");
+    for i in 3..8 {
+        a.ext.test_add(&format!("more-{i}"), "M", true);
+        a.cfg.ext_on.push(format!("more-{i}"));
+    }
+    a.apply_slide_cfg();
+    assert_eq!(a.order.len() - before.len(), 4, "at most four extension slides");
+}
+
+#[test]
+fn the_list_page_draws_and_its_hits_work() {
+    let mut a = ext_showing(ext_issues());
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Tab("todo".into())));
+    assert_eq!(a.ext.list[0].view.tab_sel.as_deref(), Some("todo"), "the chip moves at once");
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Row("127".into())));
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Action(0)));
+    assert_eq!(ext_sent(&a), vec![serde_json::json!({"t": "tab", "id": "todo"}), serde_json::json!({"t": "row", "id": "127"}), serde_json::json!({"t": "action", "id": "refresh"})]);
+    assert!(a.ext.sent.iter().all(|(id, _)| id == "example-issues"));
+    // the extension answers with its own tab: that one counts from then on
+    a.ext.apply(vec![ext::Evt::Msg { id: "example-issues".into(), msg: ext_msg(ext_issues()) }], &[], Instant::now());
+    assert_eq!(a.ext.list[0].view.tab_sel, None);
+}
+
+#[test]
+fn the_detail_page_opens_copies_and_goes_back() {
+    let mut a = ext_showing(ext_ticket());
+    let _ = sys::opened();
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Button(0)));
+    assert_eq!(sys::opened(), vec!["https://tracker.example/issues/128".to_string()], "a link opens in the browser");
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Button(1)));
+    assert_eq!(a.ext.copied_text.as_deref(), Some("#128 Fix crash on startup"));
+    assert!(a.ext.list[0].view.copied.is_some(), "the Copied mark is up");
+    assert!(a.ext.sent.is_empty(), "opening and copying are the notch's own, nothing is sent for them");
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Button(2)));
+    assert_eq!(ext_sent(&a), vec![serde_json::json!({"t": "action", "id": "more"})], "a button with neither is passed on");
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Back));
+    assert!(a.ext.list[0].detail.is_none(), "Back leaves the page at once");
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "back"})));
+}
+
+#[test]
+fn a_page_that_says_it_is_not_ready_is_drawn_that_way() {
+    let msg = |state: &str| serde_json::json!({"t": "slide", "rev": 1, "state": state, "message": "Something to say", "setup_label": "Set it up"});
+    for (state, hit) in [("loading", None), ("empty", None), ("error", Some(extslide::ExtHit::Retry)), ("setup", Some(extslide::ExtHit::Setup))] {
+        let mut a = ext_showing(msg(state));
+        match hit {
+            Some(h) => assert!(ext_click_on(&mut a, &h), "{state}"),
+            None => assert!(a.ext.list[0].view.hits.borrow().is_empty(), "{state}: nothing to click"),
+        }
+    }
+    let mut a = ext_showing(msg("error"));
+    ext_click_on(&mut a, &extslide::ExtHit::Retry);
+    assert_eq!(ext_sent(&a), vec![serde_json::json!({"t": "action", "id": "retry"})]);
+    let mut a = ext_showing(msg("setup"));
+    ext_click_on(&mut a, &extslide::ExtHit::Setup);
+    assert_eq!(ext_sent(&a), vec![serde_json::json!({"t": "action", "id": "setup"})]);
+}
+
+#[test]
+fn a_page_with_sections_and_a_stepper() {
+    let rows = |n: usize, p: &str| (0..n).map(|i| serde_json::json!({"id": format!("{p}{i}"), "text": format!("#{i} Something done"), "sub": "Review"})).collect::<Vec<_>>();
+    let mut a = ext_showing(serde_json::json!({"t": "slide", "rev": 3, "title": "Re|port", "back": true,
+        "stepper": {"label": "2026-10-31", "prev": true, "next": false},
+        "actions": [{"id": "copy", "label": "Copy", "copy": "Worked on 2026-10-31"}],
+        "sections": [{"title": "Worked on", "rows": rows(3, "w")}, {"title": "Queue today", "rows": rows(2, "q")}]}));
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Back));
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Step(-1)));
+    assert!(!a.ext.list[0].view.hits.borrow().iter().any(|h| h.4 == extslide::ExtHit::Step(1)), "a disabled arrow is not clickable");
+    assert_eq!(ext_sent(&a), vec![serde_json::json!({"t": "back"}), serde_json::json!({"t": "step", "dir": -1})]);
+    assert!(ext_click_on(&mut a, &extslide::ExtHit::Action(0)));
+    assert_eq!(a.ext.copied_text.as_deref(), Some("Worked on 2026-10-31"), "a header action can copy too");
+    assert!(a.ext_scrollable() && a.ext_wheel(true) && a.ext.list[0].view.scroll == 1, "7 lines, 3 show: the wheel scrolls the list");
+    assert!(a.ext_wheel(false) && !a.ext_wheel(false), "and stops at the top");
+}
+
+#[test]
+fn a_long_detail_page_scrolls() {
+    let mut j = ext_ticket();
+    j["body"] = serde_json::json!(("A line of the description that goes on.\n").repeat(12));
+    let mut a = ext_showing(j);
+    assert!(a.ext_scrollable());
+    let first = a.ext.list[0].view.dscroll;
+    assert!(a.ext_wheel(true) && a.ext.list[0].view.dscroll == first + 1);
+    ext_draw(&mut a);
+}
+
+#[test]
+fn an_extension_that_is_not_there_is_explained_not_empty() {
+    let mut a = ext_showing(ext_issues());
+    a.ext.list[0].connected = false;
+    a.ext.list[0].problem = Some("file not found".into());
+    ext_draw(&mut a);
+    assert!(a.ext.list[0].view.hits.borrow().is_empty(), "nothing to click");
+    assert!(!a.ext_scrollable());
+    assert!(!a.ext_click(300.0, 60.0));
+}
+
+#[test]
+fn the_dot_of_an_extension_slide_shows_a_marker() {
+    let mut a = ext_showing(ext_issues());
+    let i = a.order.iter().position(|s| *s == SlideId::Ext(0)).unwrap();
+    assert!(!a.ext_dot_badge(i));
+    a.ext.apply(vec![ext::Evt::Msg { id: "example-issues".into(), msg: extproto::FromExt::Badge(true) }], &[], Instant::now());
+    assert!(a.ext_dot_badge(i) && !a.ext_dot_badge(0));
+    ext_draw(&mut a);
+}
+
+/// The extension slide in the snapshot folder, for a look by eye.
+#[test]
+fn snap_extension_slide() {
+    for s in SCALES {
+        for (name, j) in [("list", ext_issues()), ("detail", ext_ticket())] {
+            shot(&format!("ext-{name}"), s, |a| ext_setup(a, j));
+        }
+    }
+    shot("ext-setup", 1.0, |a| ext_setup(a, serde_json::json!({"t": "slide", "rev": 1, "state": "setup", "message": "The tracker is not set up yet", "setup_label": "Open settings"})));
+    shot("ext-not-running", 1.0, |a| {
+        ext_setup(a, ext_issues());
+        a.ext.list[0].connected = false;
+        a.ext.list[0].problem = Some("blocked by a policy".into());
+    });
+}
+
+// ---------------------------------------------------------------- Settings > Extensions
+const EXTENSIONS: usize = 9;
+
+/// Three extensions: one running and talking, one off, one whose manifest is no good.
+fn ext_page_setup(a: &mut App) {
+    a.ext.test_add("example-issues", "Issues", true);
+    a.ext.test_add("media-bridge", "Media Bridge", false);
+    a.ext.test_add_bad("broken-one", "exe must be an absolute path to an .exe");
+    a.cfg.ext_on.push("example-issues".into());
+    a.ext.list[0].connected = true;
+    a.ext.list[0].status = "Synced 12 issues".into();
+    a.apply_slide_cfg();
+    a.sw_show_page(EXTENSIONS);
+}
+
+#[test]
+fn extensions_page_is_between_calendar_and_about() {
+    assert_eq!(settingswin::SECS[EXTENSIONS], settingswin::SECS[settingswin::SECS.len() - 2]);
+    let a = sw_shot("settingswin-extensions-empty", page(EXTENSIONS));
+    assert!(settingswin::hit_center(&a, settingswin::Hit::ExtRoot).is_some() && settingswin::hit_center(&a, settingswin::Hit::ExtScan).is_some(), "the folder and rescan buttons are always there");
+    assert!(settingswin::hit_center(&a, settingswin::Hit::ExtOn(0)).is_none(), "nothing installed: nothing to switch");
+}
+
+#[test]
+fn extensions_page_switches_mutes_and_asks_for_settings() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-extensions", ext_page_setup);
+    assert!(settingswin::hit_center(&a, Hit::ExtOn(0)).is_some() && settingswin::hit_center(&a, Hit::ExtOn(1)).is_some());
+    assert!(settingswin::hit_center(&a, Hit::ExtOn(2)).is_none(), "a manifest that is no good has no switch");
+    // the second one runs in the background: switching it on adds no slide
+    let slides = a.order.len();
+    sw_press(&mut a, Hit::ExtOn(1));
+    assert_eq!(a.cfg.ext_on, vec!["example-issues".to_string(), "media-bridge".to_string()]);
+    assert_eq!(a.order.len(), slides, "a background extension has no slide");
+    sw_press(&mut a, Hit::ExtOn(1));
+    assert_eq!(a.cfg.ext_on, vec!["example-issues".to_string()]);
+    // the first one has a slide, and it comes and goes with the switch
+    sw_press(&mut a, Hit::ExtOn(0));
+    assert!(a.cfg.ext_on.is_empty());
+    assert_eq!(a.order.len(), slides - 1);
+    sw_press(&mut a, Hit::ExtOn(0));
+    assert_eq!(a.cfg.ext_on, vec!["example-issues".to_string()]);
+    assert_eq!(a.order.len(), slides);
+    // toasts
+    assert!(a.cfg.ext_mute.is_empty());
+    sw_press(&mut a, Hit::ExtMute(0));
+    assert_eq!(a.cfg.ext_mute, vec!["example-issues".to_string()]);
+    sw_press(&mut a, Hit::ExtMute(0));
+    assert!(a.cfg.ext_mute.is_empty());
+    // Settings reaches the extension only while it is connected
+    sw_press(&mut a, Hit::ExtConfig(0));
+    assert_eq!(a.ext.sent.last().map(|(id, f)| (id.as_str(), serde_json::from_slice::<serde_json::Value>(&f[4..]).unwrap())), Some(("example-issues", serde_json::json!({"t": "config"}))));
+    assert!(settingswin::hit_center(&a, Hit::ExtConfig(1)).is_none(), "not connected: the button is greyed out");
+    assert!(settingswin::hit_center(&a, Hit::ExtRestart(1)).is_none(), "off: nothing to restart");
+    assert!(settingswin::hit_center(&a, Hit::ExtRestart(0)).is_some());
+}
+
+#[test]
+fn extensions_page_opens_folders_and_rescans() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-extensions-folders", ext_page_setup);
+    let _ = sys::opened();
+    sw_press(&mut a, Hit::ExtFolder(0));
+    sw_press(&mut a, Hit::ExtRoot);
+    let opened = sys::opened();
+    assert!(opened[0].ends_with(r"extensions\example-issues") && opened[1].ends_with("extensions"), "{opened:?}");
+    // a new extension was installed: rescan finds it, and the old ones keep what the notch knows
+    let dir = std::env::temp_dir().join(format!("hesewake-ext-page-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("new-one")).unwrap();
+    let exe = format!(r"{}\System32\whoami.exe", std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()));
+    std::fs::write(dir.join("new-one").join("extension.json"), serde_json::json!({"id": "new-one", "name": "New", "exe": exe, "proto": 1}).to_string()).unwrap();
+    a.ext_rescan_in(&dir);
+    assert_eq!(a.ext.list.iter().map(|e| e.folder.as_str()).collect::<Vec<_>>(), vec!["new-one"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn what_an_extension_is_doing_is_said_in_words() {
+    let now = Instant::now();
+    let mut a = test_app(1.0);
+    a.ext.test_add("a-ext", "A", true);
+    a.ext.test_add_bad("b-ext", "no extension.json");
+    let say = |a: &App, i: usize, on: bool| extapp::status_text(&a.ext.list[i], on, now);
+    assert_eq!(say(&a, 0, false), "Off");
+    assert_eq!(say(&a, 0, true), "Starting\u{2026}");
+    a.ext.list[0].problem = Some("file not found".into());
+    assert_eq!(say(&a, 0, true), "Not running: file not found");
+    a.ext.list[0].connected = true;
+    assert_eq!(say(&a, 0, true), "Connected");
+    a.ext.list[0].status = "3 devices".into();
+    assert_eq!(say(&a, 0, true), "3 devices", "its own words win");
+    assert_eq!(say(&a, 1, true), "Invalid: no extension.json");
+    let _lang = i18n::restore_on_drop();
+    a.ext.list[0].status.clear();
+    indonesian(&mut a);
+    assert_eq!(say(&a, 0, true), "Tersambung");
+    assert_eq!(say(&a, 1, true), "Tidak valid: no extension.json");
+}
+
+#[test]
+fn snap_extensions_page_in_indonesian() {
+    let _lang = i18n::restore_on_drop();
+    sw_shot("id-settingswin-extensions", |a| {
+        indonesian(a);
+        ext_page_setup(a);
+        a.ext.list[1].problem = Some("file not found".into());
+    });
+}
+
+// ---------------------------------------------------------------- extension toasts
+fn ext_toast_msg(count: u32) -> ext::Evt {
+    ext::Evt::Msg { id: "example-issues".into(), msg: extproto::FromExt::Toast { title: "#128 Fix crash on startup".into(), sub: "New \u{b7} To do".into(), count } }
+}
+
+#[test]
+fn an_extension_toast_shows_and_hovering_it_opens_the_slide() {
+    let mut a = test_app(1.0);
+    ext_setup(&mut a, ext_issues());
+    a.hover = false;
+    a.slide = 0;
+    let out = a.ext.apply(vec![ext_toast_msg(1)], &[], Instant::now());
+    assert!(a.ext_out(out));
+    assert!(matches!(a.toast.as_ref().map(|t| &t.kind), Some(ToastKind::Ext { id, count: 1, .. }) if id == "example-issues"));
+    assert!(!a.toast_has_button(), "no buttons: hovering is how it is answered");
+    a.hover = true;
+    assert!(a.toast_update());
+    assert!(a.toast.is_none() && a.cur_ext() == Some(0), "the extension's slide is open");
+}
+
+#[test]
+fn a_muted_extension_makes_no_toast() {
+    let mut a = test_app(1.0);
+    ext_setup(&mut a, ext_issues());
+    a.hover = false;
+    let out = a.ext.apply(vec![ext_toast_msg(1)], &["example-issues".to_string()], Instant::now());
+    assert!(!a.ext_out(out));
+    assert!(a.toast.is_none());
+}
+
+#[test]
+fn snap_extension_toast() {
+    for (name, count) in [("one", 1), ("many", 4)] {
+        shot(&format!("ext-toast-{name}"), 1.0, |a| {
+            ext_setup(a, ext_issues());
+            a.hover = false;
+            show_toast(a, ToastKind::Ext { id: "example-issues".into(), title: "#128 Fix crash on startup".into(), sub: "New \u{b7} To do".into(), count });
+        });
+    }
+}
+
+// ---------------------------------------------------------------- the panel of an extension in Settings
+/// An extension without a slide, connected, with its Settings in the panel; the Extensions page is showing.
+fn panel_ext(a: &mut App, first: serde_json::Value) {
+    a.ext.test_add("media-bridge", "Media Bridge", false);
+    a.ext.list[0].manifest.as_mut().unwrap().panel = true;
+    a.cfg.ext_on.push("media-bridge".into());
+    a.apply_slide_cfg();
+    a.sw_show_page(EXTENSIONS);
+    ext_feed(a, first);
+}
+
+fn panel_home() -> serde_json::Value {
+    serde_json::json!({
+        "t": "slide", "rev": 1, "title": "Pho|ne",
+        "actions": [{"id": "pair", "label": "Pair a phone"}],
+        "rows": [{"id": "a1b2", "text": "Phone 1", "sub": "Connected"}, {"id": "c3d4", "text": "Phone 2", "sub": "Offline", "mark": true}],
+        "foot": "Fake Song One \u{b7} The Test Band"
+    })
+}
+
+/// A QR-like square: ones and zeros in a pattern.
+fn panel_qr() -> serde_json::Value {
+    let rows: Vec<String> = (0..33).map(|r| (0..33).map(|c| if (r * 7 + c * 3 + r * c) % 5 < 2 || (r < 7 && c < 7) { '1' } else { '0' }).collect()).collect();
+    serde_json::json!({
+        "t": "detail", "rev": 2, "for": "pairing", "title": "Pair a phone",
+        "meta": [{"k": "PC", "v": "THINKPAD"}, {"k": "Time left", "v": "1:42"}],
+        "body": "On your phone, open Hesewake Media Bridge and pick this PC, or scan the code.",
+        "matrix": {"size": 33, "rows": rows},
+        "buttons": [{"id": "pair_cancel", "label": "Cancel"}],
+        "foot": "Phones can only pair while this page is open"
+    })
+}
+
+#[test]
+fn the_settings_button_opens_a_panel_for_a_panel_extension() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-extensions-panel-before", |a| panel_ext(a, panel_home()));
+    assert!(settingswin::hit_center(&a, Hit::ExtConfig(0)).is_some(), "Settings is there while it is connected");
+    sw_press(&mut a, Hit::ExtConfig(0));
+    assert_eq!(a.sw.panel, Some(0));
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "visible", "on": true})), "it is told that its page is being looked at");
+    assert!(a.ext.sent.iter().all(|(_, f)| serde_json::from_slice::<serde_json::Value>(&f[4..]).unwrap()["t"] != "config"), "no window is asked for");
+    settingswin::render(&mut a);
+    assert!(settingswin::hit_center(&a, Hit::ExtOn(0)).is_none(), "the list is replaced by the pages");
+    // a row, an action, the foot
+    sw_press(&mut a, Hit::PanelRow(1));
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "row", "id": "c3d4"})));
+    sw_press(&mut a, Hit::PanelAct(0));
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "action", "id": "pair"})));
+    // back to the list: the extension is told that nobody looks any more
+    sw_press(&mut a, Hit::PanelBack);
+    assert_eq!(a.sw.panel, None);
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "visible", "on": false})));
+    settingswin::render(&mut a);
+    assert!(settingswin::hit_center(&a, Hit::ExtOn(0)).is_some(), "the list is back");
+}
+
+#[test]
+fn leaving_the_page_closes_the_panel_too() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-extensions-panel-leave", |a| panel_ext(a, panel_home()));
+    sw_press(&mut a, Hit::ExtConfig(0));
+    assert_eq!(a.sw.panel, Some(0));
+    sw_press(&mut a, Hit::Nav(0));
+    assert_eq!(a.sw.panel, None, "another page of the window");
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "visible", "on": false})));
+}
+
+#[test]
+fn a_page_with_a_qr_code_draws_it_and_its_buttons_work() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-panel-qr", |a| {
+        panel_ext(a, panel_qr());
+        a.sw.panel = Some(0);
+    });
+    let px: Vec<u8> = settingswin::canvas(&a).unwrap().data().to_vec();
+    let white = px.chunks_exact(4).filter(|p| p[0] > 250 && p[1] > 250 && p[2] > 250).count();
+    let dark_in_white = px.chunks_exact(4).filter(|p| p[0] < 5 && p[1] < 5 && p[2] < 5).count();
+    assert!(white > 1000 && dark_in_white > 200, "a white square with black modules is on the page ({white} white, {dark_in_white} black)");
+    sw_press(&mut a, Hit::PanelButton(0));
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "action", "id": "pair_cancel"})));
+    sw_press(&mut a, Hit::PanelDetailBack);
+    assert!(a.ext.list[0].detail.is_none(), "Back leaves a detail page at once");
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "back"})));
+}
+
+#[test]
+fn the_other_pages_of_the_panel() {
+    use settingswin::Hit;
+    // tabs and a stepper
+    let mut a = sw_shot("settingswin-panel-tabs", |a| {
+        panel_ext(a, serde_json::json!({"t": "slide", "rev": 1, "title": "Re|port", "tabs": [{"id": "all", "label": "All"}, {"id": "odd", "label": "Odd", "count": 3}], "tab": "all",
+            "stepper": {"label": "2026-11-01", "prev": true, "next": false}, "rows": [{"id": "1", "text": "One"}]}));
+        a.sw.panel = Some(0);
+    });
+    sw_press(&mut a, Hit::PanelTab(1));
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "tab", "id": "odd"})));
+    assert_eq!(a.ext.list[0].view.tab_sel.as_deref(), Some("odd"), "the chip moves at once");
+    sw_press(&mut a, Hit::PanelStep(-1));
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "step", "dir": -1})));
+    assert!(settingswin::hit_center(&a, Hit::PanelStep(1)).is_none(), "a disabled arrow does not answer");
+    // error and setup
+    for (state, hit, id) in [("error", Hit::PanelRetry, "retry"), ("setup", Hit::PanelSetup, "setup")] {
+        let mut a = sw_shot(&format!("settingswin-panel-{state}"), |a| {
+            panel_ext(a, serde_json::json!({"t": "slide", "rev": 1, "state": state, "message": "Something to say", "setup_label": "Set it up"}));
+            a.sw.panel = Some(0);
+        });
+        sw_press(&mut a, hit);
+        assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "action", "id": id})), "{state}");
+    }
+    // not connected: the notch says why
+    let a = sw_shot("settingswin-panel-away", |a| {
+        panel_ext(a, panel_home());
+        a.ext.list[0].connected = false;
+        a.ext.list[0].problem = Some("file not found".into());
+        a.sw.panel = Some(0);
+    });
+    assert!(settingswin::hit_center(&a, Hit::PanelRow(0)).is_none() && settingswin::hit_center(&a, Hit::PanelBack).is_some(), "only the way back");
+}
+
+#[test]
+fn panel_text_fits_in_both_languages() {
+    let _lang = i18n::restore_on_drop();
+    for id in [false, true] {
+        for (name, j) in [("home", panel_home()), ("qr", panel_qr())] {
+            let a = sw_shot(&format!("{}settingswin-panel-fit-{name}", if id { "id-" } else { "" }), |a| {
+                if id {
+                    indonesian(a);
+                }
+                panel_ext(a, j);
+                a.sw.panel = Some(0);
+            });
+            assert!(settingswin::cut(&a).is_empty(), "{name} (indonesian: {id}): cut texts {:?}", settingswin::cut(&a));
+        }
+    }
+}
+
+#[test]
+fn a_window_extension_still_gets_the_config_message() {
+    use settingswin::Hit;
+    let mut a = sw_shot("settingswin-extensions-window-mode", |a| {
+        panel_ext(a, panel_home());
+        a.ext.list[0].manifest.as_mut().unwrap().panel = false;
+    });
+    sw_press(&mut a, Hit::ExtConfig(0));
+    assert_eq!(a.sw.panel, None);
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "config"})));
+}
+
+// ---------------------------------------------------------------- a text box on an extension's page
+fn rename_page(value: &str) -> serde_json::Value {
+    serde_json::json!({
+        "t": "detail", "rev": 3, "for": "a1b2", "title": "Phone 1",
+        "meta": [{"k": "Status", "v": "Connected"}, {"k": "Paired", "v": "2026-11-01"}],
+        "body": "Forget this phone to take away its access.",
+        "input": {"id": "rename", "label": "Name", "value": value, "max": 12, "button": "Save"},
+        "buttons": [{"id": "forget:a1b2", "label": "Forget"}]
+    })
+}
+
+/// The panel with the rename page showing and the first frame drawn.
+fn rename_panel(name: &str, value: &str) -> App {
+    sw_shot(name, |a| {
+        panel_ext(a, rename_page(value));
+        a.sw.panel = Some(0);
+    })
+}
+
+fn type_text(a: &mut App, s: &str) {
+    for u in s.encode_utf16() {
+        assert!(a.sw_field_char(u), "the box has the keyboard");
+    }
+}
+
+fn key(a: &mut App, vk: u16) -> bool {
+    a.sw_field_key(vk, false)
+}
+
+fn field_text(a: &App) -> String {
+    a.sw.field.as_ref().expect("a text box").tf_text()
+}
+
+#[test]
+fn a_text_box_takes_typing_and_sends_it_on_enter() {
+    use settingswin::Hit;
+    let mut a = rename_panel("settingswin-panel-input", "Phone 1");
+    assert!(settingswin::hit_center(&a, Hit::PanelInput).is_some() && settingswin::hit_center(&a, Hit::PanelInputSave).is_some());
+    assert!(!a.sw_field_char(b'x' as u16), "it does not take keys before it is clicked");
+    assert!(!key(&mut a, 0x08));
+    sw_press(&mut a, Hit::PanelInput);
+    assert_eq!(field_text(&a), "Phone 1");
+    for _ in 0..7 {
+        key(&mut a, 0x08);
+    }
+    type_text(&mut a, "Pixel 8");
+    assert_eq!(field_text(&a), "Pixel 8");
+    settingswin::render(&mut a);
+    key(&mut a, 0x0D);
+    assert_eq!(ext_sent(&a).last(), Some(&serde_json::json!({"t": "input", "id": "rename", "value": "Pixel 8"})));
+    assert!(!a.sw_field_char(b'x' as u16), "after Enter the box lets go of the keyboard");
+}
+
+#[test]
+fn the_save_button_sends_it_too_and_clicking_elsewhere_keeps_what_was_typed() {
+    use settingswin::Hit;
+    let mut a = rename_panel("settingswin-panel-input-save", "Phone 1");
+    sw_press(&mut a, Hit::PanelInput);
+    key(&mut a, 0x24);
+    type_text(&mut a, "My ");
+    // a click on something else lets go of the box, the text stays
+    sw_press(&mut a, Hit::PanelButton(0));
+    assert!(!a.sw.field.as_ref().unwrap().is_focused());
+    assert_eq!(field_text(&a), "My Phone 1");
+    a.ext.sent.clear();
+    sw_press(&mut a, Hit::PanelInputSave);
+    assert_eq!(ext_sent(&a), vec![serde_json::json!({"t": "input", "id": "rename", "value": "My Phone 1"})]);
+}
+
+#[test]
+fn escape_gives_up_and_the_box_is_never_longer_than_the_page_says() {
+    use settingswin::Hit;
+    let mut a = rename_panel("settingswin-panel-input-esc", "Phone 1");
+    sw_press(&mut a, Hit::PanelInput);
+    type_text(&mut a, "xxxxxxxxxxxxxxxx");
+    assert_eq!(field_text(&a).chars().count(), 12, "the page said 12");
+    assert!(key(&mut a, 0x1B));
+    assert_eq!(field_text(&a), "Phone 1", "back to what the extension said");
+    assert!(!a.sw.field.as_ref().unwrap().is_focused());
+    assert!(a.ext.sent.iter().all(|(_, f)| serde_json::from_slice::<serde_json::Value>(&f[4..]).unwrap()["t"] != "input"), "nothing was sent");
+}
+
+#[test]
+fn the_caret_keys_and_characters_that_come_in_two_halves_work() {
+    use settingswin::Hit;
+    let mut a = rename_panel("settingswin-panel-input-keys", "Phone 1");
+    sw_press(&mut a, Hit::PanelInput);
+    key(&mut a, 0x24);
+    key(&mut a, 0x2E);
+    assert_eq!(field_text(&a), "hone 1", "Home, then Delete");
+    key(&mut a, 0x23);
+    key(&mut a, 0x25);
+    key(&mut a, 0x25);
+    type_text(&mut a, "!");
+    assert_eq!(field_text(&a), "hone! 1", "End, two Left, a character in the middle");
+    key(&mut a, 0x27);
+    key(&mut a, 0x08);
+    assert_eq!(field_text(&a), "hone!1");
+    // a character outside the first plane arrives as two UTF-16 units
+    type_text(&mut a, "\u{1F600}");
+    assert!(field_text(&a).contains('\u{1F600}'));
+    assert!(a.sw_field_char(0x16), "a control character (Ctrl+V) is taken and ignored");
+    calendar::TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some("ab\ncd".into()));
+    assert!(a.sw_field_key(0x56, true));
+    assert!(field_text(&a).chars().count() <= 12);
+}
+
+#[test]
+fn a_new_value_from_the_extension_is_followed_unless_the_user_is_typing() {
+    use settingswin::Hit;
+    let mut a = rename_panel("settingswin-panel-input-follow", "Phone 1");
+    ext_feed(&mut a, rename_page("Pixel 8"));
+    settingswin::render(&mut a);
+    assert_eq!(field_text(&a), "Pixel 8", "it took the new name");
+    sw_press(&mut a, Hit::PanelInput);
+    type_text(&mut a, "!");
+    ext_feed(&mut a, rename_page("Other"));
+    settingswin::render(&mut a);
+    assert!(field_text(&a).ends_with('!'), "what is being typed is not taken away");
+}
+
+#[test]
+fn the_box_goes_when_the_page_goes() {
+    use settingswin::Hit;
+    let mut a = rename_panel("settingswin-panel-input-gone", "Phone 1");
+    assert!(a.sw.field.is_some());
+    sw_press(&mut a, Hit::PanelDetailBack);
+    settingswin::render(&mut a);
+    assert!(a.sw.field.is_none());
+}
+
+#[test]
+fn a_text_box_fits_in_both_languages() {
+    let _lang = i18n::restore_on_drop();
+    for id in [false, true] {
+        let a = sw_shot(&format!("{}settingswin-panel-input-fit", if id { "id-" } else { "" }), |a| {
+            if id {
+                indonesian(a);
+            }
+            panel_ext(a, rename_page("Phone 1"));
+            a.sw.panel = Some(0);
+        });
+        assert!(settingswin::cut(&a).is_empty(), "indonesian: {id}: cut texts {:?}", settingswin::cut(&a));
+    }
+}
+
+// ---------------------------------------------------------------- a hero card with a picture
+fn std_b64(data: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in data.chunks(3) {
+        let n = c.iter().enumerate().fold(0u32, |acc, (i, &b)| acc | (b as u32) << (16 - 8 * i));
+        for i in 0..c.len() + 1 {
+            out.push(A[(n >> (18 - 6 * i) & 63) as usize] as char);
+        }
+        out.extend(std::iter::repeat('=').take(3 - c.len()));
+    }
+    out
+}
+
+/// A JPEG of 160 x 160: red to the right, green downwards, a little blue.
+fn hero_jpeg() -> Vec<u8> {
+    let img = image::RgbImage::from_fn(160, 160, |x, y| image::Rgb([(x * 255 / 159) as u8, (y * 255 / 159) as u8, 140]));
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85).encode_image(&img).expect("a JPEG");
+    out
+}
+
+fn hero_home(with_picture: bool) -> serde_json::Value {
+    let mut hero = serde_json::json!({"title": "Cupid (Twin Version)", "sub": "FIFTY FIFTY \u{b7} The Beginning: Cupid", "text": "Phone 1 \u{b7} Playing"});
+    if with_picture {
+        hero["image"] = serde_json::json!({"mime": "image/jpeg", "data": std_b64(&hero_jpeg())});
+    }
+    serde_json::json!({
+        "t": "slide", "rev": 1, "title": "Pho|ne", "hero": hero,
+        "actions": [{"id": "pair", "label": "Pair a phone"}],
+        "rows": [{"id": "a1b2", "text": "Pixel 8", "sub": "Connected", "tone": "good"}, {"id": "c3d4", "text": "Phone 2", "sub": "Offline", "tone": "muted"}, {"id": "e5f6", "text": "Old phone", "sub": "Needs attention", "tone": "warn"}]
+    })
+}
+
+#[test]
+fn a_hero_draws_its_picture_once_and_keeps_it() {
+    let a = sw_shot("settingswin-panel-hero", |a| {
+        panel_ext(a, hero_home(true));
+        a.sw.panel = Some(0);
+    });
+    let key = a.ext.list[0].view.hero_pm.borrow().as_ref().map(|(k, pm)| (*k, pm.width()));
+    assert_eq!(key.map(|k| k.1), Some(192), "the picture was decoded to a square");
+    // the picture is on the card: the colours of the gradient, not the grey tile
+    let px = settingswin::canvas(&a).unwrap().data().to_vec();
+    let at = |x: usize, y: usize| {
+        let i = (y * 820 + x) * 4;
+        [px[i], px[i + 1], px[i + 2]]
+    };
+    let (tl, br) = (at(268, 200), at(342, 270));
+    assert!(br[0] > tl[0] + 60 && br[1] > tl[1] + 60, "red grows to the right and green downwards: {tl:?} {br:?}");
+    // drawing again does not decode again: the same cached picture
+    let mut a = a;
+    settingswin::render(&mut a);
+    assert_eq!(a.ext.list[0].view.hero_pm.borrow().as_ref().map(|(k, _)| *k), key.map(|k| k.0));
+    // a different picture replaces it
+    let mut other = hero_home(true);
+    other["hero"]["image"]["data"] = serde_json::json!(std_b64(&{
+        let img = image::RgbImage::from_pixel(64, 64, image::Rgb([200, 30, 30]));
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85).encode_image(&img).unwrap();
+        out
+    }));
+    ext_feed(&mut a, other);
+    settingswin::render(&mut a);
+    assert_ne!(a.ext.list[0].view.hero_pm.borrow().as_ref().map(|(k, _)| *k), key.map(|k| k.0));
+    // and one that is no picture falls back to the tile
+    let mut broken = hero_home(true);
+    broken["hero"]["image"]["data"] = serde_json::json!(std_b64(b"this is not a picture"));
+    ext_feed(&mut a, broken);
+    settingswin::render(&mut a);
+    assert!(a.ext.list[0].view.hero_pm.borrow().is_none(), "unreadable: the tile");
+}
+
+#[test]
+fn a_hero_without_a_picture_and_rows_with_tones() {
+    let mut a = sw_shot("settingswin-panel-hero-tile", |a| {
+        panel_ext(a, hero_home(false));
+        a.sw.panel = Some(0);
+    });
+    assert!(a.ext.list[0].view.hero_pm.borrow().is_none());
+    assert!(settingswin::hit_center(&a, settingswin::Hit::PanelRow(2)).is_some(), "the rows are below the hero and still clickable");
+    settingswin::render(&mut a);
+}
+
+#[test]
+fn a_hero_fits_in_both_languages() {
+    let _lang = i18n::restore_on_drop();
+    for id in [false, true] {
+        let a = sw_shot(&format!("{}settingswin-panel-hero-fit", if id { "id-" } else { "" }), |a| {
+            if id {
+                indonesian(a);
+            }
+            panel_ext(a, hero_home(true));
+            a.sw.panel = Some(0);
+        });
+        assert!(settingswin::cut(&a).is_empty(), "indonesian: {id}: cut texts {:?}", settingswin::cut(&a));
+    }
+}
+
+// ---------------------------------------------------------------- taking an extension out
+fn remove_root(name: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("hesewake-ext-remove-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+fn put_manifest(root: &std::path::Path, id: &str) {
+    let exe = format!(r"{}\System32\whoami.exe", std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()));
+    std::fs::create_dir_all(root.join(id)).unwrap();
+    std::fs::write(root.join(id).join("extension.json"), serde_json::json!({"id": id, "name": id, "exe": exe, "proto": 1}).to_string()).unwrap();
+    std::fs::write(root.join(id).join("data.txt"), "something the installer put here").unwrap();
+}
+
+#[test]
+fn remove_asks_twice_and_then_takes_the_extension_out() {
+    use settingswin::Hit;
+    let root = remove_root("two");
+    put_manifest(&root, "gone-ext");
+    put_manifest(&root, "stays-ext");
+    let mut a = sw_shot("settingswin-extensions-remove", |a| {
+        a.ext.test_root = Some(root.clone());
+        a.ext_rescan_in(&root);
+        a.cfg.ext_on = vec!["gone-ext".into(), "stays-ext".into()];
+        a.cfg.ext_mute = vec!["gone-ext".into()];
+        a.apply_slide_cfg();
+        a.sw_show_page(EXTENSIONS);
+    });
+    let i = a.ext.list.iter().position(|e| e.id() == "gone-ext").unwrap();
+    sw_press(&mut a, Hit::ExtRemove(i));
+    assert!(root.join("gone-ext").exists() && a.ext.list.len() == 2, "the first press only asks");
+    assert!(a.sw.remove_confirm.is_some_and(|(n, _)| n == i));
+    sw_press(&mut a, Hit::ExtRemove(i));
+    assert!(!root.join("gone-ext").exists(), "its folder is gone, with what was in it");
+    assert!(root.join("stays-ext").join("data.txt").exists(), "the other one is not touched");
+    assert_eq!(a.ext.list.iter().map(|e| e.id()).collect::<Vec<_>>(), vec!["stays-ext"]);
+    assert_eq!(a.cfg.ext_on, vec!["stays-ext".to_string()], "no longer switched on");
+    assert!(a.cfg.ext_mute.is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_press_that_is_not_followed_up_is_forgotten() {
+    use settingswin::Hit;
+    let root = remove_root("late");
+    put_manifest(&root, "late-ext");
+    let mut a = sw_shot("settingswin-extensions-remove-late", |a| {
+        a.ext.test_root = Some(root.clone());
+        a.ext_rescan_in(&root);
+        a.sw_show_page(EXTENSIONS);
+    });
+    sw_press(&mut a, Hit::ExtRemove(0));
+    a.sw.remove_confirm = a.sw.remove_confirm.map(|(n, t)| (n, t - Duration::from_secs(0)));
+    // a different extension's press does not count for this one
+    a.ext.test_add("other-ext", "O", true);
+    a.sw.remove_confirm = Some((1, Instant::now()));
+    a.ext_remove_in(0, &root);
+    assert!(root.join("late-ext").exists(), "a press for another extension is not a confirmation");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_manifest_that_is_no_good_can_still_be_removed() {
+    use settingswin::Hit;
+    let root = remove_root("broken");
+    std::fs::create_dir_all(root.join("broken-one")).unwrap();
+    std::fs::write(root.join("broken-one").join("extension.json"), "{ nope").unwrap();
+    let mut a = sw_shot("settingswin-extensions-remove-broken", |a| {
+        a.ext.test_root = Some(root.clone());
+        a.ext_rescan_in(&root);
+        a.sw_show_page(EXTENSIONS);
+    });
+    assert!(a.ext.list[0].manifest.is_err());
+    sw_press(&mut a, Hit::ExtRemove(0));
+    sw_press(&mut a, Hit::ExtRemove(0));
+    assert!(!root.join("broken-one").exists() && a.ext.list.is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn removing_never_goes_outside_the_extensions_folder() {
+    let base = remove_root("outside");
+    let root = base.join("extensions");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(base.join("precious.txt"), "do not delete").unwrap();
+    let host = ext::Host::new("t");
+    for name in ["..", ".", "", "a\\b", "a/b", "C:", "..\\..", "x:y"] {
+        let mut s = extapp::ExtState::default();
+        s.test_add_bad(name, "bad");
+        assert!(s.remove(0, &root, &host).is_err(), "{name:?} is refused");
+        assert_eq!(s.list.len(), 1, "and stays listed");
+    }
+    assert!(base.join("precious.txt").exists() && root.exists());
+    // a folder that is only a link to somewhere else
+    let target = base.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("keep.txt"), "mine").unwrap();
+    let made = std::process::Command::new("cmd").args(["/C", "mklink", "/J", &root.join("link-ext").to_string_lossy(), &target.to_string_lossy()]).output().unwrap();
+    assert!(made.status.success(), "could not make a junction for the test");
+    let mut s = extapp::ExtState::default();
+    s.test_add_bad("link-ext", "bad");
+    assert_eq!(s.remove(0, &root, &host), Err("the folder is a link, not a folder"));
+    assert!(target.join("keep.txt").exists(), "what it points to is untouched");
+    // a folder that is not there
+    let mut s = extapp::ExtState::default();
+    s.test_add_bad("not-here", "bad");
+    assert_eq!(s.remove(0, &root, &host), Err("the folder is gone"));
+    let _ = std::process::Command::new("cmd").args(["/C", "rmdir", &root.join("link-ext").to_string_lossy()]).output();
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn removing_the_extension_whose_panel_is_open_closes_the_panel() {
+    use settingswin::Hit;
+    let root = remove_root("panel");
+    put_manifest(&root, "panel-ext");
+    let mut a = sw_shot("settingswin-extensions-remove-panel", |a| {
+        a.ext.test_root = Some(root.clone());
+        a.ext_rescan_in(&root);
+        a.ext.list[0].manifest.as_mut().unwrap().panel = true;
+        a.ext.list[0].connected = true;
+        a.sw_show_page(EXTENSIONS);
+    });
+    a.sw.panel = Some(0);
+    a.ext_remove_in(0, &root);
+    a.ext_remove_in(0, &root);
+    assert_eq!(a.sw.panel, None);
+    assert!(a.ext.list.is_empty());
+    settingswin::render(&mut a);
+    assert!(settingswin::hit_center(&a, Hit::ExtScan).is_some(), "the list is showing");
+    let _ = std::fs::remove_dir_all(&root);
 }

@@ -130,6 +130,9 @@ pub(crate) fn draw(a: &mut App) {
         None => notch_path(w, h),
     };
     g.fill(&shape, &paint(0, 0, 0, 1.0));
+    if p > 0.04 {
+        a.draw_wibu(&mut g, p);
+    }
     if a.thin() && !a.expanded() && a.toast.is_none() {
         a.draw_claude_thin(&mut g, w, h);
     }
@@ -174,7 +177,6 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Todo => a.slide_todo(&mut g, ox, al),
                 SlideId::Ledge => a.slide_shelf(&mut g, ox, al),
                 SlideId::Notifications => a.slide_notifs(&mut g, ox, al),
-                SlideId::Settings => a.slide_settings(&mut g, ox, al),
                 SlideId::System => a.slide_system(&mut g, ox, al),
                 SlideId::Timer => a.slide_timer(&mut g, ox, al),
                 SlideId::Scrap => a.slide_note(&mut g, ox, al),
@@ -182,6 +184,7 @@ pub(crate) fn draw(a: &mut App) {
                 SlideId::Agenda => a.slide_agenda(&mut g, ox, al),
                 SlideId::Claude => a.slide_claude(&mut g, ox, al),
                 SlideId::Prayer => a.slide_prayer(&mut g, ox, al),
+                SlideId::Ext(i) => a.slide_ext(&mut g, i as usize, ox, al),
             }
         }
         if !a.lyric_screen() {
@@ -215,6 +218,10 @@ pub(crate) unsafe fn present(a: &mut App) {
     let draw_dur = t_draw.elapsed();
     let t_blit = Instant::now();
     let Some(g) = a.gfx.as_ref() else { return; };
+    // No window bitmap yet (tests draw an App without a window): drawing was all there is to do.
+    if a.bits == 0 {
+        return;
+    }
     // Bitmap window selalu seukuran kanvas (keduanya dibuat ulang bersama di `rescale`).
     let (pw, ph) = (g.pm.width() as usize, g.pm.height() as usize);
     if scale::canvas(a.scale) != (pw as i32, ph as i32) {

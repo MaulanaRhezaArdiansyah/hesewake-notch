@@ -2,6 +2,53 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.13.0] - 2026-11-02
+
+### Added
+- **Kotak teks, kartu hero, dan nada baris** di panel extension: halaman `detail` bisa memuat `input` (satu baris yang bisa diedit pengguna, maksimal 40 karakter, dikirim balik sebagai pesan `input` saat Enter atau tombol Save), halaman `slide` bisa memuat `hero` (kartu di atas dengan gambar kecil PNG atau JPEG, judul, dan dua baris teks), dan baris bisa memuat `tone` (`good`, `warn`, `muted`) yang mewarnai teks status.
+- **Remove** di Settings > Extensions: menghentikan extension, mematikannya, dan menghapus folder manifest-nya (dua kali tekan; hanya folder biasa tepat di dalam folder extensions, tidak pernah tautan ke tempat lain). Tersedia juga untuk manifest yang tidak terbaca.
+- **Extension tidak bisa memunculkan program lain**: setiap extension berjalan dalam Windows Job Object sendiri dengan batas satu proses, dibuat suspended dan dimasukkan ke job sebelum menjalankan satu instruksi pun. Ia juga berhenti bersama notch. Manifest bisa meminta `"processes": "allow"` bila memang butuh program pembantu. Bagian **Security** baru di `docs/extensions.md` menjelaskan dengan jujur apa yang dilindungi dan apa yang tidak.
+- **Pengaturan extension di dalam jendela Settings**: manifest bisa berisi `"settings": "panel"`. Tombol **Settings** di Settings > Extensions lalu membuka halaman yang dikirim extension (`slide` dan `detail`, lengkap dengan aksi, tab, stepper, dan tombol) di dalam jendela Settings itu sendiri, dengan gaya yang sama, tanpa jendela tambahan. Extension tanpa slide memakai panel ini untuk semua yang perlu ditampilkannya. Halaman detail juga bisa memuat `matrix`, gambar hitam-putih kecil seperti **kode QR** (maksimal 100 x 100), yang digambar notch sebagai kotak di atas latar putih; extension membuat sendiri kodenya. Tanpa `settings` atau dengan `"window"`, perilakunya tetap: extension diminta membuka jendelanya sendiri.
+- **Extensions**: program kecil yang berjalan di samping notch dan menambah satu slide, toast, titik penanda, dan baris status. Extension berbicara lewat **named pipe** yang hanya bisa dibuka oleh pengguna Windows yang sama (DACL ketat, klien dari jaringan ditolak), dan program yang menyambung harus sama dengan `exe` di manifest yang diaktifkan pengguna. Isi dari extension dianggap tidak tepercaya: hanya teks, semua panjang dan jumlah dibatasi, tautan hanya `http/https`, buka tautan dan salin ke clipboard hanya sebagai akibat klik pengguna. Notch menggambar semuanya (daftar dengan tab dan penanda, halaman detail, halaman bersekat dengan stepper tanggal, keadaan loading/kosong/galat/belum diatur). Dikelola di **Settings > Extensions** (daftar, status, sakelar, sakelar Toasts, Settings, Restart, Open folder, Rescan). Notch menjalankan extension yang aktif sendiri, memulainya lagi dengan jeda 5 dtk / 15 dtk / 60 dtk / 5 menit bila berhenti sendiri, dan menghentikannya saat dimatikan. Protokol: [`docs/extensions.md`](docs/extensions.md); contoh kerja: `examples/hello-extension`.
+
+### Changed
+- **Hitung mundur sholat di kanan jam**: bila ada data cuaca dan timer tidak berjalan, notch idle kini `[suhu atau ikon] [jam] [Isya 8m]`. Suhu dan ikon tetap bergantian di kiri, tidak lagi tertutup hitung mundur. Bila timer berjalan, pil timer memakai tempat kanan itu dan hitung mundur kembali bergantian di kiri; tanpa data cuaca, hitung mundur tetap di kiri.
+
+### Fixed
+- **Lirik untuk judul dua nama**: judul yang ditulis pemutar sebagai "A - B" (mis. "ハッピーエンド - Happy End") tidak ditemukan di LRCLIB atau lrc.red karena dicari utuh. Bila pencarian utuh gagal, tiap bagian judul dicoba sendiri.
+
+## [0.12.0] - 2026-11-01
+
+Rilis ini berisi kontribusi dari @yourLogic01 (PR #51), @gewall (PR #47), dan @MaulanaRhezaArdiansyah (PR #45, #50).
+
+### Added
+- **Pengaturan di jendela sendiri** (PR #51, menutup #34): **Settings** dari menu klik kanan atau tray kini membuka jendela mengambang dengan sidebar kategori (General, Appearance, Slides, Screens, Music & lyrics, Notifications, HUD & alerts, Weather & prayer, Calendar, About), bukan lagi slide di dalam notch. Baris selebar penuh sehingga label dan deskripsi tidak terpotong, dengan kontrol yang sesuai untuk tiap pengaturan: sakelar, pilihan bersegmen, contoh warna (aksen), stepper, dan tombol. Halaman **Slides** menampilkan semua slide dengan ikon, deskripsi, tombol `Ctrl+Alt+N`-nya, geser naik/turun, dan sakelar (slide terakhir yang aktif tidak bisa dimatikan). Halaman **About** punya baris **Updates** (cek pembaruan, atau Install/Download bila ada rilis baru). Setiap perubahan langsung berlaku di notch dan disimpan ke `settings.txt` seperti sebelumnya; format berkas tidak berubah. Slide Settings di dalam notch dihapus.
+- **Wibu mode** (PR #47, menutup #46, mati secara default): di Settings > Appearance, gambar JPG, PNG, atau WebP pilihan pengguna tampil di belakang notch yang terbuka, digelapkan (**Image dim** 50 sampai 80%) agar teks tetap terbaca. Berkasnya tetap di tempatnya (hanya path yang disimpan), gambar didekode di thread terpisah sehingga wallpaper 4K tidak membuat UI macet, dan berkas yang hilang atau rusak membuat notch tetap hitam dengan keterangan di barisnya. Notch kecil dan toast tetap hitam.
+
+### Changed
+- **Water ikut warna aksen** (PR #50, menutup #41): slide Water, toast "Time to Drink", tombol Drink, ring, bar riwayat, dan glow kini memakai aksen yang dipilih, bukan biru sendiri. Dengan aksen Blue (bawaan) tampilannya nyaris sama seperti sebelumnya. Tetes air tetap terbaca sebagai air (kilau putih di sisi kiri), dan ring **tercapai** tetap hijau.
+- **Ikon cuaca di jam idle lebih hemat CPU** (PR #45): ikon cuaca yang bergerak (hujan, gerimis, badai, salju, matahari terik) kini digambar 20 fps (sebelumnya 60 fps), dan diam bila tidak ada input selama 5 menit, seperti mata idle. Perpindahan antara suhu dan ikon tetap mulus. Pada pengukuran kontributor, CPU turun sekitar 37% dan jumlah frame sekitar 53% di fase jam saat hujan.
+- **Kredit di About** kini ada di halaman About jendela Settings dan memakai teks yang sama dengan menu klik kanan: Poch (MIT), LRCLIB, lrc.red, Lindera, WanaKana, dan Instrument Sans. Ikon aplikasi asli dipakai di sidebar dan About.
+- Pemilih berkas dipakai bersama oleh adhan dan Wibu (`filepick.rs`).
+
+### Removed
+- Slide **Settings** di dalam notch (digantikan jendela Settings).
+
+## [0.11.1] - 2026-10-30
+
+### Added
+- **Sematkan mode lirik**: di mode lirik (ikon balon di slide Music) ada tombol pin di pojok kanan atas panel kiri. Saat disematkan (pin biru), notch **tetap terbuka** walau pointer pergi, jadi lirik terus terlihat. Klik pin lagi untuk melepas. Penyematan hanya berlaku selama mode lirik menyala, dan keluar dari mode lirik otomatis melepasnya. Di atas aplikasi layar penuh (mis. video), notch tetap menyusut seperti biasa.
+
+- **Notch menyingkir dari kursor** (tanpa pengaturan, selalu aktif): di atas jendela **maksimal atau layar penuh**, begitu kursor mendekati notch, notch **otomatis menciut jadi garis tipis dan tidak membuka slide**, sehingga tab dan tombol jendela di bawahnya (misalnya tab terminal atau browser) bisa dijangkau. **Mengarahkan kursor tepat ke garis tipis itu (di tepi atas layar) membuka slide**, dan slide tetap terbuka selama kursor berada di dalamnya. Setelah kursor pergi, notch kembali seperti biasa. Hal yang sama berlaku bila notch sudah tipis karena jendela sibuk (layar penuh, aplikasi Adobe, atau jendela maksimal dengan "Thin on maximize" nyala). Di jendela biasa, hover tetap membuka slide. Notch tetap bisa dibuka lewat hotkey (`Ctrl+Alt+H`, `Ctrl+Alt+1..`), dan peek karena notifikasi atau lirik yang disematkan tidak terganggu.
+
+### Fixed
+- **Notch bisa lenyap dari layar padahal masih berjalan**: jendela notch tetap berstatus *topmost* tetapi urutannya (z-order) bisa turun di bawah jendela biasa, sehingga tertutup sementara isinya masih digambar. Pemeriksaan tiap detik kini juga memeriksa urutan itu, dan memulihkan notch ke paling atas bila tertutup.
+
+### Changed
+- **Slide Music tanpa blok jam, hari, dan tanggal** di sisi kanan: teks lagu, progres, dan kontrol kini memakai seluruh lebar slide. Sebagai gantinya ada **jam kecil** (HH:MM) di pojok kanan atas, di baris yang sama dengan "Now Playing"; baris itu dipakai penuh oleh lirik bila ada baris lirik sinkron yang tampil. Jam di notch kecil saat idle tidak berubah.
+
 ## [0.11.0] - 2026-10-30
 
 Rilis ini berisi kontribusi dari @MaulanaRhezaArdiansyah (PR #37, #38, #39, #40).

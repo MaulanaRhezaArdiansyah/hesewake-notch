@@ -8,7 +8,7 @@ use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFre
 use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, SIGDN_FILESYSPATH};
 
 /// Message to the window: the folder dialog closed with a folder (`take_picked`).
-pub(crate) const WM_CLAUDE_FOLDER: u32 = WM_APP + 18;
+pub(crate) const WM_CLAUDE_FOLDER: u32 = WM_APP + 21;
 
 /// Recent project folders kept for New session.
 pub(crate) const RECENT_MAX: usize = 8;
@@ -365,7 +365,7 @@ impl App {
         if list.is_empty() {
             let (x, y) = row_pos(0);
             g.txtb(tr("No Claude Code sessions"), x + ox, y + 18.0, 13.0, TEXT_DIM, al, LIST.2);
-            let hint = if self.claude_link == claude_setup::Link::On { tr("Start one with New session") } else { tr("Connect in Settings > Alerts") };
+            let hint = if self.claude_link == claude_setup::Link::On { tr("Start one with New session") } else { tr("Connect in Settings > HUD & alerts") };
             g.txt(hint, x + ox, y + 38.0, 11.0, TEXT_FAINT, al, LIST.2);
             return;
         }
