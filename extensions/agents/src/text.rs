@@ -9,8 +9,11 @@ pub struct Lang(pub bool);
 
 impl Lang {
     pub fn t(self, s: &'static str) -> &'static str {
-        let _ = s;
-        todo!()
+        match (self.0, indonesian(s)) {
+            (true, Some(id)) => id,
+            (true, None) if cfg!(test) => panic!("no Indonesian for {s:?}"),
+            _ => s,
+        }
     }
 }
 
@@ -27,32 +30,50 @@ fn indonesian(s: &str) -> Option<&'static str> {
 
 /// `s` with each `{}` replaced by the next of `args`.
 pub fn fill(s: &str, args: &[&dyn Display]) -> String {
-    let _ = (s, args);
-    todo!()
+    let mut out = String::new();
+    for (i, part) in s.split("{}").enumerate() {
+        if i > 0 {
+            if let Some(a) = args.get(i - 1) {
+                out.push_str(&a.to_string());
+            }
+        }
+        out.push_str(part);
+    }
+    out
 }
 
 /// At most `max` characters of `s`, ending in `…` when cut.
 pub fn clip(s: &str, max: usize) -> String {
-    let _ = (s, max);
-    todo!()
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 /// How long something took: `45s`, `4m 12s`, `1h 5m` (the same in both languages).
 pub fn duration_text(secs: u64) -> String {
-    let _ = secs;
-    todo!()
+    match secs {
+        0..=59 => format!("{secs}s"),
+        60..=3599 => format!("{}m {}s", secs / 60, secs % 60),
+        _ => format!("{}h {}m", secs / 3600, secs % 3600 / 60),
+    }
 }
 
 /// How long ago: `just now`, `4m ago`, `2h ago`, `3d ago`.
 pub fn ago_text(l: Lang, secs: u64) -> String {
-    let _ = (l, secs);
-    todo!()
+    match secs {
+        0..=59 => l.t("just now").to_string(),
+        60..=3599 => fill(l.t("{}m ago"), &[&(secs / 60)]),
+        3600..=86_399 => fill(l.t("{}h ago"), &[&(secs / 3600)]),
+        _ => fill(l.t("{}d ago"), &[&(secs / 86_400)]),
+    }
 }
 
 /// The last part of a path: `C:\code\hesewake-notch\` → `hesewake-notch`.
 pub fn folder_name(path: &str) -> &str {
-    let _ = path;
-    todo!()
+    path.trim_end_matches(['\\', '/']).rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
 #[cfg(test)]

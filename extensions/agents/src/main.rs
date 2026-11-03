@@ -5,6 +5,8 @@
 // the modules are wired into `main` one by one; until then most of them are unused
 #![allow(dead_code)]
 
+mod claude_hook;
+mod event;
 mod text;
 
 fn main() {}
