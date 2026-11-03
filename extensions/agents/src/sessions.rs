@@ -600,10 +600,22 @@ pub(crate) mod tests {
 
     #[test]
     fn remote_git_folders_are_never_read() {
-        for remote in [r"\\host\share\repo", "//host/share/repo", r"\\?\UNC\host\share", r"\\.\pipe\x", r"\\?\C:\repo"] {
+        // a rooted path without a drive is refused too: Windows reads `\??\UNC\...` as a share
+        for remote in [
+            r"\\host\share\repo",
+            "//host/share/repo",
+            r"\/host/share/repo",
+            r"/\host\share\repo",
+            r"\\?\UNC\host\share",
+            r"\??\UNC\host\share\repo",
+            "/??/UNC/host/share",
+            r"\\.\pipe\x",
+            r"\\?\C:\repo",
+            r"\code\repo",
+        ] {
             assert!(!is_local(Path::new(remote)), "{remote}");
         }
-        for local in [r"C:\code\repo", "C:/code/repo", r"..\.git\worktrees\x", r"\code\repo", ""] {
+        for local in [r"C:\code\repo", "C:/code/repo", r"..\.git\worktrees\x", r".\x", "repo", ""] {
             assert!(is_local(Path::new(local)), "{local}");
         }
     }

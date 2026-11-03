@@ -65,6 +65,16 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "Options" => "Opsi",
         "Toast when a session needs you" => "Toast saat sesi perlu kamu",
         "Toast when a session finishes" => "Toast saat sesi selesai",
+        "{} needs you" => "{} perlu kamu",
+        "{} · Permission" => "{} · Izin",
+        "Done · {}" => "Selesai · {}",
+        "Stopped with an error" => "Berhenti karena galat",
+        "{} sessions need you" => "{} sesi perlu kamu",
+        "{} sessions finished" => "{} sesi selesai",
+        "Claude connected · {} sessions · {} need you" => "Claude tersambung · {} sesi · {} perlu kamu",
+        "Claude connected · {} sessions" => "Claude tersambung · {} sesi",
+        "Claude settings unreadable" => "Pengaturan Claude tak terbaca",
+        "Claude not connected" => "Claude belum tersambung",
         _ => return None,
     })
 }
@@ -154,7 +164,7 @@ mod tests {
     }
 
     /// The source files whose translated texts must have Indonesian.
-    const SOURCES: [&str; 2] = [include_str!("text.rs"), include_str!("ui.rs")];
+    const SOURCES: [&str; 3] = [include_str!("text.rs"), include_str!("ui.rs"), include_str!("toasts.rs")];
 
     #[test]
     fn every_text_has_indonesian() {

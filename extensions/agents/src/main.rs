@@ -9,6 +9,7 @@ mod claude_hook;
 mod cfg;
 mod claude_setup;
 mod event;
+mod pipe;
 mod procs;
 mod relay;
 mod sessions;

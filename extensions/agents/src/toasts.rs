@@ -3,8 +3,11 @@
 
 use crate::cfg::Config;
 use crate::sessions::Show;
-use crate::text::Lang;
-use serde_json::Value;
+use crate::text::{clip, duration_text, fill, Lang};
+use serde_json::{json, Value};
+
+/// Toasts waiting at most; the oldest go first.
+const MAX_WAITING: usize = 64;
 
 /// The notch shows at most one toast per extension this often.
 pub const GAP_MS: u64 = 5000;
@@ -21,8 +24,39 @@ pub struct Toast {
 
 /// The toast for `show`, or none when its toggle is off.
 pub fn toast_for(show: &Show, cfg: &Config, l: Lang) -> Option<Toast> {
-    let _ = (show, cfg, l);
-    todo!()
+    let (title, sub, needs, project) = match show {
+        Show::NeedsYou { project, agent, tool, text, .. } => {
+            if !cfg.toast_needs {
+                return None;
+            }
+            let agent = agent.label();
+            let sub = if cfg.privacy || text.is_empty() {
+                fill(l.t("{} · Permission"), &[&agent])
+            } else if tool.is_empty() {
+                format!("{agent} · {text}")
+            } else {
+                format!("{agent} · {tool}: {text}")
+            };
+            (fill(l.t("{} needs you"), &[project]), sub, true, project)
+        }
+        Show::Done { project, agent, secs, .. } => {
+            if !cfg.toast_done {
+                return None;
+            }
+            let sub = match secs {
+                Some(s) => format!("{} · {}", agent.label(), duration_text(*s)),
+                None => agent.label().to_string(),
+            };
+            (fill(l.t("Done · {}"), &[project]), sub, false, project)
+        }
+        Show::Error { project, agent, .. } => {
+            if !cfg.toast_done {
+                return None;
+            }
+            (l.t("Stopped with an error").to_string(), format!("{project} · {}", agent.label()), false, project)
+        }
+    };
+    Some(Toast { title: clip(&title, 80), sub: clip(&sub, 60), needs, project: project.clone() })
 }
 
 #[derive(Default)]
@@ -33,14 +67,30 @@ pub struct Queue {
 
 impl Queue {
     pub fn push(&mut self, t: Toast) {
-        let _ = t;
-        todo!()
+        self.waiting.push(t);
+        if self.waiting.len() > MAX_WAITING {
+            self.waiting.remove(0);
+        }
     }
 
     /// The `toast` message to send now, if one is waiting and the last was at least 5 s ago.
     pub fn next(&mut self, now_ms: u64, l: Lang) -> Option<Value> {
-        let _ = (now_ms, l, &self.waiting, self.last_ms);
-        todo!()
+        if self.waiting.is_empty() || self.last_ms.is_some_and(|t| now_ms < t.saturating_add(GAP_MS)) {
+            return None;
+        }
+        // needs-you first; everything waiting of that kind goes out as one toast
+        let needs = self.waiting.iter().any(|t| t.needs);
+        let (group, rest): (Vec<Toast>, Vec<Toast>) = std::mem::take(&mut self.waiting).into_iter().partition(|t| t.needs == needs);
+        self.waiting = rest;
+        self.last_ms = Some(now_ms);
+        let n = group.len();
+        let (title, sub) = if n == 1 {
+            (group[0].title.clone(), group[0].sub.clone())
+        } else {
+            let title = if needs { fill(l.t("{} sessions need you"), &[&n]) } else { fill(l.t("{} sessions finished"), &[&n]) };
+            (title, group.iter().map(|t| t.project.as_str()).collect::<Vec<_>>().join(", "))
+        };
+        Some(json!({"t": "toast", "title": clip(&title, 80), "sub": clip(&sub, 60), "count": n}))
     }
 }
 

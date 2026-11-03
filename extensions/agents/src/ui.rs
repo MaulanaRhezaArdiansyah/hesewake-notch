@@ -4,7 +4,8 @@
 use crate::cfg::Config;
 use crate::claude_setup::Link;
 use crate::event::Msg;
-use crate::sessions::{Session, Sessions, State};
+use crate::sessions::{Session, Sessions, Show, State};
+use crate::toasts::{toast_for, Queue};
 use crate::text::{ago_text, clip, duration_text, fill, Lang};
 use serde_json::{json, Value};
 
@@ -40,16 +41,23 @@ pub struct Ui {
     rev: u64,
     view: View,
     next_page: u64,
+    toasts: Queue,
+    /// The "something new" dot is on.
+    badge: bool,
+    status: String,
+    /// Another copy of the extension already receives the hooks.
+    pub other_copy: bool,
 }
 
 impl Ui {
     pub fn new(cfg: Config, link: Link, id_lang: bool) -> Ui {
-        Ui { cfg, link, l: Lang(id_lang), sessions: Sessions::default(), now: 0, fg: 0, visible: false, rev: 0, view: View::Home, next_page: 0 }
+        Ui { cfg, link, l: Lang(id_lang), sessions: Sessions::default(), now: 0, fg: 0, visible: false, rev: 0, view: View::Home, next_page: 0, toasts: Queue::default(), badge: false, status: String::new(), other_copy: false }
     }
 
     pub fn start(&mut self) -> Vec<Out> {
         let mut out = Vec::new();
         self.page_to(&mut out);
+        self.after(&mut out);
         out
     }
 
@@ -60,7 +68,10 @@ impl Ui {
         match m["t"].as_str().unwrap_or("") {
             "visible" => {
                 self.visible = m["on"] == true;
-                if !self.visible {
+                if self.visible {
+                    // the notch clears the dot when the slide is opened
+                    self.badge = false;
+                } else {
                     self.view = View::Home;
                 }
                 self.page_to(&mut out);
@@ -135,15 +146,25 @@ impl Ui {
             }
             _ => {}
         }
+        self.after(&mut out);
         out
     }
 
     /// A hook event from an agent.
     pub fn on_event(&mut self, m: &Msg) -> Vec<Out> {
         let mut out = Vec::new();
-        let _shown = self.sessions.apply(m, self.now, self.fg);
+        if let Some(show) = self.sessions.apply(m, self.now, self.fg) {
+            if let Some(t) = toast_for(&show, &self.cfg, self.l) {
+                self.toasts.push(t);
+            }
+            if matches!(show, Show::NeedsYou { .. }) && !self.visible && !self.badge {
+                self.badge = true;
+                out.push(Out::Send(json!({"t": "badge", "on": true})));
+            }
+        }
         out.push(Out::SaveSessions);
         self.page_to(&mut out);
+        self.after(&mut out);
         out
     }
 
@@ -152,6 +173,7 @@ impl Ui {
         let mut out = Vec::new();
         self.link = link;
         self.page_to(&mut out);
+        self.after(&mut out);
         out
     }
 
@@ -165,7 +187,37 @@ impl Ui {
         } else if self.visible && self.now >= self.next_page {
             self.page_to(&mut out);
         }
+        if let Some(t) = self.toasts.next(now_ms, self.l) {
+            out.push(Out::Send(t));
+        }
+        self.after(&mut out);
         out
+    }
+
+    /// After every input: the dot goes off once nothing needs the person, and the status follows the sessions.
+    fn after(&mut self, out: &mut Vec<Out>) {
+        if self.badge && self.sessions.needing_count() == 0 {
+            self.badge = false;
+            out.push(Out::Send(json!({"t": "badge", "on": false})));
+        }
+        let s = self.status_text();
+        if s != self.status {
+            out.push(Out::Send(json!({"t": "status", "text": s})));
+            self.status = s;
+        }
+    }
+
+    /// The line next to the extension in Settings > Extensions.
+    fn status_text(&self) -> String {
+        let l = self.l;
+        let (n, k) = (self.sessions.list().len(), self.sessions.needing_count());
+        let s = match self.link {
+            Link::On if k > 0 => fill(l.t("Claude connected · {} sessions · {} need you"), &[&n, &k]),
+            Link::On => fill(l.t("Claude connected · {} sessions"), &[&n]),
+            Link::Invalid => l.t("Claude settings unreadable").to_string(),
+            Link::Off | Link::Old | Link::Moved => l.t("Claude not connected").to_string(),
+        };
+        clip(&s, 60)
     }
 
     fn page_to(&mut self, out: &mut Vec<Out>) {
@@ -673,6 +725,13 @@ mod tests {
         quiet.cfg.toast_needs = false;
         quiet.on_event(&m);
         assert!(!sent(&quiet.tick(NOW * 1000, |_| true, |_| true)).iter().any(|v| v["t"] == "toast"));
+    }
+
+    #[test]
+    fn a_second_copy_says_so_in_the_status() {
+        let mut u = ui_with(Link::On, vec![]);
+        u.other_copy = true;
+        assert!(sent(&u.start()).iter().any(|v| v["t"] == "status" && v["text"] == "Another copy is running"));
     }
 
     #[test]
