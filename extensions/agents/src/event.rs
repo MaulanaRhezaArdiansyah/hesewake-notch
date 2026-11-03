@@ -68,26 +68,64 @@ pub const MAX_MSG: usize = 16 * 1024;
 const PREVIEW_CHARS: usize = 200;
 
 pub fn encode(m: &Msg) -> Vec<u8> {
-    let _ = m;
-    todo!()
+    serde_json::to_vec(m).unwrap_or_default()
 }
 
 pub fn decode(b: &[u8]) -> Option<Msg> {
-    let _ = b;
-    todo!()
+    if b.len() > MAX_MSG {
+        return None;
+    }
+    serde_json::from_slice::<Msg>(b).ok().filter(|m| m.v == VERSION)
 }
 
 /// One short line from a notification or a Markdown message: the first line with any letters or digits, without
 /// Markdown markers, whitespace collapsed, at most `PREVIEW_CHARS` characters.
 pub fn preview(s: &str) -> String {
-    let _ = (s, PREVIEW_CHARS);
-    todo!()
+    s.lines().map(clean_line).find(|l| l.chars().any(char::is_alphanumeric)).unwrap_or_default()
+}
+
+fn clean_line(line: &str) -> String {
+    let mut l = line.trim_start();
+    l = l.trim_start_matches('#').trim_start_matches('>').trim_start();
+    for bullet in ["- ", "* ", "+ "] {
+        if let Some(rest) = l.strip_prefix(bullet) {
+            l = rest;
+        }
+    }
+    let chars: Vec<char> = l.chars().take(PREVIEW_CHARS * 4).collect();
+    let mut out = String::new();
+    let mut n = 0;
+    let mut space = false;
+    for (i, &c) in chars.iter().enumerate() {
+        // `_` is emphasis only at a word edge; inside a word (snake_case) it stays.
+        let edge = |j: Option<usize>| j.and_then(|j| chars.get(j)).map_or(true, |c| !c.is_alphanumeric());
+        if c == '*' || c == '`' || (c == '_' && (edge(i.checked_sub(1)) || edge(Some(i + 1)))) {
+            continue;
+        }
+        if c.is_whitespace() {
+            space = !out.is_empty();
+            continue;
+        }
+        if n >= PREVIEW_CHARS {
+            break;
+        }
+        if space {
+            if n + 1 >= PREVIEW_CHARS {
+                break;
+            }
+            out.push(' ');
+            n += 1;
+            space = false;
+        }
+        out.push(c);
+        n += 1;
+    }
+    out
 }
 
 /// The project's name: the last part of the session's folder (empty when there is none).
 pub fn project_name(cwd: &str) -> String {
-    let _ = cwd;
-    todo!()
+    crate::text::folder_name(cwd).to_string()
 }
 
 #[cfg(test)]

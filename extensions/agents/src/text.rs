@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(folder_name(""), "");
     }
 
-    /// The source files whose `.t("…")` texts must have Indonesian.
+    /// The source files whose translated texts must have Indonesian.
     const SOURCES: [&str; 1] = [include_str!("text.rs")];
 
     #[test]

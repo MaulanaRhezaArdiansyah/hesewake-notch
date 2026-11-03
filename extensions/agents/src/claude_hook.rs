@@ -1,7 +1,9 @@
 //! Claude Code's hooks: Claude Code runs `hesewake-agents.exe --hook claude` with a JSON object on stdin; this module
 //! turns it into an `event::Msg`.
 
-use crate::event::{Msg, EventKind};
+use crate::event::{preview, project_name, Agent, EventKind, Msg, VERSION};
+use crate::text::clip;
+use serde_json::Value;
 use std::io::Read;
 
 /// Most stdin read from one hook call. Claude's last message can be long and must not cut the JSON short.
@@ -9,23 +11,54 @@ const MAX_STDIN: u64 = 16 * 1024 * 1024;
 /// Characters kept of a tool's name.
 const TOOL_CHARS: usize = 40;
 
+/// Notification types that mean "Claude is waiting for you". `idle_prompt` is not one of them: it fires after every
+/// finished turn nobody answered ("Done" covers that); it only tells that nothing runs any more (`EventKind::Idle`).
+const NEEDS_YOU: [&str; 4] = ["permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input"];
+
 /// The hook's stdin JSON as a `Msg`, or None when the notch has nothing to show for it.
 pub fn parse_hook(json: &str) -> Option<Msg> {
-    let _ = (json, TOOL_CHARS);
-    let _: Option<EventKind> = None;
-    todo!()
+    let v: Value = serde_json::from_str(json).ok()?;
+    let field = |k: &str| v.get(k).and_then(Value::as_str);
+    let session = field("session_id").filter(|s| !s.is_empty())?;
+    let (kind, text) = match field("hook_event_name")? {
+        "SessionStart" => (EventKind::SessionStart, String::new()),
+        "SessionEnd" => (EventKind::SessionEnd, String::new()),
+        "UserPromptSubmit" => (EventKind::Prompt, String::new()),
+        "PreToolUse" | "PostToolUse" => (EventKind::Tool, String::new()),
+        "Notification" if NEEDS_YOU.contains(&field("notification_type")?) => (EventKind::NeedsYou, preview(field("message").unwrap_or(""))),
+        "Notification" if field("notification_type") == Some("idle_prompt") => (EventKind::Idle, String::new()),
+        "Stop" => (EventKind::Stop, preview(field("last_assistant_message").unwrap_or(""))),
+        "StopFailure" => (EventKind::StopFailure, String::new()),
+        _ => return None,
+    };
+    let tool = if kind == EventKind::Tool { clip(field("tool_name").unwrap_or(""), TOOL_CHARS) } else { String::new() };
+    let cwd = field("cwd").unwrap_or("");
+    let project = project_name(cwd);
+    Some(Msg {
+        v: VERSION,
+        agent: Agent::Claude,
+        kind,
+        session: session.to_string(),
+        project: if project.is_empty() { "Claude Code".to_string() } else { project },
+        cwd: cwd.to_string(),
+        text,
+        tool,
+        hwnd: 0,
+        subagent: v.get("agent_id").is_some_and(|a| !a.is_null()),
+        pid: 0,
+    })
 }
 
 /// The hook JSON from `r` (at most `MAX_STDIN` bytes) as a `Msg`.
 pub fn read_hook(r: impl Read) -> Option<Msg> {
-    let _ = (r, MAX_STDIN);
-    todo!()
+    let mut buf = Vec::new();
+    r.take(MAX_STDIN).read_to_end(&mut buf).ok()?;
+    parse_hook(&String::from_utf8_lossy(&buf))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{Agent, VERSION};
 
     fn hook(event: &str, extra: &str) -> String {
         format!(r#"{{"session_id":"s1","cwd":"C:\\p\\app","hook_event_name":"{event}"{extra}}}"#)

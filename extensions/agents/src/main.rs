@@ -7,6 +7,8 @@
 
 mod claude_hook;
 mod event;
+mod procs;
+mod relay;
 mod text;
 
 fn main() {}
