@@ -47,7 +47,7 @@ pub struct Ui {
     status: String,
     /// Another copy of the extension already receives the hooks.
     pub other_copy: bool,
-    /// The sessions changed since the last page; the next tick sends it if the slide is open.
+    /// The sessions changed since the last page; the next tick sends it.
     page_dirty: bool,
 }
 
@@ -189,8 +189,9 @@ impl Ui {
             out.push(Out::SaveSessions);
             self.page_dirty = true;
         }
-        // a hidden slide gets its page when it opens
-        if self.visible && (self.page_dirty || self.now >= self.next_page) {
+        // The notch says `visible` only for the Settings panel, not for the slide, so the page goes out whether anyone
+        // looks or not: at most once a second after a change, and every 30 s so the times move on.
+        if self.page_dirty || self.now >= self.next_page {
             self.page_to(&mut out);
         }
         if let Some(t) = self.toasts.next(now_ms, self.l) {
