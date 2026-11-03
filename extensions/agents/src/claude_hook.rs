@@ -35,7 +35,7 @@ pub fn parse_hook(json: &str) -> Option<Msg> {
     let cwd = field("cwd").unwrap_or("");
     let project = project_name(cwd);
     Some(Msg {
-        at_ms: 0,
+        at_ms: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
         v: VERSION,
         agent: Agent::Claude,
         kind,

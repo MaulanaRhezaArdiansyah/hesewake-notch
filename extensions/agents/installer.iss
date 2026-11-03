@@ -58,20 +58,16 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#AppExe} /F', '', SW_HIDE, ewWaitUntilTerminated, R);
 end;
 
-function InitializeSetup(): Boolean;
-begin
-  StopExtension();
-  Result := True;
-end;
-
-function InitializeUninstall(): Boolean;
+// After "Are you sure?" and before any file goes: the manifest first, so the notch can't start the exe again, then
+// the running copy, then our hooks out of Claude Code's settings while the exe is still there (everything else in
+// that file stays).
+procedure CleanUpBeforeUninstall();
 var
   R: Integer;
 begin
+  DeleteFile(ExpandConstant('{#ExtDir}\extension.json'));
   StopExtension();
-  // take our hooks out of Claude Code's settings while the exe is still there; everything else in the file stays
   Exec(ExpandConstant('{app}\{#AppExe}'), '--disconnect-all', '', SW_HIDE, ewWaitUntilTerminated, R);
-  Result := True;
 end;
 
 // The manifest the notch reads (docs/extensions.md); JSON wants every \ in the path doubled.
@@ -100,12 +96,17 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  // stopped right before the files are copied, not at the first page: the notch restarts it within seconds
+  if CurStep = ssInstall then
+    StopExtension();
   if CurStep = ssPostInstall then
     WriteManifest();
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    CleanUpBeforeUninstall();
   // the data stays unless asked: a reinstall then shows the same sessions and options
   if CurUninstallStep = usPostUninstall then
     if not UninstallSilent then

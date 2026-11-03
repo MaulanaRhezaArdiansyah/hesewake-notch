@@ -47,11 +47,13 @@ pub struct Ui {
     status: String,
     /// Another copy of the extension already receives the hooks.
     pub other_copy: bool,
+    /// The sessions changed since the last page; the next tick sends it if the slide is open.
+    page_dirty: bool,
 }
 
 impl Ui {
     pub fn new(cfg: Config, link: Link, id_lang: bool) -> Ui {
-        Ui { cfg, link, l: Lang(id_lang), sessions: Sessions::default(), now: 0, fg: 0, visible: false, rev: 0, view: View::Home, next_page: 0, toasts: Queue::default(), badge: false, status: String::new(), other_copy: false }
+        Ui { cfg, link, l: Lang(id_lang), sessions: Sessions::default(), now: 0, fg: 0, visible: false, rev: 0, view: View::Home, next_page: 0, toasts: Queue::default(), badge: false, status: String::new(), other_copy: false, page_dirty: false }
     }
 
     pub fn start(&mut self) -> Vec<Out> {
@@ -163,8 +165,10 @@ impl Ui {
             }
         }
         out.push(Out::SaveSessions);
-        self.page_to(&mut out);
-        self.after(&mut out);
+        // The notch drops anything over 10 messages a second, and one tool call is two events: the page and the
+        // status wait for the tick.
+        self.page_dirty = true;
+        self.badge_off(&mut out);
         out
     }
 
@@ -183,8 +187,10 @@ impl Ui {
         self.now = now_ms / 1000;
         if self.sessions.tick(self.now, self.fg, alive, running) {
             out.push(Out::SaveSessions);
-            self.page_to(&mut out);
-        } else if self.visible && self.now >= self.next_page {
+            self.page_dirty = true;
+        }
+        // a hidden slide gets its page when it opens
+        if self.visible && (self.page_dirty || self.now >= self.next_page) {
             self.page_to(&mut out);
         }
         if let Some(t) = self.toasts.next(now_ms, self.l) {
@@ -196,14 +202,19 @@ impl Ui {
 
     /// After every input: the dot goes off once nothing needs the person, and the status follows the sessions.
     fn after(&mut self, out: &mut Vec<Out>) {
-        if self.badge && self.sessions.needing_count() == 0 {
-            self.badge = false;
-            out.push(Out::Send(json!({"t": "badge", "on": false})));
-        }
+        self.badge_off(out);
         let s = self.status_text();
         if s != self.status {
             out.push(Out::Send(json!({"t": "status", "text": s})));
             self.status = s;
+        }
+    }
+
+    /// The dot goes off once nothing needs the person.
+    fn badge_off(&mut self, out: &mut Vec<Out>) {
+        if self.badge && self.sessions.needing_count() == 0 {
+            self.badge = false;
+            out.push(Out::Send(json!({"t": "badge", "on": false})));
         }
     }
 
@@ -222,6 +233,7 @@ impl Ui {
     }
 
     fn page_to(&mut self, out: &mut Vec<Out>) {
+        self.page_dirty = false;
         let p = self.page();
         out.push(Out::Send(p));
     }

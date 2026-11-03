@@ -76,7 +76,13 @@ impl Sessions {
             None if m.subagent && m.kind != EventKind::NeedsYou => return None,
             None => {
                 if self.list.len() >= MAX_SESSIONS {
-                    if let Some(old) = self.list.iter().enumerate().min_by_key(|(_, s)| s.last).map(|(i, _)| i) {
+                    // finished sessions go first, then working ones; one waiting for the person only when all are
+                    let rank = |s: &Session| match s.state {
+                        State::Done | State::Error | State::Idle => 0,
+                        State::Working | State::Answered => 1,
+                        State::NeedsYou => 2,
+                    };
+                    if let Some(old) = self.list.iter().enumerate().min_by_key(|(_, s)| (rank(s), s.last)).map(|(i, _)| i) {
                         self.list.remove(old);
                     }
                 }
@@ -142,6 +148,10 @@ impl Sessions {
                 None
             }
             EventKind::Tool => {
+                // sent before the prompt but delivered after it (each hook is its own process)
+                if s.state == State::NeedsYou && m.at_ms != 0 && m.at_ms < s.needs_at {
+                    return None;
+                }
                 // a tool after the turn ended: a new turn started without a prompt (e.g. a background task)
                 if matches!(s.state, State::Done | State::Error | State::Idle) {
                     s.turn_started = Some(now);
@@ -154,6 +164,7 @@ impl Sessions {
             }
             EventKind::NeedsYou => {
                 set(s, State::NeedsYou);
+                s.needs_at = m.at_ms;
                 s.text = m.text.clone();
                 Some(Show::NeedsYou { session: s.id.clone(), project: s.project.clone(), agent: s.agent, tool: s.tool.clone(), text: s.text.clone() })
             }

@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 /// Toasts waiting at most; the oldest go first.
 const MAX_WAITING: usize = 64;
 
-/// The notch shows at most one toast per extension this often.
-pub const GAP_MS: u64 = 5000;
+/// The notch shows at most one toast per extension every 5 s; the margin covers the two processes' timing.
+pub const GAP_MS: u64 = 5200;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Toast {
@@ -75,7 +75,8 @@ impl Queue {
 
     /// The `toast` message to send now, if one is waiting and the last was at least 5 s ago.
     pub fn next(&mut self, now_ms: u64, l: Lang) -> Option<Value> {
-        if self.waiting.is_empty() || self.last_ms.is_some_and(|t| now_ms < t.saturating_add(GAP_MS)) {
+        // a clock set back (now before the last toast) lets the next one go
+        if self.waiting.is_empty() || self.last_ms.is_some_and(|t| now_ms >= t && now_ms < t.saturating_add(GAP_MS)) {
             return None;
         }
         // needs-you first; everything waiting of that kind goes out as one toast
