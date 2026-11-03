@@ -63,6 +63,9 @@ pub struct Msg {
     /// messages can arrive out of order.
     #[serde(default)]
     pub at_ms: u64,
+    /// The name the person gave the session (`/rename`), empty when none or not looked up for this event.
+    #[serde(default)]
+    pub title: String,
 }
 
 pub const VERSION: u8 = 1;
@@ -136,6 +139,7 @@ pub fn project_name(cwd: &str) -> String {
 pub(crate) fn sample() -> Msg {
     Msg {
         at_ms: 0,
+        title: String::new(),
         v: VERSION,
         agent: Agent::Claude,
         kind: EventKind::Stop,

@@ -30,6 +30,9 @@ pub struct Session {
     /// When the person was asked (`Msg::at_ms` of the prompt); older tool events don\'t undo it.
     #[serde(default)]
     pub needs_at: u64,
+    /// The name the person gave the session (`/rename`), empty when none.
+    #[serde(default)]
+    pub title: String,
     pub agent: Agent,
     pub id: String,
     pub project: String,
@@ -53,9 +56,9 @@ pub struct Session {
 /// Something worth a toast.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Show {
-    NeedsYou { session: String, project: String, agent: Agent, tool: String, text: String },
-    Done { session: String, project: String, agent: Agent, secs: Option<u64> },
-    Error { session: String, project: String, agent: Agent },
+    NeedsYou { session: String, project: String, title: String, agent: Agent, tool: String, text: String },
+    Done { session: String, project: String, title: String, agent: Agent, secs: Option<u64> },
+    Error { session: String, project: String, title: String, agent: Agent },
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
@@ -88,6 +91,7 @@ impl Sessions {
                 }
                 self.list.push(Session {
                     needs_at: 0,
+                    title: String::new(),
                     agent: m.agent,
                     id: m.session.clone(),
                     project: m.project.clone(),
@@ -166,7 +170,7 @@ impl Sessions {
                 set(s, State::NeedsYou);
                 s.needs_at = m.at_ms;
                 s.text = m.text.clone();
-                Some(Show::NeedsYou { session: s.id.clone(), project: s.project.clone(), agent: s.agent, tool: s.tool.clone(), text: s.text.clone() })
+                Some(Show::NeedsYou { session: s.id.clone(), project: s.project.clone(), title: String::new(), agent: s.agent, tool: s.tool.clone(), text: s.text.clone() })
             }
             EventKind::Stop | EventKind::StopFailure => {
                 let secs = s.turn_started.take().map(|t| now.saturating_sub(t));
@@ -179,7 +183,7 @@ impl Sessions {
                 if fg != 0 && fg == hwnd && self.shares_window(hwnd) == 1 {
                     return None;
                 }
-                Some(if failed { Show::Error { session: id, project, agent } } else { Show::Done { session: id, project, agent, secs } })
+                Some(if failed { Show::Error { session: id, project, title: String::new(), agent } } else { Show::Done { session: id, project, title: String::new(), agent, secs } })
             }
         }
     }
@@ -329,6 +333,7 @@ pub(crate) mod tests {
     pub(crate) fn msg(kind: EventKind, session: &str, hwnd: isize) -> Msg {
         Msg {
             at_ms: 0,
+            title: String::new(),
             v: VERSION,
             agent: Agent::Claude,
             kind,
@@ -379,7 +384,7 @@ pub(crate) mod tests {
         let mut stop = msg(EventKind::Stop, "a", 7);
         stop.text = "PR is up".into();
         let shown = s.apply(&stop, T0 + 372, 0);
-        assert_eq!(shown, Some(Show::Done { session: "a".into(), project: "app".into(), agent: Agent::Claude, secs: Some(372) }));
+        assert_eq!(shown, Some(Show::Done { session: "a".into(), project: "app".into(), title: String::new(), agent: Agent::Claude, secs: Some(372) }));
         assert_eq!(state(&s, "a"), Some(State::Done));
         assert_eq!(s.get("a").unwrap().text, "PR is up");
         assert_eq!(s.get("a").unwrap().since, T0 + 372);
@@ -403,7 +408,7 @@ pub(crate) mod tests {
         n.text = "Claude needs your permission".into();
         assert_eq!(
             s.apply(&n, T0, 0),
-            Some(Show::NeedsYou { session: "a".into(), project: "app".into(), agent: Agent::Claude, tool: "Bash".into(), text: "Claude needs your permission".into() })
+            Some(Show::NeedsYou { session: "a".into(), project: "app".into(), title: String::new(), agent: Agent::Claude, tool: "Bash".into(), text: "Claude needs your permission".into() })
         );
         assert_eq!(s.needing_count(), 1);
         assert!(!s.tick(T0, 99, |_| true, |_| true), "another window in front changes nothing");
@@ -613,6 +618,24 @@ pub(crate) mod tests {
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.to_string_lossy())).unwrap();
         assert_eq!(branch_of(&wt.to_string_lossy()), Some("ext/agents".into()));
         assert_eq!(branch_of(""), None);
+    }
+
+    #[test]
+    fn a_renamed_session_keeps_its_name() {
+        let mut s = Sessions::default();
+        let mut m = msg(EventKind::Prompt, "a", 7);
+        m.title = "Payslip fix".into();
+        s.apply(&m, T0, 0);
+        assert_eq!(s.get("a").unwrap().title, "Payslip fix");
+        s.apply(&msg(EventKind::Tool, "a", 7), T0 + 1, 0);
+        assert_eq!(s.get("a").unwrap().title, "Payslip fix", "events without a name keep it");
+        m.kind = EventKind::Stop;
+        m.title = "Payslip fix v2".into();
+        let shown = s.apply(&m, T0 + 2, 0);
+        assert!(matches!(shown, Some(Show::Done { ref title, .. }) if title == "Payslip fix v2"), "{shown:?}");
+        let mut n = msg(EventKind::NeedsYou, "a", 7);
+        n.title = String::new();
+        assert!(matches!(s.apply(&n, T0 + 3, 0), Some(Show::NeedsYou { ref title, .. }) if title == "Payslip fix v2"));
     }
 
     #[test]

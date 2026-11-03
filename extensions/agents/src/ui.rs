@@ -422,6 +422,7 @@ mod tests {
     fn sess(state: State, project: &str, branch: Option<&str>) -> Session {
         Session {
             needs_at: 0,
+            title: String::new(),
             agent: Agent::Claude,
             id: project.chars().take(36).collect(),
             project: project.into(),
@@ -582,6 +583,24 @@ mod tests {
         let p = pages(&u.linked(Link::On))[0].clone();
         assert_eq!(p["state"], "empty");
         assert_eq!(p["message"], "No agent sessions yet. They show up here when Claude Code runs.");
+    }
+
+    #[test]
+    fn a_renamed_session_shows_its_name_unless_private() {
+        let mut s = sess(State::Done, "app", Some("main"));
+        s.title = "Payslip fix".into();
+        let mut u = ui_with(Link::On, vec![s]);
+        assert_eq!(row(&u.page(), "app")["text"], "Payslip fix · main");
+        let p = pages(&u.on_msg(&json!({"t": "row", "id": "app"})))[0].clone();
+        assert_eq!(p["title"], "Payslip fix");
+        assert_eq!(meta_keys(&p), ["Project", "Agent", "State", "Time", "Branch", "Tool", "Folder"]);
+        assert_eq!(p["meta"][0]["v"], "app");
+        u.on_msg(&json!({"t": "back"}));
+        u.cfg.privacy = true;
+        assert_eq!(row(&u.page(), "app")["text"], "app · main", "privacy mode shows the folder name");
+        let p = pages(&u.on_msg(&json!({"t": "row", "id": "app"})))[0].clone();
+        assert_eq!(p["title"], "app");
+        assert!(!p.to_string().contains("Payslip"), "{p}");
     }
 
     #[test]

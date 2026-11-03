@@ -36,6 +36,7 @@ pub fn parse_hook(json: &str) -> Option<Msg> {
     let project = project_name(cwd);
     Some(Msg {
         at_ms: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
+        title: String::new(),
         v: VERSION,
         agent: Agent::Claude,
         kind,
@@ -63,6 +64,42 @@ mod tests {
 
     fn hook(event: &str, extra: &str) -> String {
         format!(r#"{{"session_id":"s1","cwd":"C:\\p\\app","hook_event_name":"{event}"{extra}}}"#)
+    }
+
+    #[test]
+    fn the_session_name_comes_from_the_transcript() {
+        let dir = std::env::temp_dir().join(format!("hesewake-agents-title-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s1.jsonl");
+        let line = |kind: &str, sid: &str, t: &str| serde_json::json!({"type": kind, "customTitle": t, "aiTitle": t, "sessionId": sid}).to_string();
+        let body = [
+            line("custom-title", "s1", "Old name"),
+            r#"{"type":"user"}"#.to_string(),
+            line("custom-title", "s1", "  Payslip\nfix  "),
+            line("custom-title", "other", "Not this one"),
+            line("ai-title", "s1", "A title Claude made up"),
+            r#"{"type":"assistant"}"#.to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&path, &body).unwrap();
+        let p = path.to_string_lossy().to_string();
+        let at = |event: &str, p: &str| {
+            let j = serde_json::json!({"session_id": "s1", "cwd": "C:\\p\\app", "hook_event_name": event, "transcript_path": p, "tool_name": "Bash"});
+            parse_hook(&j.to_string()).unwrap().title
+        };
+        assert_eq!(at("UserPromptSubmit", &p), "Payslip fix", "the latest /rename of this session, on one line");
+        assert_eq!(at("Stop", &p), "Payslip fix");
+        assert_eq!(at("PreToolUse", &p), "", "tool events don't read the file");
+        assert_eq!(at("Stop", "C:\\nowhere\\x.jsonl"), "");
+        assert_eq!(at("Stop", "\\\\host\\share\\x.jsonl"), "", "never a network path");
+        assert_eq!(parse_hook(&hook("Stop", "")).unwrap().title, "", "no transcript");
+        // a long name is cut
+        std::fs::write(&path, format!("{body}\n{}\n", line("custom-title", "s1", &"n".repeat(200)))).unwrap();
+        assert_eq!(at("Stop", &p).chars().count(), 60);
+        // only the end of a long transcript is read
+        std::fs::write(&path, format!("{body}\n{{\"type\":\"user\",\"pad\":\"{}\"}}\n", "x".repeat(600 * 1024))).unwrap();
+        assert_eq!(at("Stop", &p), "");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

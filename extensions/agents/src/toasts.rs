@@ -101,11 +101,11 @@ mod tests {
     use crate::event::Agent;
 
     fn done(project: &str, secs: Option<u64>) -> Show {
-        Show::Done { session: project.into(), project: project.into(), agent: Agent::Claude, secs }
+        Show::Done { session: project.into(), project: project.into(), title: String::new(), agent: Agent::Claude, secs }
     }
 
     fn needs(project: &str, tool: &str, text: &str) -> Show {
-        Show::NeedsYou { session: project.into(), project: project.into(), agent: Agent::Claude, tool: tool.into(), text: text.into() }
+        Show::NeedsYou { session: project.into(), project: project.into(), title: String::new(), agent: Agent::Claude, tool: tool.into(), text: text.into() }
     }
 
     fn toast(show: &Show) -> Toast {
@@ -121,7 +121,7 @@ mod tests {
         let d = toast(&done("hesewake-notch", Some(252)));
         assert_eq!((d.title.as_str(), d.sub.as_str(), d.needs), ("Done · hesewake-notch", "Claude · 4m 12s", false));
         assert_eq!(toast(&done("app", None)).sub, "Claude");
-        let e = toast(&Show::Error { session: "s".into(), project: "app".into(), agent: Agent::Claude });
+        let e = toast(&Show::Error { session: "s".into(), project: "app".into(), title: String::new(), agent: Agent::Claude });
         assert_eq!((e.title.as_str(), e.sub.as_str()), ("Stopped with an error", "app · Claude"));
         let id = toast_for(&done("app", Some(30)), &Config::default(), Lang(true)).unwrap();
         assert_eq!(id.title, "Selesai · app");
@@ -178,10 +178,24 @@ mod tests {
     }
 
     #[test]
+    fn a_renamed_session_shows_its_name() {
+        let l = Lang(false);
+        let named = Show::Done { session: "s".into(), project: "app".into(), title: "Payslip fix".into(), agent: Agent::Claude, secs: Some(59) };
+        assert_eq!(toast_for(&named, &Config::default(), l).unwrap().title, "Done · Payslip fix");
+        let private = Config { privacy: true, ..Config::default() };
+        assert_eq!(toast_for(&named, &private, l).unwrap().title, "Done · app", "privacy mode shows the folder name");
+        let needs = Show::NeedsYou { session: "s".into(), project: "app".into(), title: "Payslip fix".into(), agent: Agent::Claude, tool: String::new(), text: String::new() };
+        assert_eq!(toast_for(&needs, &Config::default(), l).unwrap().title, "Payslip fix needs you");
+        assert_eq!(toast_for(&needs, &Config::default(), l).unwrap().project, "Payslip fix", "a merged toast lists the name");
+        let err = Show::Error { session: "s".into(), project: "app".into(), title: "Payslip fix".into(), agent: Agent::Claude };
+        assert_eq!(toast_for(&err, &Config::default(), l).unwrap().sub, "Payslip fix · Claude");
+    }
+
+    #[test]
     fn toggles_and_privacy_shape_toasts() {
         let mut cfg = Config { toast_done: false, ..Config::default() };
         assert!(toast_for(&done("a", Some(5)), &cfg, Lang(false)).is_none());
-        assert!(toast_for(&Show::Error { session: "s".into(), project: "a".into(), agent: Agent::Claude }, &cfg, Lang(false)).is_none(), "an error is a finish too");
+        assert!(toast_for(&Show::Error { session: "s".into(), project: "a".into(), title: String::new(), agent: Agent::Claude }, &cfg, Lang(false)).is_none(), "an error is a finish too");
         assert!(toast_for(&needs("a", "Bash", "x"), &cfg, Lang(false)).is_some());
         cfg.toast_needs = false;
         assert!(toast_for(&needs("a", "Bash", "x"), &cfg, Lang(false)).is_none());
