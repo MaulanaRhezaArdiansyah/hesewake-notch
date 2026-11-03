@@ -75,6 +75,7 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "Claude connected · {} sessions" => "Claude tersambung · {} sesi",
         "Claude settings unreadable" => "Pengaturan Claude tak terbaca",
         "Claude not connected" => "Claude belum tersambung",
+        "Another copy is running" => "Salinan lain sedang berjalan",
         _ => return None,
     })
 }

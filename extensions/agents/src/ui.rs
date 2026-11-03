@@ -212,6 +212,7 @@ impl Ui {
         let l = self.l;
         let (n, k) = (self.sessions.list().len(), self.sessions.needing_count());
         let s = match self.link {
+            _ if self.other_copy => l.t("Another copy is running").to_string(),
             Link::On if k > 0 => fill(l.t("Claude connected · {} sessions · {} need you"), &[&n, &k]),
             Link::On => fill(l.t("Claude connected · {} sessions"), &[&n]),
             Link::Invalid => l.t("Claude settings unreadable").to_string(),

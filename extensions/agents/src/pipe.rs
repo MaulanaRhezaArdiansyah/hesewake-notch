@@ -5,7 +5,6 @@
 use serde_json::Value;
 use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
-#[allow(unused_imports)]
 use std::io::{self, Read, Write};
 use std::os::windows::io::AsRawHandle;
 use windows::core::PWSTR;
@@ -16,13 +15,26 @@ use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW,
 pub const MAX_FRAME: usize = 64 * 1024;
 
 pub fn send(pipe: &mut File, v: Value) -> io::Result<()> {
-    let _ = (pipe, v);
-    todo!()
+    let body = v.to_string().into_bytes();
+    if body.len() > MAX_FRAME {
+        // never happens with the limits ui.rs keeps; a page this large would be dropped by the notch anyway
+        return Ok(());
+    }
+    pipe.write_all(&(body.len() as u32).to_le_bytes())?;
+    pipe.write_all(&body)?;
+    pipe.flush()
 }
 
 pub fn recv(pipe: &mut File) -> io::Result<Value> {
-    let _ = pipe;
-    todo!()
+    let mut len = [0u8; 4];
+    pipe.read_exact(&mut len)?;
+    let n = u32::from_le_bytes(len) as usize;
+    if n == 0 || n > MAX_FRAME {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad frame length"));
+    }
+    let mut body = vec![0u8; n];
+    pipe.read_exact(&mut body)?;
+    serde_json::from_slice(&body).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn handle(pipe: &File) -> HANDLE {

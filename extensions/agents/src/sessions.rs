@@ -271,17 +271,18 @@ pub fn branch_of(cwd: &str) -> Option<String> {
     None
 }
 
-/// Whether `p` stays on this machine: a relative or drive path, never `\\server\share` or a device path. Opening a
-/// file on another machine would send the person's Windows credentials there, and a cloned repository chooses its
-/// own `.git` file.
+/// Whether `p` stays on this machine: a drive path or a relative one, never `\\server\share`, `\??\UNC\...` or a
+/// device path. Opening a file on another machine would send the person's Windows credentials there, and a cloned
+/// repository chooses its own `.git` file.
 fn is_local(p: &Path) -> bool {
     use std::path::{Component, Prefix};
-    let s = p.to_string_lossy();
-    if s.starts_with("\\\\") || s.starts_with("//") {
+    // every form that leaves the drives starts with a separator; a rooted path without a drive is refused with them
+    if p.to_string_lossy().starts_with(['\\', '/']) {
         return false;
     }
     match p.components().next() {
         Some(Component::Prefix(pre)) => matches!(pre.kind(), Prefix::Disk(_)),
+        Some(Component::RootDir) => false,
         _ => true,
     }
 }
