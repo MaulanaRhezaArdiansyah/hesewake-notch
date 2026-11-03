@@ -32,9 +32,9 @@ jobs:
         with:
           workspaces: extensions/agents
       - name: Test
-        run: cargo test --release
+        run: cargo test --release --locked
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --locked
       - name: Installer
         if: hashFiles('extensions/agents/installer.iss') != ''
         shell: pwsh
