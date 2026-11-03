@@ -46,6 +46,7 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "State" => "Status",
         "Time" => "Waktu",
         "Branch" => "Cabang",
+        "Project" => "Proyek",
         "Tool" => "Alat",
         "Folder" => "Folder",
         "Copy path" => "Salin path",

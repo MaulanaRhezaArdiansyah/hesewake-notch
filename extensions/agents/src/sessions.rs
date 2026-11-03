@@ -91,7 +91,7 @@ impl Sessions {
                 }
                 self.list.push(Session {
                     needs_at: 0,
-                    title: String::new(),
+                    title: m.title.clone(),
                     agent: m.agent,
                     id: m.session.clone(),
                     project: m.project.clone(),
@@ -116,6 +116,10 @@ impl Sessions {
         }
         if !m.project.is_empty() {
             s.project = m.project.clone();
+        }
+        // only some events look the name up: the others keep it
+        if !m.title.is_empty() {
+            s.title = m.title.clone();
         }
         if !m.cwd.is_empty() {
             s.cwd = m.cwd.clone();
@@ -170,7 +174,7 @@ impl Sessions {
                 set(s, State::NeedsYou);
                 s.needs_at = m.at_ms;
                 s.text = m.text.clone();
-                Some(Show::NeedsYou { session: s.id.clone(), project: s.project.clone(), title: String::new(), agent: s.agent, tool: s.tool.clone(), text: s.text.clone() })
+                Some(Show::NeedsYou { session: s.id.clone(), project: s.project.clone(), title: s.title.clone(), agent: s.agent, tool: s.tool.clone(), text: s.text.clone() })
             }
             EventKind::Stop | EventKind::StopFailure => {
                 let secs = s.turn_started.take().map(|t| now.saturating_sub(t));
@@ -178,12 +182,12 @@ impl Sessions {
                 set(s, if failed { State::Error } else { State::Done });
                 s.since = now;
                 s.text = m.text.clone();
-                let (id, project, agent, hwnd) = (s.id.clone(), s.project.clone(), s.agent, s.hwnd);
+                let (id, project, title, agent, hwnd) = (s.id.clone(), s.project.clone(), s.title.clone(), s.agent, s.hwnd);
                 // the person is already looking at this session's window
                 if fg != 0 && fg == hwnd && self.shares_window(hwnd) == 1 {
                     return None;
                 }
-                Some(if failed { Show::Error { session: id, project, title: String::new(), agent } } else { Show::Done { session: id, project, title: String::new(), agent, secs } })
+                Some(if failed { Show::Error { session: id, project, title, agent } } else { Show::Done { session: id, project, title, agent, secs } })
             }
         }
     }
@@ -293,7 +297,7 @@ pub fn branch_of(cwd: &str) -> Option<String> {
 /// Whether `p` stays on this machine: a drive path or a relative one, never `\\server\share`, `\??\UNC\...` or a
 /// device path. Opening a file on another machine would send the person's Windows credentials there, and a cloned
 /// repository chooses its own `.git` file.
-fn is_local(p: &Path) -> bool {
+pub(crate) fn is_local(p: &Path) -> bool {
     use std::path::{Component, Prefix};
     // every form that leaves the drives starts with a separator; a rooted path without a drive is refused with them
     if p.to_string_lossy().starts_with(['\\', '/']) {

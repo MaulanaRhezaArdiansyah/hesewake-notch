@@ -4,12 +4,16 @@
 use crate::event::{preview, project_name, Agent, EventKind, Msg, VERSION};
 use crate::text::clip;
 use serde_json::Value;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 
 /// Most stdin read from one hook call. Claude's last message can be long and must not cut the JSON short.
 const MAX_STDIN: u64 = 16 * 1024 * 1024;
 /// Characters kept of a tool's name.
 const TOOL_CHARS: usize = 40;
+/// Bytes read from the end of the transcript to find the session's name.
+const TITLE_TAIL: u64 = 512 * 1024;
+/// Characters kept of the session's name.
+const TITLE_CHARS: usize = 60;
 
 /// Notification types that mean "Claude is waiting for you". `idle_prompt` is not one of them: it fires after every
 /// finished turn nobody answered ("Done" covers that); it only tells that nothing runs any more (`EventKind::Idle`).
@@ -34,9 +38,11 @@ pub fn parse_hook(json: &str) -> Option<Msg> {
     let tool = if kind == EventKind::Tool { clip(field("tool_name").unwrap_or(""), TOOL_CHARS) } else { String::new() };
     let cwd = field("cwd").unwrap_or("");
     let project = project_name(cwd);
+    // tool events are most of the calls and the name rarely changes: only the others look it up
+    let title = if kind == EventKind::Tool { String::new() } else { session_title(field("transcript_path").unwrap_or(""), session) };
     Some(Msg {
         at_ms: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
-        title: String::new(),
+        title,
         v: VERSION,
         agent: Agent::Claude,
         kind,
@@ -49,6 +55,30 @@ pub fn parse_hook(json: &str) -> Option<Msg> {
         subagent: v.get("agent_id").is_some_and(|a| !a.is_null()),
         pid: 0,
     })
+}
+
+/// The name the person gave the session with `/rename`, on one line, or "" when there is none. Claude Code writes it
+/// into the transcript as a `custom-title` line, again from time to time, so only the transcript's last 512 KiB are
+/// read. Never a network path: opening one would send the person's Windows credentials there.
+fn session_title(path: &str, session: &str) -> String {
+    let p = std::path::Path::new(path);
+    if path.is_empty() || !crate::sessions::is_local(p) {
+        return String::new();
+    }
+    let Ok(mut f) = std::fs::File::open(p) else { return String::new() };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut buf = Vec::new();
+    if f.seek(SeekFrom::Start(len.saturating_sub(TITLE_TAIL))).is_err() || f.take(TITLE_TAIL).read_to_end(&mut buf).is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&buf)
+        .lines()
+        .rev()
+        .filter(|l| l.contains("\"custom-title\""))
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .find(|v| v["type"] == "custom-title" && v["sessionId"] == session)
+        .and_then(|v| v["customTitle"].as_str().map(|t| clip(&t.split_whitespace().collect::<Vec<_>>().join(" "), TITLE_CHARS)))
+        .unwrap_or_default()
 }
 
 /// The hook JSON from `r` (at most `MAX_STDIN` bytes) as a `Msg`.

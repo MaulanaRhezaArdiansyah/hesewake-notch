@@ -24,8 +24,10 @@ pub struct Toast {
 
 /// The toast for `show`, or none when its toggle is off.
 pub fn toast_for(show: &Show, cfg: &Config, l: Lang) -> Option<Toast> {
+    // the name the person gave the session, else its folder; privacy mode always shows the folder
+    let name = |project: &str, title: &str| if cfg.privacy || title.is_empty() { project.to_string() } else { title.to_string() };
     let (title, sub, needs, project) = match show {
-        Show::NeedsYou { project, agent, tool, text, .. } => {
+        Show::NeedsYou { project, title, agent, tool, text, .. } => {
             if !cfg.toast_needs {
                 return None;
             }
@@ -37,9 +39,10 @@ pub fn toast_for(show: &Show, cfg: &Config, l: Lang) -> Option<Toast> {
             } else {
                 format!("{agent} · {tool}: {text}")
             };
-            (fill(l.t("{} needs you"), &[project]), sub, true, project)
+            let name = name(project, title);
+            (fill(l.t("{} needs you"), &[&name]), sub, true, name)
         }
-        Show::Done { project, agent, secs, .. } => {
+        Show::Done { project, title, agent, secs, .. } => {
             if !cfg.toast_done {
                 return None;
             }
@@ -47,16 +50,18 @@ pub fn toast_for(show: &Show, cfg: &Config, l: Lang) -> Option<Toast> {
                 Some(s) => format!("{} · {}", agent.label(), duration_text(*s)),
                 None => agent.label().to_string(),
             };
-            (fill(l.t("Done · {}"), &[project]), sub, false, project)
+            let name = name(project, title);
+            (fill(l.t("Done · {}"), &[&name]), sub, false, name)
         }
-        Show::Error { project, agent, .. } => {
+        Show::Error { project, title, agent, .. } => {
             if !cfg.toast_done {
                 return None;
             }
-            (l.t("Stopped with an error").to_string(), format!("{project} · {}", agent.label()), false, project)
+            let name = name(project, title);
+            (l.t("Stopped with an error").to_string(), format!("{name} · {}", agent.label()), false, name)
         }
     };
-    Some(Toast { title: clip(&title, 80), sub: clip(&sub, 60), needs, project: project.clone() })
+    Some(Toast { title: clip(&title, 80), sub: clip(&sub, 60), needs, project })
 }
 
 #[derive(Default)]

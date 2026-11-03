@@ -302,12 +302,21 @@ impl Ui {
         p
     }
 
+    /// The name the person gave the session (`/rename`), else its folder; privacy mode always shows the folder.
+    fn name<'a>(&self, s: &'a Session) -> &'a str {
+        if self.cfg.privacy || s.title.is_empty() {
+            &s.project
+        } else {
+            &s.title
+        }
+    }
+
     fn row(&self, s: &Session) -> Value {
         let l = self.l;
         let agent = s.agent.label();
         let text = match &s.branch {
-            Some(b) => format!("{} · {b}", s.project),
-            None => s.project.clone(),
+            Some(b) => format!("{} · {b}", self.name(s)),
+            None => self.name(s).to_string(),
         };
         let in_state = span(self.now.saturating_sub(s.since));
         let ago = ago_text(l, self.now.saturating_sub(s.since));
@@ -348,7 +357,12 @@ impl Ui {
             State::Done | State::Error | State::Idle => ago_text(l, self.now.saturating_sub(s.since)),
             _ => duration_text(self.now.saturating_sub(s.turn_started.unwrap_or(s.since))),
         };
-        let mut meta = vec![json!({"k": l.t("Agent"), "v": s.agent.label()}), json!({"k": l.t("State"), "v": state}), json!({"k": l.t("Time"), "v": time})];
+        let mut meta = Vec::new();
+        // the folder, when the title shows the session's own name
+        if self.name(s) != s.project {
+            meta.push(json!({"k": l.t("Project"), "v": clip(&s.project, 80)}));
+        }
+        meta.extend([json!({"k": l.t("Agent"), "v": s.agent.label()}), json!({"k": l.t("State"), "v": state}), json!({"k": l.t("Time"), "v": time})]);
         if let Some(b) = &s.branch {
             meta.push(json!({"k": l.t("Branch"), "v": clip(b, 80)}));
         }
@@ -364,7 +378,7 @@ impl Ui {
             buttons.push(json!({"id": "copy", "label": l.t("Copy path"), "copy": clip(&s.cwd, 8000)}));
         }
         buttons.push(json!({"id": "dismiss", "label": l.t("Dismiss")}));
-        let mut p = json!({"t": "detail", "for": s.id, "title": clip(&s.project, 120), "meta": meta, "buttons": buttons});
+        let mut p = json!({"t": "detail", "for": s.id, "title": clip(self.name(s), 120), "meta": meta, "buttons": buttons});
         if !self.cfg.privacy && !s.text.is_empty() {
             p["body"] = json!(clip(&s.text, 4000));
         }
