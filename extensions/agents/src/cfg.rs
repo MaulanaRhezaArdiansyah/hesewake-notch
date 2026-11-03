@@ -1,6 +1,7 @@
 //! The extension's own settings (`config.json` in its data folder).
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -21,23 +22,40 @@ impl Default for Config {
 impl Config {
     /// The settings in `text`; anything unreadable gives the defaults.
     pub fn parse(text: &str) -> Config {
-        let _ = text;
-        todo!()
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap_or_default()
     }
 
     pub fn load() -> Config {
-        todo!()
+        let Some(path) = data_dir().map(|d| d.join("config.json")) else { return Config::default() };
+        let Ok(f) = std::fs::File::open(path) else { return Config::default() };
+        let mut text = String::new();
+        if f.take(64 * 1024).read_to_string(&mut text).is_err() {
+            return Config::default();
+        }
+        Config::parse(&text)
     }
 
     /// Write `config.json` (never from tests).
     pub fn save(&self) {
-        todo!()
+        if cfg!(test) {
+            return;
+        }
+        let Some(dir) = data_dir() else { return };
+        let Ok(json) = serde_json::to_string_pretty(self) else { return };
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let tmp = dir.join("config.json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, dir.join("config.json"));
+        }
     }
 }
 
 /// `%APPDATA%\hesewake-notch-agents`.
 pub fn data_dir() -> Option<PathBuf> {
-    todo!()
+    let appdata = std::env::var_os("APPDATA").filter(|d| !d.is_empty())?;
+    Some(PathBuf::from(appdata).join("hesewake-notch-agents"))
 }
 
 #[cfg(test)]

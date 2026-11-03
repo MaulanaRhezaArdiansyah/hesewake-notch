@@ -246,7 +246,7 @@ const MAX_FILE: u64 = 1024 * 1024;
 /// The git branch of the folder `cwd` (or of the repository it is in), from `.git/HEAD`; a detached head gives its
 /// short hash.
 pub fn branch_of(cwd: &str) -> Option<String> {
-    if cwd.is_empty() {
+    if cwd.is_empty() || !is_local(Path::new(cwd)) {
         return None;
     }
     let mut dir = Some(Path::new(cwd));
@@ -261,6 +261,9 @@ pub fn branch_of(cwd: &str) -> Option<String> {
             let text = read_small(&git)?;
             let target = text.trim().strip_prefix("gitdir:")?.trim();
             let target = d.join(target);
+            if !is_local(&target) {
+                return None;
+            }
             return head_branch(&target.join("HEAD"));
         }
         dir = d.parent();
@@ -272,8 +275,15 @@ pub fn branch_of(cwd: &str) -> Option<String> {
 /// file on another machine would send the person's Windows credentials there, and a cloned repository chooses its
 /// own `.git` file.
 fn is_local(p: &Path) -> bool {
-    let _ = p;
-    todo!()
+    use std::path::{Component, Prefix};
+    let s = p.to_string_lossy();
+    if s.starts_with("\\\\") || s.starts_with("//") {
+        return false;
+    }
+    match p.components().next() {
+        Some(Component::Prefix(pre)) => matches!(pre.kind(), Prefix::Disk(_)),
+        _ => true,
+    }
 }
 
 fn head_branch(head: &Path) -> Option<String> {

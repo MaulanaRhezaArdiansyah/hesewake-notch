@@ -4,9 +4,12 @@
 use crate::cfg::Config;
 use crate::claude_setup::Link;
 use crate::event::Msg;
-use crate::sessions::Sessions;
-use crate::text::Lang;
-use serde_json::Value;
+use crate::sessions::{Session, Sessions, State};
+use crate::text::{ago_text, clip, duration_text, fill, Lang};
+use serde_json::{json, Value};
+
+/// While the slide is open, the page is sent again this often so its times stay right.
+const REFRESH_SECS: u64 = 30;
 
 pub enum Out {
     Send(Value),
@@ -36,45 +39,305 @@ pub struct Ui {
     pub visible: bool,
     rev: u64,
     view: View,
+    next_page: u64,
 }
 
 impl Ui {
     pub fn new(cfg: Config, link: Link, id_lang: bool) -> Ui {
-        Ui { cfg, link, l: Lang(id_lang), sessions: Sessions::default(), now: 0, fg: 0, visible: false, rev: 0, view: View::Home }
+        Ui { cfg, link, l: Lang(id_lang), sessions: Sessions::default(), now: 0, fg: 0, visible: false, rev: 0, view: View::Home, next_page: 0 }
     }
 
     pub fn start(&mut self) -> Vec<Out> {
-        todo!()
+        let mut out = Vec::new();
+        self.page_to(&mut out);
+        out
     }
 
     /// A message from the notch (`quit` is handled by `main.rs`).
     pub fn on_msg(&mut self, m: &Value) -> Vec<Out> {
-        let _ = m;
-        todo!()
+        let mut out = Vec::new();
+        let id = m["id"].as_str().unwrap_or("").to_string();
+        match m["t"].as_str().unwrap_or("") {
+            "visible" => {
+                self.visible = m["on"] == true;
+                if !self.visible {
+                    self.view = View::Home;
+                }
+                self.page_to(&mut out);
+            }
+            "row" => match self.view {
+                View::Home => {
+                    if let Some(state) = self.sessions.get(&id).map(|s| s.state) {
+                        if state == State::NeedsYou {
+                            self.sessions.clear_needs(&id);
+                            out.push(Out::SaveSessions);
+                        }
+                        self.view = View::Detail(id);
+                    }
+                    self.page_to(&mut out);
+                }
+                View::Settings => {
+                    let toggled = match id.as_str() {
+                        "privacy" => {
+                            self.cfg.privacy = !self.cfg.privacy;
+                            true
+                        }
+                        "toast_needs" => {
+                            self.cfg.toast_needs = !self.cfg.toast_needs;
+                            true
+                        }
+                        "toast_done" => {
+                            self.cfg.toast_done = !self.cfg.toast_done;
+                            true
+                        }
+                        "claude" => {
+                            out.push(match self.link {
+                                Link::Invalid => Out::Recheck,
+                                Link::On => Out::Connect(false),
+                                _ => Out::Connect(true),
+                            });
+                            false
+                        }
+                        _ => false,
+                    };
+                    if toggled {
+                        out.push(Out::Save(self.cfg.clone()));
+                        self.page_to(&mut out);
+                    }
+                }
+                View::Detail(_) => {}
+            },
+            "back" => {
+                self.view = View::Home;
+                self.page_to(&mut out);
+            }
+            "action" => match id.as_str() {
+                "settings" => {
+                    self.view = View::Settings;
+                    self.page_to(&mut out);
+                }
+                "setup" => out.push(Out::Connect(true)),
+                "retry" => out.push(Out::Recheck),
+                "dismiss" => {
+                    if let View::Detail(sid) = &self.view {
+                        let sid = sid.clone();
+                        self.sessions.dismiss(&sid);
+                        out.push(Out::SaveSessions);
+                    }
+                    self.view = View::Home;
+                    self.page_to(&mut out);
+                }
+                _ => {}
+            },
+            "lang" => {
+                self.l = Lang(m["lang"] == "id");
+                self.page_to(&mut out);
+            }
+            _ => {}
+        }
+        out
     }
 
     /// A hook event from an agent.
     pub fn on_event(&mut self, m: &Msg) -> Vec<Out> {
-        let _ = m;
-        todo!()
+        let mut out = Vec::new();
+        let _shown = self.sessions.apply(m, self.now, self.fg);
+        out.push(Out::SaveSessions);
+        self.page_to(&mut out);
+        out
     }
 
     /// Claude Code's settings were changed or read again.
     pub fn linked(&mut self, link: Link) -> Vec<Out> {
-        let _ = link;
-        todo!()
+        let mut out = Vec::new();
+        self.link = link;
+        self.page_to(&mut out);
+        out
     }
 
     /// About once a second.
     pub fn tick(&mut self, now_ms: u64, alive: impl Fn(isize) -> bool, running: impl Fn(u32) -> bool) -> Vec<Out> {
-        let _ = (now_ms, alive(0), running(0));
-        todo!()
+        let mut out = Vec::new();
+        self.now = now_ms / 1000;
+        if self.sessions.tick(self.now, self.fg, alive, running) {
+            out.push(Out::SaveSessions);
+            self.page_to(&mut out);
+        } else if self.visible && self.now >= self.next_page {
+            self.page_to(&mut out);
+        }
+        out
+    }
+
+    fn page_to(&mut self, out: &mut Vec<Out>) {
+        let p = self.page();
+        out.push(Out::Send(p));
     }
 
     /// The current page (`slide` or `detail`), with a new `rev`.
     pub fn page(&mut self) -> Value {
-        let _ = (&self.view, self.rev);
-        todo!()
+        self.rev += 1;
+        self.next_page = self.now + REFRESH_SECS;
+        let mut p = match self.view.clone() {
+            View::Home => self.home(),
+            View::Settings => self.settings(),
+            View::Detail(id) => match self.sessions.get(&id).map(|s| self.detail(s)) {
+                Some(p) => p,
+                // the session ended while its page was open
+                None => {
+                    self.view = View::Home;
+                    self.home()
+                }
+            },
+        };
+        p["rev"] = json!(self.rev);
+        p
+    }
+
+    fn home(&self) -> Value {
+        let l = self.l;
+        let mut p = json!({"t": "slide", "title": l.t("Coding |Agents"), "actions": [{"id": "settings", "label": l.t("Settings")}]});
+        if self.cfg.privacy {
+            p["foot"] = json!(l.t("Privacy mode"));
+        }
+        match self.link {
+            Link::On => {}
+            Link::Invalid => {
+                p["state"] = json!("error");
+                p["message"] = json!(l.t("Claude Code's settings.json could not be read. Nothing was changed."));
+                return p;
+            }
+            Link::Off | Link::Old | Link::Moved => {
+                p["state"] = json!("setup");
+                p["message"] = json!(l.t("Connect Claude Code to see its sessions here"));
+                p["setup_label"] = json!(l.t("Connect"));
+                return p;
+            }
+        }
+        let list = self.sessions.list();
+        let pick = |states: &[State]| -> Vec<&Session> { list.iter().filter(|s| states.contains(&s.state)).collect() };
+        let mut needs = pick(&[State::NeedsYou]);
+        // the longest waiting first; the others newest first
+        needs.sort_by_key(|s| s.since);
+        let mut working = pick(&[State::Working, State::Answered]);
+        working.sort_by_key(|s| std::cmp::Reverse(s.turn_started.unwrap_or(s.since)));
+        let mut recent = pick(&[State::Done, State::Error, State::Idle]);
+        recent.sort_by_key(|s| std::cmp::Reverse(s.since));
+        let sections: Vec<Value> = [(l.t("Needs you"), needs), (l.t("Working"), working), (l.t("Recent"), recent)]
+            .into_iter()
+            .filter(|(_, rows)| !rows.is_empty())
+            .map(|(title, rows)| json!({"title": title, "rows": rows.iter().map(|s| self.row(s)).collect::<Vec<_>>()}))
+            .collect();
+        if sections.is_empty() {
+            p["state"] = json!("empty");
+            p["message"] = json!(l.t("No agent sessions yet. They show up here when Claude Code runs."));
+        } else {
+            p["sections"] = json!(sections);
+        }
+        p
+    }
+
+    fn row(&self, s: &Session) -> Value {
+        let l = self.l;
+        let agent = s.agent.label();
+        let text = match &s.branch {
+            Some(b) => format!("{} · {b}", s.project),
+            None => s.project.clone(),
+        };
+        let in_state = span(self.now.saturating_sub(s.since));
+        let ago = ago_text(l, self.now.saturating_sub(s.since));
+        let (sub, tone) = match s.state {
+            State::NeedsYou => (fill(l.t("{} · Needs you · {}"), &[&agent, &in_state]), Some("warn")),
+            State::Working | State::Answered => {
+                let t = span(self.now.saturating_sub(s.turn_started.unwrap_or(s.since)));
+                let mut sub = fill(l.t("{} · Working {}"), &[&agent, &t]);
+                if !s.tool.is_empty() {
+                    sub = format!("{sub} · {}", s.tool);
+                }
+                (sub, None)
+            }
+            State::Done => (fill(l.t("{} · Done {}"), &[&agent, &ago]), Some("good")),
+            State::Error => (fill(l.t("{} · Error {}"), &[&agent, &ago]), Some("warn")),
+            State::Idle => (fill(l.t("{} · Idle {}"), &[&agent, &in_state]), Some("muted")),
+        };
+        let mut r = json!({"id": s.id, "text": clip(&text, 120), "sub": clip(&sub, 40)});
+        if let Some(t) = tone {
+            r["tone"] = json!(t);
+        }
+        if s.state == State::NeedsYou {
+            r["mark"] = json!(true);
+        }
+        r
+    }
+
+    fn detail(&self, s: &Session) -> Value {
+        let l = self.l;
+        let state = match s.state {
+            State::NeedsYou => l.t("Needs you"),
+            State::Working | State::Answered => l.t("Working"),
+            State::Done => l.t("Done"),
+            State::Error => l.t("Error"),
+            State::Idle => l.t("Idle"),
+        };
+        let time = match s.state {
+            State::Done | State::Error | State::Idle => ago_text(l, self.now.saturating_sub(s.since)),
+            _ => duration_text(self.now.saturating_sub(s.turn_started.unwrap_or(s.since))),
+        };
+        let mut meta = vec![json!({"k": l.t("Agent"), "v": s.agent.label()}), json!({"k": l.t("State"), "v": state}), json!({"k": l.t("Time"), "v": time})];
+        if let Some(b) = &s.branch {
+            meta.push(json!({"k": l.t("Branch"), "v": clip(b, 80)}));
+        }
+        if !s.tool.is_empty() {
+            meta.push(json!({"k": l.t("Tool"), "v": clip(&s.tool, 80)}));
+        }
+        let show_path = !self.cfg.privacy && !s.cwd.is_empty();
+        if show_path {
+            meta.push(json!({"k": l.t("Folder"), "v": clip(&s.cwd, 80)}));
+        }
+        let mut buttons = Vec::new();
+        if show_path {
+            buttons.push(json!({"id": "copy", "label": l.t("Copy path"), "copy": clip(&s.cwd, 8000)}));
+        }
+        buttons.push(json!({"id": "dismiss", "label": l.t("Dismiss")}));
+        let mut p = json!({"t": "detail", "for": s.id, "title": clip(&s.project, 120), "meta": meta, "buttons": buttons});
+        if !self.cfg.privacy && !s.text.is_empty() {
+            p["body"] = json!(clip(&s.text, 4000));
+        }
+        p
+    }
+
+    fn settings(&self) -> Value {
+        let l = self.l;
+        let (text, sub, tone) = match self.link {
+            Link::Off => (l.t("Connect"), l.t("Not connected"), "muted"),
+            Link::On => (l.t("Remove"), l.t("Connected"), "good"),
+            Link::Moved => (l.t("Fix"), l.t("Moved, press to fix"), "warn"),
+            Link::Old => (l.t("Replace old hooks"), l.t("Old Hesewake hooks"), "warn"),
+            Link::Invalid => (l.t("Check again"), l.t("settings.json unreadable"), "warn"),
+        };
+        let toggle = |id: &str, text: &str, on: bool| {
+            json!({"id": id, "text": text, "sub": if on { l.t("On") } else { l.t("Off") }, "tone": if on { "good" } else { "muted" }})
+        };
+        json!({
+            "t": "slide", "title": l.t("Coding |Agents"), "back": true,
+            "sections": [
+                {"title": l.t("Claude Code"), "rows": [{"id": "claude", "text": text, "sub": sub, "tone": tone}]},
+                {"title": l.t("Options"), "rows": [
+                    toggle("privacy", l.t("Privacy mode"), self.cfg.privacy),
+                    toggle("toast_needs", l.t("Toast when a session needs you"), self.cfg.toast_needs),
+                    toggle("toast_done", l.t("Toast when a session finishes"), self.cfg.toast_done)
+                ]}
+            ]
+        })
+    }
+}
+
+/// A short time span for a row: `45s`, `3m`, `2h`, `4d` (the same in both languages).
+fn span(secs: u64) -> String {
+    match secs {
+        0..=59 => format!("{secs}s"),
+        60..=3599 => format!("{}m", secs / 60),
+        3600..=86_399 => format!("{}h", secs / 3600),
+        _ => format!("{}d", secs / 86_400),
     }
 }
 
@@ -383,6 +646,33 @@ mod tests {
         assert_eq!(row(p, "app")["sub"], "Claude · Selesai 2 mnt lalu");
         let start = u.start();
         assert!(pages(&start)[0]["rev"].as_u64().unwrap() > p["rev"].as_u64().unwrap());
+    }
+
+    #[test]
+    fn badge_toasts_and_status_follow_the_sessions() {
+        let mut u = ui_with(Link::On, vec![]);
+        let mut m = msg(EventKind::NeedsYou, "s1", 7);
+        m.project = "app".into();
+        let out = u.on_event(&m);
+        assert!(sent(&out).contains(&&json!({"t": "badge", "on": true})));
+        assert!(sent(&out).iter().any(|v| v["t"] == "status" && v["text"] == "Claude connected · 1 sessions · 1 need you"));
+        let out = u.tick(NOW * 1000, |_| true, |_| true);
+        let toast = sent(&out).into_iter().find(|v| v["t"] == "toast").expect("the toast goes out on the next tick");
+        assert_eq!(toast["title"], "app needs you");
+        let out = u.on_msg(&json!({"t": "row", "id": "s1"}));
+        assert!(sent(&out).contains(&&json!({"t": "badge", "on": false})));
+        assert!(sent(&out).iter().any(|v| v["t"] == "status" && v["text"] == "Claude connected · 1 sessions"));
+        // while the slide is open a new prompt sets no badge
+        u.on_msg(&json!({"t": "visible", "on": true}));
+        let out = u.on_event(&msg(EventKind::NeedsYou, "s2", 8));
+        assert!(!sent(&out).iter().any(|v| v["t"] == "badge" && v["on"] == true));
+        for (link, text) in [(Link::Off, "Claude not connected"), (Link::Invalid, "Claude settings unreadable")] {
+            assert!(sent(&u.linked(link)).iter().any(|v| v["t"] == "status" && v["text"] == text), "{link:?}");
+        }
+        let mut quiet = ui_with(Link::On, vec![]);
+        quiet.cfg.toast_needs = false;
+        quiet.on_event(&m);
+        assert!(!sent(&quiet.tick(NOW * 1000, |_| true, |_| true)).iter().any(|v| v["t"] == "toast"));
     }
 
     #[test]

@@ -24,6 +24,47 @@ fn indonesian(s: &str) -> Option<&'static str> {
         "{}m ago" => "{} mnt lalu",
         "{}h ago" => "{} jam lalu",
         "{}d ago" => "{} hari lalu",
+        "Coding |Agents" => "Agen |Koding",
+        "Settings" => "Pengaturan",
+        "Privacy mode" => "Mode privasi",
+        "Claude Code's settings.json could not be read. Nothing was changed." => "settings.json milik Claude Code tidak bisa dibaca. Tidak ada yang diubah.",
+        "Connect Claude Code to see its sessions here" => "Sambungkan Claude Code untuk melihat sesinya di sini",
+        "Connect" => "Sambungkan",
+        "Needs you" => "Perlu kamu",
+        "Working" => "Bekerja",
+        "Recent" => "Terbaru",
+        "No agent sessions yet. They show up here when Claude Code runs." => "Belum ada sesi agen. Sesi muncul di sini saat Claude Code berjalan.",
+        "{} · Needs you · {}" => "{} · Perlu kamu · {}",
+        "{} · Working {}" => "{} · Bekerja {}",
+        "{} · Done {}" => "{} · Selesai {}",
+        "{} · Error {}" => "{} · Galat {}",
+        "{} · Idle {}" => "{} · Diam {}",
+        "Done" => "Selesai",
+        "Error" => "Galat",
+        "Idle" => "Diam",
+        "Agent" => "Agen",
+        "State" => "Status",
+        "Time" => "Waktu",
+        "Branch" => "Cabang",
+        "Tool" => "Alat",
+        "Folder" => "Folder",
+        "Copy path" => "Salin path",
+        "Dismiss" => "Singkirkan",
+        "Not connected" => "Belum tersambung",
+        "Remove" => "Hapus",
+        "Connected" => "Tersambung",
+        "Fix" => "Perbaiki",
+        "Moved, press to fix" => "Pindah, tekan untuk memperbaiki",
+        "Replace old hooks" => "Ganti hook lama",
+        "Old Hesewake hooks" => "Hook Hesewake lama",
+        "Check again" => "Periksa lagi",
+        "settings.json unreadable" => "settings.json tak terbaca",
+        "On" => "Nyala",
+        "Off" => "Mati",
+        "Claude Code" => "Claude Code",
+        "Options" => "Opsi",
+        "Toast when a session needs you" => "Toast saat sesi perlu kamu",
+        "Toast when a session finishes" => "Toast saat sesi selesai",
         _ => return None,
     })
 }
@@ -113,7 +154,7 @@ mod tests {
     }
 
     /// The source files whose translated texts must have Indonesian.
-    const SOURCES: [&str; 1] = [include_str!("text.rs")];
+    const SOURCES: [&str; 2] = [include_str!("text.rs"), include_str!("ui.rs")];
 
     #[test]
     fn every_text_has_indonesian() {

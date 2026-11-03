@@ -13,6 +13,7 @@ mod procs;
 mod relay;
 mod sessions;
 mod text;
+mod toasts;
 mod ui;
 
 fn main() {}
