@@ -633,11 +633,13 @@ mod tests {
         assert!(saved_sessions(&out), "its window closed");
         assert_eq!(pages(&out)[0]["state"], "empty");
         assert!(pages(&u.tick(NOW * 1000 + 2500, |_| true, |_| true)).is_empty(), "nothing changed");
-        // while the slide is hidden, a change waits until it opens
+        // The notch sends `visible` only for the Settings panel, never for the slide: a change goes out on the next
+        // tick whether anyone looks or not, and the times move on every 30 s.
         u.on_msg(&json!({"t": "visible", "on": false}));
         u.on_event(&m);
-        assert!(pages(&u.tick(NOW * 1000 + 3500, |_| true, |_| true)).is_empty(), "nobody looks");
-        assert_eq!(titles(pages(&u.on_msg(&json!({"t": "visible", "on": true})))[0]), ["Needs you"]);
+        assert_eq!(titles(pages(&u.tick(NOW * 1000 + 3500, |_| true, |_| true))[0]), ["Needs you"]);
+        assert!(pages(&u.tick(NOW * 1000 + 4500, |_| true, |_| true)).is_empty(), "nothing changed");
+        assert_eq!(pages(&u.tick((NOW + 40) * 1000, |_| true, |_| true)).len(), 1, "the times move on");
     }
 
     #[test]
@@ -775,7 +777,7 @@ mod tests {
             assert!(frames <= 8, "{frames} frames in one second (visible: {visible})");
             let toast = sent(&out).into_iter().find(|v| v["t"] == "toast").expect("the merged toast");
             assert_eq!(toast["count"], 10);
-            assert_eq!(pages(&out).len(), usize::from(visible));
+            assert_eq!(pages(&out).len(), 1, "one page for the whole burst");
         }
     }
 
