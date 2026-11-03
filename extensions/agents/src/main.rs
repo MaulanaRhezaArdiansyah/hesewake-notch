@@ -1,0 +1,10 @@
+//! Coding agent sessions for Hesewake Notch, as an extension (docs/extensions.md): which Claude Code sessions need
+//! you, which are working and which are done, with toasts. The same exe is Claude Code's hook (`--hook claude`).
+
+#![cfg_attr(not(test), windows_subsystem = "windows")]
+// the modules are wired into `main` one by one; until then most of them are unused
+#![allow(dead_code)]
+
+mod text;
+
+fn main() {}

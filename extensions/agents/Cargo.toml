@@ -1,0 +1,37 @@
+[package]
+name = "hesewake-agents"
+version = "0.1.0"
+edition = "2021"
+description = "Coding agent sessions for Hesewake Notch, as an extension (docs/extensions.md)"
+license = "MIT"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# preserve_order: Claude Code's settings.json keeps its key order when we add or remove our hooks
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dependencies.windows]
+version = "0.58"
+features = [
+  "Win32_Foundation",
+  "Win32_System_DataExchange",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Pipes",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+]
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+# a panic must not leave the pipe loop waiting forever: end the process, the notch restarts it
+panic = "abort"
+
+# Not part of the notch's build: build it on its own with `cargo build --release` in this folder.
+[workspace]
