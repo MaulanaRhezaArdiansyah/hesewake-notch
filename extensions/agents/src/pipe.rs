@@ -5,6 +5,7 @@
 use serde_json::Value;
 use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
+#[allow(unused_imports)]
 use std::io::{self, Read, Write};
 use std::os::windows::io::AsRawHandle;
 use windows::core::PWSTR;
