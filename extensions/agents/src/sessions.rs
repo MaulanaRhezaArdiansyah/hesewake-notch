@@ -3,6 +3,7 @@
 
 use crate::event::{Agent, EventKind, Msg};
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::Path;
 
 /// A working session silent this long is gone (its terminal was killed without a SessionEnd).
@@ -62,26 +63,142 @@ pub struct Sessions {
 impl Sessions {
     /// Apply one hook message. `fg` is the foreground window now (0 = unknown).
     pub fn apply(&mut self, m: &Msg, now: u64, fg: isize) -> Option<Show> {
-        let _ = (m, now, fg, EventKind::Idle);
-        todo!()
+        if m.kind == EventKind::SessionEnd {
+            self.list.retain(|s| s.id != m.session);
+            return None;
+        }
+        let i = match self.list.iter().position(|s| s.id == m.session) {
+            Some(i) => i,
+            // a subagent alone doesn't create a session, unless it needs the person
+            None if m.subagent && m.kind != EventKind::NeedsYou => return None,
+            None => {
+                if self.list.len() >= MAX_SESSIONS {
+                    if let Some(old) = self.list.iter().enumerate().min_by_key(|(_, s)| s.last).map(|(i, _)| i) {
+                        self.list.remove(old);
+                    }
+                }
+                self.list.push(Session {
+                    agent: m.agent,
+                    id: m.session.clone(),
+                    project: m.project.clone(),
+                    cwd: m.cwd.clone(),
+                    branch: branch_of(&m.cwd),
+                    state: State::Idle,
+                    since: now,
+                    last: now,
+                    turn_started: None,
+                    tool: String::new(),
+                    text: String::new(),
+                    hwnd: 0,
+                    pid: 0,
+                });
+                self.list.len() - 1
+            }
+        };
+        let s = &mut self.list[i];
+        s.last = now;
+        if m.hwnd != 0 {
+            s.hwnd = m.hwnd;
+        }
+        if !m.project.is_empty() {
+            s.project = m.project.clone();
+        }
+        if !m.cwd.is_empty() {
+            s.cwd = m.cwd.clone();
+        }
+        if m.pid != 0 {
+            s.pid = m.pid;
+        }
+        // Subagents keep the session alive but never start or end a turn. A prompt waiting for the person counts
+        // whoever raised it.
+        if m.subagent && m.kind != EventKind::NeedsYou {
+            return None;
+        }
+        let set = |s: &mut Session, st: State| {
+            if s.state != st {
+                s.state = st;
+                s.since = now;
+            }
+        };
+        match m.kind {
+            EventKind::SessionStart | EventKind::SessionEnd => None,
+            EventKind::Idle => {
+                if matches!(s.state, State::Working | State::Answered) {
+                    set(s, State::Idle);
+                    s.turn_started = None;
+                }
+                None
+            }
+            EventKind::Prompt => {
+                set(s, State::Working);
+                s.since = now;
+                s.turn_started = Some(now);
+                s.tool.clear();
+                s.branch = branch_of(&s.cwd);
+                None
+            }
+            EventKind::Tool => {
+                // a tool after the turn ended: a new turn started without a prompt (e.g. a background task)
+                if matches!(s.state, State::Done | State::Error | State::Idle) {
+                    s.turn_started = Some(now);
+                }
+                set(s, State::Working);
+                if !m.tool.is_empty() {
+                    s.tool = m.tool.clone();
+                }
+                None
+            }
+            EventKind::NeedsYou => {
+                set(s, State::NeedsYou);
+                s.text = m.text.clone();
+                Some(Show::NeedsYou { session: s.id.clone(), project: s.project.clone(), agent: s.agent, tool: s.tool.clone(), text: s.text.clone() })
+            }
+            EventKind::Stop | EventKind::StopFailure => {
+                let secs = s.turn_started.take().map(|t| now.saturating_sub(t));
+                let failed = m.kind == EventKind::StopFailure;
+                set(s, if failed { State::Error } else { State::Done });
+                s.since = now;
+                s.text = m.text.clone();
+                let (id, project, agent, hwnd) = (s.id.clone(), s.project.clone(), s.agent, s.hwnd);
+                // the person is already looking at this session's window
+                if fg != 0 && fg == hwnd && self.shares_window(hwnd) == 1 {
+                    return None;
+                }
+                Some(if failed { Show::Error { session: id, project, agent } } else { Show::Done { session: id, project, agent, secs } })
+            }
+        }
     }
 
-    /// Housekeeping, about once a second. True if anything changed.
+    /// Housekeeping, about once a second. `alive` says whether a window still exists, `running` whether a process
+    /// still runs. True if anything changed.
     pub fn tick(&mut self, now: u64, fg: isize, alive: impl Fn(isize) -> bool, running: impl Fn(u32) -> bool) -> bool {
-        let _ = (now, fg, alive(0), running(0));
-        todo!()
+        let before = self.list.len();
+        self.list.retain(|s| {
+            let silent = now.saturating_sub(s.last) > STALE_SECS && matches!(s.state, State::Working | State::Answered);
+            let old = now.saturating_sub(s.since) > RECENT_KEEP_SECS && matches!(s.state, State::Done | State::Error | State::Idle);
+            !silent && !old && (s.hwnd == 0 || alive(s.hwnd)) && (s.pid == 0 || running(s.pid))
+        });
+        let mut changed = self.list.len() != before;
+        if fg != 0 && self.shares_window(fg) == 1 {
+            for s in self.list.iter_mut().filter(|s| s.hwnd == fg && s.state == State::NeedsYou) {
+                s.state = State::Answered;
+                s.since = now;
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// The person dealt with the prompt (clicked its row or toast).
     pub fn clear_needs(&mut self, id: &str) {
-        let _ = id;
-        todo!()
+        for s in self.list.iter_mut().filter(|s| s.id == id && s.state == State::NeedsYou) {
+            s.state = State::Answered;
+        }
     }
 
     /// The person removed the row.
     pub fn dismiss(&mut self, id: &str) {
-        let _ = id;
-        todo!()
+        self.list.retain(|s| s.id != id);
     }
 
     pub fn get(&self, id: &str) -> Option<&Session> {
@@ -96,23 +213,77 @@ impl Sessions {
         self.list.iter().filter(|s| s.state == State::NeedsYou).count()
     }
 
-    /// The sessions saved by `save`; an unreadable file gives none.
-    pub fn load(path: &Path) -> Sessions {
-        let _ = path;
-        todo!()
+    /// How many sessions run in window `hwnd` (tabs of one terminal share it).
+    fn shares_window(&self, hwnd: isize) -> usize {
+        self.list.iter().filter(|s| s.hwnd == hwnd).count()
     }
 
+    /// The sessions saved by `save`; an unreadable file gives none.
+    pub fn load(path: &Path) -> Sessions {
+        let Ok(f) = std::fs::File::open(path) else { return Sessions::default() };
+        let mut buf = Vec::new();
+        if f.take(MAX_FILE).read_to_end(&mut buf).is_err() {
+            return Sessions::default();
+        }
+        let mut s: Sessions = serde_json::from_slice(&buf).unwrap_or_default();
+        s.list.truncate(MAX_SESSIONS);
+        s
+    }
+
+    /// Write the sessions to `path` (a temp file, then renamed over it). Errors are ignored: it is only a cache.
     pub fn save(&self, path: &Path) {
-        let _ = path;
-        todo!()
+        let Ok(json) = serde_json::to_vec(self) else { return };
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
     }
 }
+
+/// Largest sessions.json read back.
+const MAX_FILE: u64 = 1024 * 1024;
 
 /// The git branch of the folder `cwd` (or of the repository it is in), from `.git/HEAD`; a detached head gives its
 /// short hash.
 pub fn branch_of(cwd: &str) -> Option<String> {
-    let _ = cwd;
-    todo!()
+    if cwd.is_empty() {
+        return None;
+    }
+    let mut dir = Some(Path::new(cwd));
+    for _ in 0..7 {
+        let d = dir?;
+        let git = d.join(".git");
+        if git.is_dir() {
+            return head_branch(&git.join("HEAD"));
+        }
+        if git.is_file() {
+            // a worktree or submodule: `gitdir: <path>`, maybe relative to this folder
+            let text = read_small(&git)?;
+            let target = text.trim().strip_prefix("gitdir:")?.trim();
+            let target = d.join(target);
+            return head_branch(&target.join("HEAD"));
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+fn head_branch(head: &Path) -> Option<String> {
+    let text = read_small(head)?;
+    let line = text.lines().next()?.trim();
+    if let Some(r) = line.strip_prefix("ref:") {
+        let name = r.trim().strip_prefix("refs/heads/")?;
+        return (!name.is_empty()).then(|| name.to_string());
+    }
+    (line.len() >= 7 && line.chars().all(|c| c.is_ascii_hexdigit())).then(|| line[..7].to_string())
+}
+
+/// A file of at most 1 KiB, as text.
+fn read_small(p: &Path) -> Option<String> {
+    let f = std::fs::File::open(p).ok()?;
+    let mut buf = Vec::new();
+    f.take(1024).read_to_end(&mut buf).ok()?;
+    String::from_utf8(buf).ok()
 }
 
 #[cfg(test)]

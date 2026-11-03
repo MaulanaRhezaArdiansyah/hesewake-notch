@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 mod claude_hook;
+mod claude_setup;
 mod event;
 mod procs;
 mod relay;
