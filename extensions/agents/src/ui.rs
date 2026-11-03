@@ -408,6 +408,7 @@ mod tests {
 
     fn sess(state: State, project: &str, branch: Option<&str>) -> Session {
         Session {
+            needs_at: 0,
             agent: Agent::Claude,
             id: project.chars().take(36).collect(),
             project: project.into(),
@@ -607,16 +608,24 @@ mod tests {
     #[test]
     fn events_and_ticks_update_the_page() {
         let mut u = ui_with(Link::On, vec![]);
+        u.on_msg(&json!({"t": "visible", "on": true}));
         let mut m = msg(EventKind::NeedsYou, "s1", 7);
         m.project = "app".into();
         let out = u.on_event(&m);
         assert!(saved_sessions(&out));
-        assert_eq!(titles(pages(&out)[0]), ["Needs you"]);
-        let out = u.tick(NOW * 1000 + 500, |h| h != 7, |_| true);
+        assert!(pages(&out).is_empty(), "pages wait for the tick");
+        let out = u.tick(NOW * 1000 + 500, |_| true, |_| true);
         assert_eq!(u.now, NOW);
+        assert_eq!(titles(pages(&out)[0]), ["Needs you"]);
+        let out = u.tick(NOW * 1000 + 1500, |h| h != 7, |_| true);
         assert!(saved_sessions(&out), "its window closed");
         assert_eq!(pages(&out)[0]["state"], "empty");
-        assert!(pages(&u.tick(NOW * 1000 + 1500, |_| true, |_| true)).is_empty(), "nothing changed, nobody looks");
+        assert!(pages(&u.tick(NOW * 1000 + 2500, |_| true, |_| true)).is_empty(), "nothing changed");
+        // while the slide is hidden, a change waits until it opens
+        u.on_msg(&json!({"t": "visible", "on": false}));
+        u.on_event(&m);
+        assert!(pages(&u.tick(NOW * 1000 + 3500, |_| true, |_| true)).is_empty(), "nobody looks");
+        assert_eq!(titles(pages(&u.on_msg(&json!({"t": "visible", "on": true})))[0]), ["Needs you"]);
     }
 
     #[test]
@@ -708,8 +717,9 @@ mod tests {
         m.project = "app".into();
         let out = u.on_event(&m);
         assert!(sent(&out).contains(&&json!({"t": "badge", "on": true})));
-        assert!(sent(&out).iter().any(|v| v["t"] == "status" && v["text"] == "Claude connected · 1 sessions · 1 need you"));
+        assert!(!sent(&out).iter().any(|v| v["t"] == "status"), "the status waits for the tick");
         let out = u.tick(NOW * 1000, |_| true, |_| true);
+        assert!(sent(&out).iter().any(|v| v["t"] == "status" && v["text"] == "Claude connected · 1 sessions · 1 need you"));
         let toast = sent(&out).into_iter().find(|v| v["t"] == "toast").expect("the toast goes out on the next tick");
         assert_eq!(toast["title"], "app needs you");
         let out = u.on_msg(&json!({"t": "row", "id": "s1"}));
@@ -733,6 +743,28 @@ mod tests {
         let mut u = ui_with(Link::On, vec![]);
         u.other_copy = true;
         assert!(sent(&u.start()).iter().any(|v| v["t"] == "status" && v["text"] == "Another copy is running"));
+    }
+
+    #[test]
+    fn a_burst_of_events_stays_under_the_notch_rate_limit() {
+        // the notch drops anything over 10 messages a second, toasts included
+        for visible in [false, true] {
+            let mut u = ui_with(Link::On, vec![]);
+            u.start();
+            u.on_msg(&json!({"t": "visible", "on": visible}));
+            let mut frames = 0;
+            for i in 0..10 {
+                for kind in [EventKind::Prompt, EventKind::Tool, EventKind::Tool, EventKind::Stop] {
+                    frames += sent(&u.on_event(&msg(kind, &format!("s{i}"), 7))).len();
+                }
+            }
+            let out = u.tick(NOW * 1000, |_| true, |_| true);
+            frames += sent(&out).len();
+            assert!(frames <= 8, "{frames} frames in one second (visible: {visible})");
+            let toast = sent(&out).into_iter().find(|v| v["t"] == "toast").expect("the merged toast");
+            assert_eq!(toast["count"], 10);
+            assert_eq!(pages(&out).len(), usize::from(visible));
+        }
     }
 
     #[test]

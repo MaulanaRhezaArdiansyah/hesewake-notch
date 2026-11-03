@@ -59,6 +59,10 @@ pub struct Msg {
     /// The agent's process (0 = unknown); when it exits, the session is gone.
     #[serde(default)]
     pub pid: u32,
+    /// When the hook started, in Unix milliseconds (0 = unknown). Hooks run as separate processes, so their
+    /// messages can arrive out of order.
+    #[serde(default)]
+    pub at_ms: u64,
 }
 
 pub const VERSION: u8 = 1;
@@ -131,6 +135,7 @@ pub fn project_name(cwd: &str) -> String {
 #[cfg(test)]
 pub(crate) fn sample() -> Msg {
     Msg {
+        at_ms: 0,
         v: VERSION,
         agent: Agent::Claude,
         kind: EventKind::Stop,

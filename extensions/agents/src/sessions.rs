@@ -27,6 +27,9 @@ pub enum State {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Session {
+    /// When the person was asked (`Msg::at_ms` of the prompt); older tool events don\'t undo it.
+    #[serde(default)]
+    pub needs_at: u64,
     pub agent: Agent,
     pub id: String,
     pub project: String,
@@ -78,6 +81,7 @@ impl Sessions {
                     }
                 }
                 self.list.push(Session {
+                    needs_at: 0,
                     agent: m.agent,
                     id: m.session.clone(),
                     project: m.project.clone(),
@@ -313,6 +317,7 @@ pub(crate) mod tests {
 
     pub(crate) fn msg(kind: EventKind, session: &str, hwnd: isize) -> Msg {
         Msg {
+            at_ms: 0,
             v: VERSION,
             agent: Agent::Claude,
             kind,
@@ -597,6 +602,52 @@ pub(crate) mod tests {
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.to_string_lossy())).unwrap();
         assert_eq!(branch_of(&wt.to_string_lossy()), Some("ext/agents".into()));
         assert_eq!(branch_of(""), None);
+    }
+
+    #[test]
+    fn a_late_tool_event_does_not_undo_needs_you() {
+        let mut s = Sessions::default();
+        s.apply(&msg(EventKind::Prompt, "s", 7), 100, 0);
+        let mut pre = msg(EventKind::Tool, "s", 7);
+        pre.tool = "Bash".into();
+        pre.at_ms = 100_200;
+        let mut needs = msg(EventKind::NeedsYou, "s", 7);
+        needs.at_ms = 100_250;
+        s.apply(&needs, 101, 0);
+        // the PreToolUse hook process was slower than the permission prompt's
+        s.apply(&pre, 101, 0);
+        assert_eq!(s.get("s").unwrap().state, State::NeedsYou);
+        let mut post = pre.clone();
+        post.at_ms = 104_000;
+        s.apply(&post, 104, 0);
+        assert_eq!(s.get("s").unwrap().state, State::Working, "the person allowed it");
+        // a message without a time counts as new
+        s.apply(&needs, 105, 0);
+        s.apply(&msg(EventKind::Tool, "s", 7), 106, 0);
+        assert_eq!(s.get("s").unwrap().state, State::Working);
+    }
+
+    #[test]
+    fn a_full_list_never_drops_a_waiting_session() {
+        for first in [EventKind::Stop, EventKind::Prompt] {
+            let mut s = Sessions::default();
+            s.apply(&msg(EventKind::NeedsYou, "waiting", 1), 100, 0);
+            for i in 0..MAX_SESSIONS - 1 {
+                s.apply(&msg(first, &format!("other{i}"), 2), 200 + i as u64, 0);
+            }
+            assert_eq!(s.list().len(), MAX_SESSIONS);
+            s.apply(&msg(EventKind::Prompt, "new", 3), 1000, 0);
+            assert!(s.get("waiting").is_some_and(|x| x.state == State::NeedsYou), "{first:?}");
+            assert!(s.get("new").is_some() && s.get("other0").is_none(), "{first:?}");
+        }
+        // finished sessions go before working ones
+        let mut s = Sessions::default();
+        s.apply(&msg(EventKind::Stop, "done", 1), 900, 0);
+        for i in 0..MAX_SESSIONS - 1 {
+            s.apply(&msg(EventKind::Prompt, &format!("busy{i}"), 2), 100 + i as u64, 0);
+        }
+        s.apply(&msg(EventKind::Prompt, "new", 3), 1000, 0);
+        assert!(s.get("done").is_none() && s.get("busy0").is_some());
     }
 
     #[test]

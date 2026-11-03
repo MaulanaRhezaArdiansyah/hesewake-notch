@@ -137,8 +137,8 @@ mod tests {
         let first = q.next(0, l).unwrap();
         assert_eq!((first["t"].as_str(), first["title"].as_str(), first["count"].as_u64()), (Some("toast"), Some("Done · a"), Some(1)));
         q.push(toast(&done("b", None)));
-        assert!(q.next(4999, l).is_none());
-        assert_eq!(q.next(5000, l).unwrap()["title"], "Done · b");
+        assert!(q.next(5199, l).is_none(), "a margin over the notch's 5 s");
+        assert_eq!(q.next(5200, l).unwrap()["title"], "Done · b");
         assert!(q.next(20_000, l).is_none(), "sent once");
     }
 
@@ -151,20 +151,29 @@ mod tests {
         }
         q.push(toast(&needs("n", "Bash", "")));
         assert_eq!(q.next(0, l).unwrap()["title"], "n needs you", "needs-you first");
-        let merged = q.next(5000, l).unwrap();
+        let merged = q.next(5200, l).unwrap();
         assert_eq!((merged["title"].as_str(), merged["sub"].as_str(), merged["count"].as_u64()), (Some("3 sessions finished"), Some("a, b, c"), Some(3)));
         assert!(q.next(10_000, l).is_none());
         for p in ["x", "y"] {
             q.push(toast(&needs(p, "Bash", "")));
         }
-        let m = q.next(10_000, Lang(true)).unwrap();
+        let m = q.next(10_400, Lang(true)).unwrap();
         assert_eq!((m["title"].as_str(), m["sub"].as_str()), (Some("2 sesi perlu kamu"), Some("x, y")));
         for i in 0..40 {
             q.push(toast(&done(&format!("project-{i}"), None)));
         }
-        let many = q.next(15_000, l).unwrap();
+        let many = q.next(15_600, l).unwrap();
         assert!(many["sub"].as_str().unwrap().chars().count() <= 60 && many["title"].as_str().unwrap().chars().count() <= 80);
         assert_eq!(many["count"], 40);
+    }
+
+    #[test]
+    fn a_clock_set_back_does_not_stop_toasts() {
+        let mut q = Queue::default();
+        q.push(toast(&done("a", None)));
+        assert!(q.next(1_000_000, Lang(false)).is_some());
+        q.push(toast(&done("b", None)));
+        assert!(q.next(10_000, Lang(false)).is_some(), "the clock went back");
     }
 
     #[test]

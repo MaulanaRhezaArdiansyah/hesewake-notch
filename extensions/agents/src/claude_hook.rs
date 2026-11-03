@@ -35,6 +35,7 @@ pub fn parse_hook(json: &str) -> Option<Msg> {
     let cwd = field("cwd").unwrap_or("");
     let project = project_name(cwd);
     Some(Msg {
+        at_ms: 0,
         v: VERSION,
         agent: Agent::Claude,
         kind,
@@ -96,6 +97,8 @@ mod tests {
         let long = format!(r#","tool_name":"{}""#, "mcp__server__tool_".repeat(10));
         assert!(parse_hook(&hook("PreToolUse", &long)).unwrap().tool.chars().count() <= 40);
         assert_eq!(parse_hook(&hook("Stop", "")).unwrap().tool, "", "only tool events carry a tool");
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        assert!(parse_hook(&hook("Stop", "")).unwrap().at_ms.abs_diff(now) < 60_000, "the hook stamps when it ran");
     }
 
     #[test]
