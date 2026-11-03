@@ -6,11 +6,13 @@
 #![allow(dead_code)]
 
 mod claude_hook;
+mod cfg;
 mod claude_setup;
 mod event;
 mod procs;
 mod relay;
 mod sessions;
 mod text;
+mod ui;
 
 fn main() {}

@@ -31,37 +31,182 @@ pub const EVENTS: [(&str, Option<&str>); 8] = [
 
 pub const HOOK_ARGS: [&str; 2] = ["--hook", "claude"];
 
-/// Add our hooks for `exe`; any older ones of ours (also of the old built-in integration) are replaced.
+/// Add our hooks for `exe`; any older ones of ours (also of the old built-in integration) are replaced. A status line
+/// is never touched here.
 pub fn connect(v: &mut Value, exe: &str) {
-    let _ = (v, exe);
-    todo!()
+    remove_hooks(v);
+    let Some(root) = v.as_object_mut() else { return };
+    let hooks = root.entry("hooks").or_insert_with(|| Value::Object(Default::default()));
+    if !hooks.is_object() {
+        *hooks = Value::Object(Default::default());
+    }
+    let Some(hooks) = hooks.as_object_mut() else { return };
+    for (event, matcher) in EVENTS {
+        let list = hooks.entry(event).or_insert_with(|| Value::Array(Vec::new()));
+        if !list.is_array() {
+            *list = Value::Array(Vec::new());
+        }
+        let mut group = serde_json::Map::new();
+        if let Some(m) = matcher {
+            group.insert("matcher".into(), Value::from(m));
+        }
+        group.insert("hooks".into(), serde_json::json!([{ "type": "command", "command": exe, "args": HOOK_ARGS, "async": true, "timeout": 10 }]));
+        if let Some(a) = list.as_array_mut() {
+            a.push(Value::Object(group));
+        }
+    }
 }
 
 /// Remove our hooks and status lines (also the old built-in integration's) and anything left empty by that.
 pub fn disconnect(v: &mut Value) {
-    let _ = v;
-    todo!()
+    remove_hooks(v);
+    let ours = v.get("statusLine").is_some_and(is_our_status);
+    if let (true, Some(root)) = (ours, v.as_object_mut()) {
+        root.shift_remove("statusLine");
+    }
 }
 
 pub fn link(v: &Value, exe: &str) -> Link {
-    let _ = (v, exe);
-    todo!()
+    let mut found = Link::Off;
+    let lists = v.get("hooks").and_then(Value::as_object).into_iter().flat_map(|h| h.values());
+    for h in lists.filter_map(Value::as_array).flatten().filter_map(|g| g.get("hooks").and_then(Value::as_array)).flatten() {
+        match whose(h) {
+            Some(Mine::Old) => return Link::Old,
+            Some(Mine::New) if h.get("command").and_then(Value::as_str).is_some_and(|c| c.eq_ignore_ascii_case(exe)) => found = Link::On,
+            Some(Mine::New) if found == Link::Off => found = Link::Moved,
+            _ => {}
+        }
+    }
+    found
+}
+
+enum Mine {
+    New,
+    /// The old built-in integration of a Hesewake Notch build.
+    Old,
+}
+
+/// Is this hook entry one of ours: `hesewake-agents*.exe --hook claude`, or the old `hesewake-notch*.exe --claude-hook`?
+fn whose(h: &Value) -> Option<Mine> {
+    let name = h.get("command").and_then(Value::as_str).and_then(|c| c.rsplit(['\\', '/']).next())?.to_ascii_lowercase();
+    if !name.ends_with(".exe") {
+        return None;
+    }
+    let args: Vec<&str> = h.get("args").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    if name.starts_with("hesewake-agents") && args == HOOK_ARGS {
+        Some(Mine::New)
+    } else if name.starts_with("hesewake-notch") && args.contains(&"--claude-hook") {
+        Some(Mine::Old)
+    } else {
+        None
+    }
+}
+
+/// A status line of ours, recognised by its arguments alone: the command may hold the short 8.3 path
+/// (`.../HESEWA~1/HESEWA~1.EXE`), which no longer shows the exe name.
+fn is_our_status(sl: &Value) -> bool {
+    let Some(cmd) = sl.get("command").and_then(Value::as_str) else { return false };
+    let words: Vec<&str> = cmd.split_whitespace().collect();
+    words.contains(&"--claude-statusline") || words.windows(2).any(|w| w == ["--statusline", "claude"])
+}
+
+/// Remove our hook entries (new and old) and the groups, lists and `hooks` object left empty by that.
+fn remove_hooks(v: &mut Value) {
+    let Some(root) = v.as_object_mut() else { return };
+    let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else { return };
+    let mut changed = false;
+    for list in hooks.values_mut() {
+        let Some(groups) = list.as_array_mut() else { continue };
+        let mut here = false;
+        for g in groups.iter_mut() {
+            if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
+                let before = hs.len();
+                hs.retain(|h| whose(h).is_none());
+                here |= hs.len() != before;
+            }
+        }
+        changed |= here;
+        if here {
+            groups.retain(|g| g.get("hooks").and_then(Value::as_array).is_none_or(|hs| !hs.is_empty()));
+        }
+    }
+    if changed {
+        hooks.retain(|_, list| list.as_array().is_none_or(|a| !a.is_empty()));
+        if hooks.is_empty() {
+            root.shift_remove("hooks");
+        }
+    }
 }
 
 /// Claude Code's user settings file (`CLAUDE_CONFIG_DIR` wins over `~/.claude`, as in Claude Code).
 pub fn settings_path() -> Option<PathBuf> {
-    todo!()
+    #[cfg(test)]
+    if let Some(d) = TEST_DIR.with(|t| t.borrow().clone()) {
+        return Some(d.join("settings.json"));
+    }
+    let dir = match std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        Some(d) => PathBuf::from(d),
+        None => PathBuf::from(std::env::var_os("USERPROFILE")?).join(".claude"),
+    };
+    Some(dir.join("settings.json"))
 }
 
 pub fn read_link(exe: &str) -> Link {
-    let _ = exe;
-    todo!()
+    match load() {
+        Ok(v) => link(&v, exe),
+        Err(_) => Link::Invalid,
+    }
 }
 
-/// Connect (`on`) or disconnect `exe` in the settings file.
+/// Connect (`on`) or disconnect `exe` in the settings file. Nothing is written when nothing changes or the file
+/// isn't a JSON object.
 pub fn apply(on: bool, exe: &str) -> Result<Link, String> {
-    let _ = (on, exe);
-    todo!()
+    let path = settings_path().ok_or("no settings folder")?;
+    let mut v = load()?;
+    let before = v.clone();
+    if on {
+        connect(&mut v, exe);
+    } else {
+        disconnect(&mut v);
+    }
+    if v != before {
+        save(&path, &v)?;
+    }
+    Ok(link(&v, exe))
+}
+
+/// The settings as JSON: a missing or empty file is `{}`; a UTF-8 BOM is skipped.
+fn load() -> Result<Value, String> {
+    let path = settings_path().ok_or("no settings folder")?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.to_string()),
+    };
+    let text = text.trim_start_matches('\u{feff}');
+    if text.trim().is_empty() {
+        return Ok(Value::Object(Default::default()));
+    }
+    match serde_json::from_str::<Value>(text) {
+        Ok(v) if v.is_object() => Ok(v),
+        Ok(_) => Err("settings.json is not a JSON object".into()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Write the settings: a backup of the person's original file once, then a temporary file renamed over it.
+fn save(path: &std::path::Path, v: &Value) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let backup = path.with_file_name("settings.json.hesewake-backup");
+    if path.exists() && !backup.exists() {
+        std::fs::copy(path, &backup).map_err(|e| e.to_string())?;
+    }
+    let text = serde_json::to_string_pretty(v).map_err(|e| e.to_string())?;
+    let tmp = path.with_file_name("settings.json.hesewake-tmp");
+    std::fs::write(&tmp, text + "\n").map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -268,6 +268,14 @@ pub fn branch_of(cwd: &str) -> Option<String> {
     None
 }
 
+/// Whether `p` stays on this machine: a relative or drive path, never `\\server\share` or a device path. Opening a
+/// file on another machine would send the person's Windows credentials there, and a cloned repository chooses its
+/// own `.git` file.
+fn is_local(p: &Path) -> bool {
+    let _ = p;
+    todo!()
+}
+
 fn head_branch(head: &Path) -> Option<String> {
     let text = read_small(head)?;
     let line = text.lines().next()?.trim();
@@ -578,6 +586,16 @@ pub(crate) mod tests {
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.to_string_lossy())).unwrap();
         assert_eq!(branch_of(&wt.to_string_lossy()), Some("ext/agents".into()));
         assert_eq!(branch_of(""), None);
+    }
+
+    #[test]
+    fn remote_git_folders_are_never_read() {
+        for remote in [r"\\host\share\repo", "//host/share/repo", r"\\?\UNC\host\share", r"\\.\pipe\x", r"\\?\C:\repo"] {
+            assert!(!is_local(Path::new(remote)), "{remote}");
+        }
+        for local in [r"C:\code\repo", "C:/code/repo", r"..\.git\worktrees\x", r"\code\repo", ""] {
+            assert!(is_local(Path::new(local)), "{local}");
+        }
     }
 
     #[test]
