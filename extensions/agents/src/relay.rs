@@ -150,6 +150,7 @@ impl Receiver {
         }
     }
 
+    #[cfg(test)]
     pub fn hwnd(&self) -> isize {
         self.hwnd
     }
