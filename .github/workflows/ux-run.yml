@@ -51,7 +51,7 @@ jobs:
         run: |
           $a = (Resolve-Path agents-src/extensions/agents/target/release/hesewake-agents.exe).Path
           $o = (Resolve-Path odoo-src/extensions/odoo/target/release/hesewake-odoo.exe).Path
-          powershell -NoProfile -ExecutionPolicy Bypass -File ux-run.ps1 -AgentsExe $a -OdooExe $o
+          powershell -NoProfile -ExecutionPolicy Bypass -File ux-run.ps1 -AgentsExe $a -OdooExe $o -Only BCGJ
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

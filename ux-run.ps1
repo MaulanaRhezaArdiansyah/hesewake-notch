@@ -1,6 +1,6 @@
 # UX audit run on a throwaway GitHub Actions Windows runner: drives the real Hesewake Notch 0.13.5 (demo flags only)
 # with mouse and keyboard inside the runner, and saves screenshots + logs to $env:OUT.
-param([string]$AgentsExe, [string]$OdooExe)
+param([string]$AgentsExe, [string]$OdooExe, [string]$Only = '')
 $ErrorActionPreference = 'Continue'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -TypeDefinition @"
@@ -99,7 +99,7 @@ function NotchH {
   $h = 0; while ($h -lt 259) { $p = $b.GetPixel(0, $h); if ($p.R + $p.G + $p.B -gt 60 -and $h -gt 4) { break }; $h++ }
   $b.Dispose(); $h
 }
-function Section($name, [scriptblock]$body) { Note "=== $name"; try { & $body } catch { Note "!! $name failed: $_" }; Away }
+function Section($name, [scriptblock]$body) { if ($Only -and -not $Only.Contains($name.Substring(0, 1))) { return }; Note "=== $name"; try { & $body } catch { Note "!! $name failed: $_" }; Away }
 function SetPage($y, $name) { $s = SetWin; if (-not $s) { Note "no settings window for $name"; return }; Click ($s.L + 80) ($s.T + $y); Wait 700; WinShot $name (SetWin) }
 
 Note "screen $SW x $SH"
@@ -119,13 +119,13 @@ Section 'B hover intent' {
   Away; Wait 1500
   # time to open: enter the idle hit zone and sample height every 30 ms
   Glide $CX 400 $CX 10 400
-  $sw = [Diagnostics.Stopwatch]::StartNew(); $seen = $null
-  while ($sw.ElapsedMilliseconds -lt 1500) { $h = NotchH; if (-not $seen -and $h -gt 100) { $seen = $sw.ElapsedMilliseconds }; Wait 20 }
+  $clk = [Diagnostics.Stopwatch]::StartNew(); $seen = $null
+  while ($clk.ElapsedMilliseconds -lt 1500) { $h = NotchH; if (-not $seen -and $h -gt 100) { $seen = $clk.ElapsedMilliseconds }; Wait 20 }
   Note "open: height>100 after $seen ms"
   Shot 'b1-open'
   Go $CX 400
-  $sw.Restart(); $gone = $null
-  while ($sw.ElapsedMilliseconds -lt 1500) { $h = NotchH; if (-not $gone -and $h -lt 60) { $gone = $sw.ElapsedMilliseconds }; Wait 20 }
+  $clk.Restart(); $gone = $null
+  while ($clk.ElapsedMilliseconds -lt 1500) { $h = NotchH; if (-not $gone -and $h -lt 60) { $gone = $clk.ElapsedMilliseconds }; Wait 20 }
   Note "close: height<60 after $gone ms"
   Away; Wait 1500
   foreach ($t in @(@('fast-sweep-y6', 100, 6, ($SW - 100), 6, 500), @('slow-sweep-y6', 100, 6, ($SW - 100), 6, 2000), @('pass-y20', ($CX - 400), 20, ($CX + 400), 20, 700), @('pass-y30', ($CX - 400), 30, ($CX + 400), 30, 700))) {
@@ -142,9 +142,9 @@ Section 'B hover intent' {
 
 Section 'C navigation' {
   Glide $CX 400 $CX 10 300; Wait 1200
-  $nx = NP 498 92; $pv = NP 41 92
-  for ($i = 0; $i -lt 9; $i++) { Click $nx.X $nx.Y; Wait 600; Shot ("c1-next-{0:d2}" -f $i) }
-  Click $pv.X $pv.Y; Wait 600; Shot 'c2-prev'
+  $pNext = NP 498 92; $pPrev = NP 41 92
+  for ($i = 0; $i -lt 9; $i++) { Click $pNext.X $pNext.Y; Wait 600; Shot ("c1-next-{0:d2}" -f $i) }
+  Click $pPrev.X $pPrev.Y; Wait 600; Shot 'c2-prev'
   $wp = NP 270 30
   for ($i = 0; $i -lt 3; $i++) { Wheel $wp.X $wp.Y -120; Wait 400; Shot "c3-wheel-$i" }
   $d = NP 298 160; Click $d.X $d.Y; Wait 700; Shot 'c4-dot'
@@ -203,8 +203,8 @@ Section 'F toasts and hover' {
 Section 'G playing: width over time and lyrics' {
   Start-Notch @('--demo-playing','--demo-notifs') $null; Away; Wait 4000
   $csv = "$OUT\g-width.csv"; 'ms,width' | Set-Content $csv
-  $sw = [Diagnostics.Stopwatch]::StartNew(); $k = 0
-  while ($sw.Elapsed.TotalSeconds -lt 90) { "$($sw.ElapsedMilliseconds),$(NotchW)" | Add-Content $csv; if ($k % 15 -eq 0) { Shot ("g1-collapsed-{0:d3}" -f $k) 760 60 }; $k++; Wait 200 }
+  $clk = [Diagnostics.Stopwatch]::StartNew(); $k = 0
+  while ($clk.Elapsed.TotalSeconds -lt 90) { "$($clk.ElapsedMilliseconds),$(NotchW)" | Add-Content $csv; if ($k % 15 -eq 0) { Shot ("g1-collapsed-{0:d3}" -f $k) 760 60 }; $k++; Wait 200 }
   Glide $CX 400 $CX 10 300; Wait 1200; Shot 'g2-music-open'
   $lb = NP 413 127; Click $lb.X $lb.Y; Wait 1200; Shot 'g3-lyrics-mode'
   Away; Wait 1500; Shot 'g4-lyrics-after-leave'
@@ -219,8 +219,8 @@ Section 'H eye and weather states' {
 Section 'I Indonesian' {
   Start-Notch @('--demo-notifs') @('lang=1'); Wait 4500
   Glide $CX 400 $CX 10 300; Wait 1200
-  $nx = NP 498 92
-  for ($i = 0; $i -lt 8; $i++) { Shot ("i1-slide-{0:d2}" -f $i); Click $nx.X $nx.Y; Wait 600 }
+  $pNext = NP 498 92
+  for ($i = 0; $i -lt 8; $i++) { Shot ("i1-slide-{0:d2}" -f $i); Click $pNext.X $pNext.Y; Wait 600 }
   RClick $CX 60; Wait 600; Shot 'i2-menu' 900 420
   foreach ($i in 1..5) { Keys @(0x28) }; Keys @(0x0D); Wait 1800
   foreach ($p in @(@(79,'general'), @(151,'slides'), @(295,'alerts'), @(331,'weather'), @(367,'calendar'), @(403,'extensions'), @(529,'about'))) { SetPage $p[0] ("i3-set-" + $p[1]) }
@@ -250,17 +250,11 @@ Section 'J extensions (EN)' {
   $cs = "$env:USERPROFILE\.claude\settings.json"
   Note "claude settings exists after Connect: $(Test-Path $cs)"; if (Test-Path $cs) { Copy-Item $cs "$OUT\j-claude-settings-after-connect.json" }
   Away; Wait 1200
-  $hook = { param($json) $json | & $AgentsExe --hook claude; Wait 250 }
-  & $hook '{"session_id":"s1","cwd":"C:\\work\\shop-api","hook_event_name":"SessionStart"}'
-  & $hook '{"session_id":"s1","cwd":"C:\\work\\shop-api","hook_event_name":"UserPromptSubmit"}'
-  & $hook '{"session_id":"s1","cwd":"C:\\work\\shop-api","hook_event_name":"PreToolUse","tool_name":"Bash"}'
-  & $hook '{"session_id":"s2","cwd":"C:\\work\\notch","hook_event_name":"UserPromptSubmit"}'
-  & $hook '{"session_id":"s2","cwd":"C:\\work\\notch","hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"}'
-  & $hook '{"session_id":"s3","cwd":"C:\\work\\docs","hook_event_name":"UserPromptSubmit"}'
-  & $hook '{"session_id":"s3","cwd":"C:\\work\\docs","hook_event_name":"Stop","last_assistant_message":"Updated the README and the changelog."}'
-  & $hook '{"session_id":"s4","cwd":"C:\\work\\tools","hook_event_name":"UserPromptSubmit"}'
-  & $hook '{"session_id":"s4","cwd":"C:\\work\\tools","hook_event_name":"Stop","last_assistant_message":"Done."}'
+  # events from a long-lived node process, the way Claude Code (node) runs its hooks
+  $sim = Start-Process node -ArgumentList "`"$PSScriptRoot\hook-sim.js`"", "`"$AgentsExe`"", "`"$PSScriptRoot\hook-events.json`"" -PassThru -WindowStyle Hidden -RedirectStandardOutput "$OUT\hook-sim.log"
+  Note "hook simulator pid $($sim.Id)"
   Burst 'j8-agent-toasts' 40 500
+  $sj = "$env:APPDATA\hesewake-notch-agents\sessions.json"; if (Test-Path $sj) { Copy-Item $sj "$OUT\j-sessions.json" } else { Note 'no sessions.json' }
   CtrlAlt 0x38; Wait 1200; Shot 'j9-agents-sessions'
   $r = NP 270 60; Click $r.X $r.Y; Wait 1200; Shot 'j10-agents-row-clicked'
   Away; Wait 1500

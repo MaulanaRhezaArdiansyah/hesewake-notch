@@ -1,0 +1,11 @@
+[
+ {"session_id":"s1","cwd":"C:\\work\\shop-api","hook_event_name":"SessionStart"},
+ {"session_id":"s1","cwd":"C:\\work\\shop-api","hook_event_name":"UserPromptSubmit"},
+ {"session_id":"s1","cwd":"C:\\work\\shop-api","hook_event_name":"PreToolUse","tool_name":"Bash","wait":1500},
+ {"session_id":"s2","cwd":"C:\\work\\notch","hook_event_name":"UserPromptSubmit"},
+ {"session_id":"s2","cwd":"C:\\work\\notch","hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission to use Bash","wait":6000},
+ {"session_id":"s3","cwd":"C:\\work\\docs","hook_event_name":"UserPromptSubmit","wait":2000},
+ {"session_id":"s3","cwd":"C:\\work\\docs","hook_event_name":"Stop","last_assistant_message":"Updated the README and the changelog.","wait":6000},
+ {"session_id":"s4","cwd":"C:\\work\\tools","hook_event_name":"UserPromptSubmit","wait":1000},
+ {"session_id":"s4","cwd":"C:\\work\\tools","hook_event_name":"StopFailure","wait":500}
+]
