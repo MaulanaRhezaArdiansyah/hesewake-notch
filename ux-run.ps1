@@ -81,7 +81,7 @@ function Stop-Notch { Get-Process hesewake-notch, hesewake-agents, hesewake-odoo
 function Start-Notch([string[]]$demo, [string[]]$settings) {
   Stop-Notch
   $d = "$env:APPDATA\hesewake-notch"
-  if ($null -ne $settings) { New-Item -ItemType Directory -Force $d | Out-Null; Set-Content -Encoding utf8 "$d\settings.txt" $settings }
+  if ($null -ne $settings) { New-Item -ItemType Directory -Force $d | Out-Null; [IO.File]::WriteAllLines("$d\settings.txt", [string[]]$settings, (New-Object Text.UTF8Encoding $false)) }
   Start-Process $EXE -ArgumentList $demo | Out-Null
   Note "launch $($demo -join ' ')"
 }
@@ -116,7 +116,7 @@ Section 'A first run (fresh, no settings)' {
 }
 
 Section 'B hover intent' {
-  Away; Wait 1500
+  Start-Notch @('--demo-notifs') $null; Away; Wait 5000
   # time to open: enter the idle hit zone and sample height every 30 ms
   Glide $CX 400 $CX 10 400
   $clk = [Diagnostics.Stopwatch]::StartNew(); $seen = $null
@@ -271,8 +271,8 @@ Section 'J extensions (EN)' {
   Glide $CX 400 $CX 10 300; Wait 1000; RClick $CX 60; Wait 500
   foreach ($i in 1..5) { Keys @(0x28) }; Keys @(0x0D); Wait 1800
   SetPage 403 'j15-ext-status'
-  $s = SetWin; Click ($s.L + 483) ($s.T + 235); Wait 400; WinShot 'j16-remove-first-press' (SetWin)
-  Click ($s.L + 483) ($s.T + 235); Wait 1500; WinShot 'j17-remove-second-press' (SetWin)
+  $s = SetWin; Click ($s.L + 483) ($s.T + 251); Wait 400; WinShot 'j16-remove-first-press' (SetWin)
+  Click ($s.L + 483) ($s.T + 251); Wait 1500; WinShot 'j17-remove-second-press' (SetWin)
   if (Test-Path $cs) { Copy-Item $cs "$OUT\j-claude-settings-after-notch-remove.json"; Note "hooks left in claude settings after notch Remove: $((Select-String -Path $cs -Pattern 'hesewake-agents' -SimpleMatch).Count) lines" }
   Keys @(0x1B)
 }
